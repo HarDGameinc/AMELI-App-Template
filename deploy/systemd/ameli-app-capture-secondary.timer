@@ -1,0 +1,10 @@
+[Unit]
+Description=Run __APP_NAME__ [__APP_ENV__] secondary capture
+
+[Timer]
+OnCalendar=*-*-* *:05/10
+Persistent=true
+Unit=__UNIT_PREFIX__-capture@secondary.service
+
+[Install]
+WantedBy=timers.target

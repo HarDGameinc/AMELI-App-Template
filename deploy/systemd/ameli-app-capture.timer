@@ -1,0 +1,11 @@
+[Unit]
+Description=Run __APP_NAME__ [__APP_ENV__] capture periodically
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5min
+Persistent=true
+Unit=__UNIT_PREFIX__-capture.service
+
+[Install]
+WantedBy=timers.target

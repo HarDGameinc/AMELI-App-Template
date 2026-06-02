@@ -1,0 +1,52 @@
+app:
+  name: "AMELI App Template"
+  slug: "ameli-app"
+  environment: "dev"
+  timezone: "America/Santiago"
+
+api:
+  host: "127.0.0.1"
+  port: 18080
+  require_token: false
+  token_env: "AMELI_APP_API_TOKEN"
+
+auth:
+  enabled: true
+  session_cookie_name: "ameli_app_session"
+  session_cookie_secure: false
+  session_max_age_seconds: 43200
+  profile_uploads_dir: "data/uploads/dev"
+
+dashboard:
+  enabled: true
+  title: "AMELI App Template"
+  public: true
+  port: 18081
+
+docs:
+  enabled: true
+  redoc_enabled: true
+
+worker:
+  enabled: true
+  interval_seconds: 300
+  heartbeat_max_age_seconds: 900
+
+notifier:
+  enabled: false
+  interval_seconds: 30
+
+database:
+  url_env: "DATABASE_URL"
+  pool_pre_ping: true
+  connect_timeout_seconds: 5
+
+paths:
+  data_dir: "data"
+  log_dir: "logs"
+  backup_dir: "backups"
+
+features:
+  admin: true
+  audit_log: true
+  maintenance: true

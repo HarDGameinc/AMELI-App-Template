@@ -1,0 +1,51 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  </head>
+  <body>
+    <main class="page">
+      <section class="toolbar">
+        <div>
+          <p class="eyebrow">{% block eyebrow %}django-first template{% endblock %}</p>
+          <h1>{% block header_title %}{{ app_name }}{% endblock %}</h1>
+          <p class="muted">{% block header_subtitle %}Base comun para apps AMELI con usuarios reales{% endblock %}</p>
+        </div>
+        <div class="toolbar">
+          <a class="status" href="/">Dashboard</a>
+          {% if current_user and can_access_admin %}
+          <a class="status" href="/admin/">Administracion</a>
+          {% endif %}
+          {% if docs_enabled %}<a class="status" href="/docs">API Docs</a>{% endif %}
+          {% if redoc_enabled %}<a class="status" href="/redoc">ReDoc</a>{% endif %}
+          {% if current_user %}
+          <a class="status" href="{% url 'accounts:profile' %}">@{{ current_user.username }}</a>
+          <form method="post" action="{% url 'accounts:logout' %}">
+            {% csrf_token %}
+            <button type="submit">Cerrar sesion</button>
+          </form>
+          {% else %}
+          <a class="status" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Ingresar</a>
+          {% endif %}
+        </div>
+      </section>
+
+      {% block breadcrumbs %}{% endblock %}
+
+      {% if messages %}
+      <section class="stack" style="margin-bottom:16px;">
+        {% for message in messages %}
+        <div class="panel"><p>{{ message }}</p></div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+    <script src="{% static 'js/app.js' %}"></script>
+  </body>
+</html>

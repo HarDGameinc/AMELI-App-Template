@@ -1,0 +1,11 @@
+[Unit]
+Description=Run __APP_NAME__ [__APP_ENV__] worker periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=__UNIT_PREFIX__-worker.service
+
+[Install]
+WantedBy=timers.target

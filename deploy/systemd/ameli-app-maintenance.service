@@ -1,0 +1,20 @@
+[Unit]
+Description=__APP_NAME__ [__APP_ENV__] Maintenance
+Documentation=file:__APP_DIR__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_GROUP__
+WorkingDirectory=__APP_DIR__
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-__ENV_FILE__
+Environment=APP_CONFIG=__CONFIG_FILE__
+ExecStart=__APP_DIR__/.venv/bin/python -m __APP_PACKAGE__.cli --config __CONFIG_FILE__ maintenance
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=__DATA_DIR__ __LOG_DIR__ __BACKUP_DIR__

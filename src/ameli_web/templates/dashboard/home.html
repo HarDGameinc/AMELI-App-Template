@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}{{ settings.CFG.app_name }}{% endblock %}
+{% block header_title %}{{ app_name }}{% endblock %}
+{% block header_subtitle %}Template Django-first para apps AMELI con usuarios, perfil, admin y docs{% endblock %}
+
+{% block content %}
+{% if access_notice %}
+<section class="panel" style="margin-bottom:16px;"><p>{{ access_notice }}</p></section>
+{% endif %}
+
+<section class="grid">
+  <article class="panel">
+    <h2>Resumen de la plantilla</h2>
+    <p>Esta base deja lista la capa web oficial en Django ASGI y un set minimo reutilizable para apps AMELI expuestas a internet.</p>
+    <dl style="margin-top:16px;">
+      <dt>Version</dt><dd>{{ version }}</dd>
+      <dt>Entorno</dt><dd>{{ environment }}</dd>
+      <dt>Auth</dt><dd>{% if features.auth_enabled %}habilitada{% else %}deshabilitada{% endif %}</dd>
+      <dt>Admin</dt><dd>{% if features.admin_enabled %}habilitado{% else %}deshabilitado{% endif %}</dd>
+      <dt>Docs</dt><dd>{% if features.docs_enabled %}/docs{% else %}deshabilitadas{% endif %}</dd>
+      <dt>ReDoc</dt><dd>{% if features.redoc_enabled %}/redoc{% else %}deshabilitado{% endif %}</dd>
+    </dl>
+  </article>
+
+  <aside class="panel">
+    <h2>Estado operativo</h2>
+    <dl>
+      <dt>Database</dt><dd>{% if database.ok %}alcanzable{% else %}problema{% endif %}</dd>
+      <dt>Configurada</dt><dd>{% if database.configured %}si{% else %}no{% endif %}</dd>
+      <dt>Mensaje</dt><dd>{{ database.message }}</dd>
+    </dl>
+  </aside>
+</section>
+
+<section class="panel" style="margin-top:16px;">
+  <h2>Capacidades base</h2>
+  <div class="grid">
+    <div class="panel">
+      <p><strong>Autenticacion</strong></p>
+      <p>Login/logout, sesiones persistentes, cambio obligatorio de contrasena y politica fuerte.</p>
+    </div>
+    <div class="panel">
+      <p><strong>Cuenta</strong></p>
+      <p>Perfil de usuario, tema, sesiones recientes y autoservicio base.</p>
+    </div>
+    <div class="panel">
+      <p><strong>Administracion</strong></p>
+      <p>Usuarios, auditoria, sesiones y bootstrap de superadmin.</p>
+    </div>
+    <div class="panel">
+      <p><strong>Documentacion</strong></p>
+      <p>Swagger UI y ReDoc servidos desde la capa Django oficial.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

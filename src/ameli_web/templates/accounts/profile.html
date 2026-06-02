@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Mi perfil - {{ app_name }}{% endblock %}
+{% block header_title %}Mi perfil{% endblock %}
+{% block header_subtitle %}Autoservicio de cuenta autenticada{% endblock %}
+
+{% block breadcrumbs %}
+<p class="eyebrow" style="margin-bottom:16px;"><a href="/">Dashboard</a> / <strong>Mi perfil</strong></p>
+{% endblock %}
+
+{% block content %}
+<section class="grid">
+  <article class="panel">
+    <h2>Cuenta personal</h2>
+    <dl>
+      <dt>Usuario</dt><dd>@{{ current_user.username }}</dd>
+      <dt>Rol</dt><dd>{{ current_user.role }}</dd>
+      <dt>Alias</dt><dd>{{ current_user.display_alias_value }}</dd>
+      <dt>Tema</dt><dd>{{ current_user.display_theme_label }}</dd>
+      <dt>Ultimo acceso</dt><dd>{{ display_last_login_at }}</dd>
+    </dl>
+
+    <h2 style="margin-top:24px;">Editar perfil</h2>
+    <form class="stack" method="post" action="{% url 'accounts:profile-preferences' %}">
+      {% csrf_token %}
+      <label>
+        <span>Alias visible</span>
+        {{ preferences_form.display_name }}
+      </label>
+      <label>
+        <span>Tema</span>
+        {{ preferences_form.theme_preference }}
+      </label>
+      <button type="submit">Guardar perfil</button>
+    </form>
+
+    <h2 style="margin-top:24px;">Cambiar contrasena</h2>
+    <form class="stack" method="post" action="{% url 'accounts:profile-password' %}">
+      {% csrf_token %}
+      <label><span>Contrasena actual</span><input type="password" name="{{ password_form.old_password.html_name }}" autocomplete="current-password" required></label>
+      <label><span>Nueva contrasena</span><input type="password" name="{{ password_form.new_password1.html_name }}" minlength="12" autocomplete="new-password" required></label>
+      <label><span>Confirmar nueva contrasena</span><input type="password" name="{{ password_form.new_password2.html_name }}" minlength="12" autocomplete="new-password" required></label>
+      <button type="submit">Actualizar contrasena</button>
+    </form>
+  </article>
+
+  <aside class="panel">
+    <h2>Sesiones</h2>
+    <div class="stack">
+      {% for session in user_sessions %}
+      <div class="panel">
+        <p><strong>{% if session.is_current %}Sesion actual{% elif session.revoked %}Sesion revocada{% else %}Sesion activa{% endif %}</strong></p>
+        <p>Ultima actividad: {{ session.last_seen_at }}</p>
+        {% if session.ip_address %}<p>IP: {{ session.ip_address }}</p>{% endif %}
+        {% if session.user_agent %}<p>{{ session.user_agent|truncatechars:72 }}</p>{% endif %}
+        {% if not session.is_current and not session.revoked %}
+        <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}">
+          {% csrf_token %}
+          <button type="submit">Revocar sesion</button>
+        </form>
+        {% endif %}
+      </div>
+      {% empty %}
+      <p>No hay sesiones registradas.</p>
+      {% endfor %}
+    </div>
+
+    <form class="stack" method="post" action="{% url 'accounts:profile-revoke-others' %}" style="margin-top:16px;">
+      {% csrf_token %}
+      <button type="submit">Cerrar otras sesiones</button>
+    </form>
+
+    {% if can_access_admin %}
+    <p style="margin-top:16px;"><a href="/admin/">Ir a administracion</a></p>
+    {% endif %}
+  </aside>
+</section>
+{% endblock %}

@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ameli-app-template"
+version = "0.2.0"
+description = "AMELI Django-first operational app template"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13.0",
+  "Django>=5.2.0",
+  "fastapi>=0.115.0",
+  "jinja2>=3.1.0",
+  "Pillow>=11.0.0",
+  "psycopg[binary]>=3.1.0",
+  "python-dateutil>=2.9.0",
+  "PyYAML>=6.0.1",
+  "SQLAlchemy>=2.0.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.scripts]
+ameli-app = "ameli_app.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ameli_app = ["templates/*.html", "static/css/*.css", "static/js/*.js"]
+ameli_web = [
+  "templates/*.html",
+  "templates/accounts/*.html",
+  "templates/admin/*.html",
+  "templates/dashboard/*.html",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+DJANGO_SETTINGS_MODULE = "ameli_web.settings"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".test-deps", ".venv", ".venv-*", "data", "logs", "backups"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B"]

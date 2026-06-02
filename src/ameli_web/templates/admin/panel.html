@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Administración - {{ settings.CFG.app_name }}{% endblock %}
+{% block header_title %}Administración{% endblock %}
+{% block header_subtitle %}Seguridad, cuentas, sesiones y auditoría{% endblock %}
+
+{% block breadcrumbs %}
+<p class="eyebrow" style="margin-bottom:16px;"><a href="/">Dashboard</a> / <strong>Administración</strong></p>
+{% endblock %}
+
+{% block content %}
+<section class="grid">
+  <article class="panel">
+    <h2>Resumen</h2>
+    <dl>
+      <dt>Versión</dt><dd>{{ version }}</dd>
+      <dt>Usuarios</dt><dd>{{ user_summary.total }}</dd>
+      <dt>Activos</dt><dd>{{ user_summary.enabled }}</dd>
+      <dt>Deshabilitados</dt><dd>{{ user_summary.disabled }}</dd>
+      <dt>Cambio obligatorio</dt><dd>{{ user_summary.pending_password_changes }}</dd>
+    </dl>
+
+    <h2 style="margin-top:24px;">Crear usuario</h2>
+    <form id="create-user-form" class="stack">
+      <label><span>Usuario</span><input type="text" name="username" required></label>
+      <label><span>Contraseña</span><input type="password" name="password" minlength="12" required></label>
+      <label>
+        <span>Rol</span>
+        <select name="role">
+          <option value="public">public</option>
+          <option value="superadmin">superadmin</option>
+        </select>
+      </label>
+      <label><span><input type="checkbox" name="must_change_password"> exigir cambio inicial</span></label>
+      <button type="submit">Crear usuario</button>
+    </form>
+    <p class="feedback" id="create-user-feedback"></p>
+
+    <h2 style="margin-top:24px;">Cambiar mi contraseña</h2>
+    <form id="admin-password-form" class="stack">
+      <label><span>Contraseña actual</span><input type="password" name="current_password" required></label>
+      <label><span>Nueva contraseña</span><input type="password" name="new_password" minlength="12" required></label>
+      <button type="submit">Actualizar contraseña</button>
+    </form>
+    <p class="feedback" id="admin-password-feedback"></p>
+  </article>
+
+  <aside class="panel">
+    <h2>Usuarios</h2>
+    <div class="stack">
+      {% for user_item in users %}
+      <div class="panel">
+        <p><strong>{{ user_item.display_identity_name }}</strong></p>
+        <p>@{{ user_item.username }} · {{ user_item.role }}</p>
+        <p>{% if user_item.enabled %}activo{% else %}deshabilitado{% endif %}</p>
+        {% if user_item.must_change_password %}<p>cambio de contraseña pendiente</p>{% endif %}
+      </div>
+      {% empty %}
+      <p>No hay usuarios creados.</p>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<section class="grid" style="margin-top:16px;">
+  <article class="panel">
+    <h2>Auditoría reciente</h2>
+    <div class="stack">
+      {% for item in audit_entries %}
+      <div class="panel">
+        <p><strong>{{ item.display_action }}</strong></p>
+        <p>Actor: {{ item.display_actor }} · Objetivo: {{ item.display_target }}</p>
+        <p>{{ item.display_time }}</p>
+      </div>
+      {% empty %}
+      <p>Sin auditoría registrada.</p>
+      {% endfor %}
+    </div>
+  </article>
+  <aside class="panel">
+    <h2>Sesiones recientes</h2>
+    <div class="stack">
+      {% for session in recent_sessions %}
+      <div class="panel">
+        <p><strong>{{ session.username }}</strong>{% if session.is_current %} · actual{% endif %}</p>
+        <p>Última actividad: {{ session.display_last_seen_at }}</p>
+        {% if session.ip_address %}<p>IP: {{ session.ip_address }}</p>{% endif %}
+      </div>
+      {% empty %}
+      <p>No hay sesiones recientes.</p>
+      {% endfor %}
+    </div>
+    <p style="margin-top:16px;"><a href="{{ native_admin_url }}">Ir al admin nativo Django</a></p>
+  </aside>
+</section>
+
+<script>
+  const csrfToken = "{{ csrf_token }}";
+
+  async function requestJson(url, options = {}) {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        "x-csrf-token": csrfToken,
+      },
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Operación no completada.");
+    }
+    return data;
+  }
+
+  function bindJsonForm(formId, feedbackId, url, builder) {
+    const form = document.getElementById(formId);
+    const feedback = document.getElementById(feedbackId);
+    if (!form || !feedback) return;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      feedback.textContent = "Guardando...";
+      try {
+        const payload = builder(Object.fromEntries(new FormData(form).entries()));
+        await requestJson(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        feedback.textContent = "Operación completada. Recargando...";
+        window.setTimeout(() => window.location.reload(), 400);
+      } catch (error) {
+        feedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+      }
+    });
+  }
+
+  bindJsonForm("create-user-form", "create-user-feedback", "/admin/users", (payload) => ({
+    username: payload.username,
+    password: payload.password,
+    role: payload.role,
+    must_change_password: payload.must_change_password === "on",
+  }));
+
+  bindJsonForm("admin-password-form", "admin-password-feedback", "/admin/change-password", (payload) => payload);
+</script>
+{% endblock %}
