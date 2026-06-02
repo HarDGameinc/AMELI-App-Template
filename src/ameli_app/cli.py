@@ -77,29 +77,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list-users", help="List managed user accounts.")
 
-    create_access = sub.add_parser(
-        "create-access",
-        help="Compatibility alias for create-user.",
-    )
-    create_access.add_argument("--username", required=True, help="User username.")
-    create_access.add_argument("--password", required=True, help="User password.")
-    create_access.add_argument(
-        "--role",
-        choices=("public", "superadmin"),
-        default="public",
-        help="Role to assign.",
-    )
-    create_access.add_argument(
-        "--actor",
-        default="cli",
-        help="Audit actor label used for this creation.",
-    )
-    create_access.add_argument(
-        "--must-change-password",
-        action="store_true",
-        help="Force password change at first login.",
-    )
-    sub.add_parser("list-accesses", help="Compatibility alias for list-users.")
     return parser
 
 
@@ -163,9 +140,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
-    if args.command in {"create-user", "create-access"}:
+    if args.command == "create-user":
         return _handle_create_user(args)
-    if args.command in {"list-users", "list-accesses"}:
+    if args.command == "list-users":
         return _handle_list_users(args)
 
     parser.error(f"Unknown command: {args.command}")

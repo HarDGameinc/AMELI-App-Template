@@ -2,9 +2,16 @@
 
 ## Purpose
 
-This repository is the Django-first standard template for AMELI applications
+This repository is the canonical Django-first template for AMELI applications
 that will be exposed to real users on the internet or on internal operational
 networks.
+
+## Database policy
+
+- Official database standard: `PostgreSQL`
+- Local convenience fallback only: `SQLite`
+- Any real deployment, staging or QA environment should be planned around
+  `DATABASE_URL` and PostgreSQL from the beginning.
 
 ## Official architecture
 
@@ -14,6 +21,7 @@ networks.
   - CLI
   - workers
   - version helpers
+  - static assets reusable across new apps
 - `src/ameli_web/`
   - Django settings, urls and ASGI
   - auth, sessions, profile, admin and audit
@@ -25,8 +33,8 @@ networks.
 ## Official runtime
 
 - Official web runtime: Django ASGI via `python -m ameli_app.api`
-- Compatibility launcher: `python -m ameli_app.web`
-- The old FastAPI runtime is no longer the official web layer.
+- Alternate launcher: `python -m ameli_app.web`
+- The template no longer depends on a FastAPI runtime layer.
 
 ## Minimum public routes
 
@@ -68,11 +76,6 @@ networks.
 - `ameli-app notify-once`
 - `ameli-app maintenance`
 
-Compatibility aliases currently kept:
-
-- `create-access` -> `create-user`
-- `list-accesses` -> `list-users`
-
 ## Install/update expectations
 
 - `scripts/install.sh`
@@ -87,6 +90,7 @@ Compatibility aliases currently kept:
   - reruns migrations/checks
 - `scripts/validate_installation.sh`
   - validates CLI and Django health basics
+  - assumes a real install should have PostgreSQL configured
 
 ## Source-of-truth files to keep aligned
 
@@ -102,9 +106,10 @@ Compatibility aliases currently kept:
 - Metro-specific data sources
 - Metro-specific text or branding
 
-## Current branch direction
+## Documentation baseline
 
-- This template is being rewritten in-place from the old FastAPI base to a
-  Django-first base inspired by Metro.
-- If there is conflict between old FastAPI docs and current code, current code
-  and this file win.
+- Main onboarding: `README.md`
+- Canonical runtime and continuity reference: `AGENTS.md`
+- First install guide: `docs/FIRST_INSTALL_DJANGO.md`
+- Technical structure: `docs/ARCHITECTURE.md`
+- Operations: `docs/OPERATIONS.md`

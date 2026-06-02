@@ -24,6 +24,8 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 def _default_sqlite_path() -> str:
+    # SQLite is intentionally kept only as a local fallback when DATABASE_URL
+    # is not configured. Real installs are expected to use PostgreSQL.
     explicit = os.environ.get("AMELI_APP_SQLITE_PATH", "").strip()
     if explicit:
         return explicit

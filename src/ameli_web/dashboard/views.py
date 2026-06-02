@@ -6,7 +6,6 @@ from django.conf import settings
 from django.contrib.messages import get_messages
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET
-from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 
 from ameli_app import __version__
 from ameli_app.config import settings_summary
@@ -125,6 +124,57 @@ def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, st
     return response
 
 
+def _swagger_ui_html() -> str:
+    title = f"{settings.CFG.app_name} API Docs"
+    return f"""<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {{
+        window.ui = SwaggerUIBundle({{
+          url: "/openapi.json",
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          layout: "BaseLayout",
+        }});
+      }};
+    </script>
+  </body>
+</html>"""
+
+
+def _redoc_html() -> str:
+    title = f"{settings.CFG.app_name} API ReDoc"
+    return f"""<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <style>
+      body {{
+        margin: 0;
+        padding: 0;
+      }}
+    </style>
+  </head>
+  <body>
+    <redoc spec-url="/openapi.json"></redoc>
+    <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+  </body>
+</html>"""
+
+
 @require_GET
 def health(request):
     db_status = database_status(settings.CFG)
@@ -161,14 +211,10 @@ def openapi_schema(request):
 def docs(request):
     if not settings.CFG.docs_enabled:
         return JsonResponse({"ok": False, "error": "docs disabled"}, status=404)
-    response = get_swagger_ui_html(
-        openapi_url="/openapi.json",
-        title=f"{settings.CFG.app_name} API Docs",
-    )
     return _docs_response(
-        response.body,
-        status_code=response.status_code,
-        headers=dict(response.headers),
+        _swagger_ui_html(),
+        status_code=200,
+        headers={"Content-Type": "text/html; charset=utf-8"},
         title=f"{settings.CFG.app_name} API Docs",
     )
 
@@ -177,13 +223,9 @@ def docs(request):
 def redoc(request):
     if not settings.CFG.redoc_enabled:
         return JsonResponse({"ok": False, "error": "redoc disabled"}, status=404)
-    response = get_redoc_html(
-        openapi_url="/openapi.json",
-        title=f"{settings.CFG.app_name} API ReDoc",
-    )
     return _docs_response(
-        response.body,
-        status_code=response.status_code,
-        headers=dict(response.headers),
+        _redoc_html(),
+        status_code=200,
+        headers={"Content-Type": "text/html; charset=utf-8"},
         title=f"{settings.CFG.app_name} API ReDoc",
     )

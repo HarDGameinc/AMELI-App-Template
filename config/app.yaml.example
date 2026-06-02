@@ -37,6 +37,8 @@ notifier:
   interval_seconds: 30
 
 database:
+  # PostgreSQL is the official database standard for real deployments.
+  # SQLite is supported only as a local fallback when DATABASE_URL is empty.
   url_env: "DATABASE_URL"
   pool_pre_ping: true
   connect_timeout_seconds: 5

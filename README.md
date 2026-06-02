@@ -9,12 +9,20 @@ dominio; entrega una base de plataforma reusable para apps públicas o internas
 que necesiten autenticación, panel administrativo y documentación API desde el
 día 1.
 
+## Política de base de datos
+
+- `PostgreSQL` es la base oficial del estándar AMELI.
+- `SQLite` se mantiene solo como fallback local para desarrollo rápido o demos
+  sin infraestructura externa.
+- Para staging, QA y producción, los ejemplos y el flujo principal asumen
+  `DATABASE_URL` apuntando a PostgreSQL.
+
 ## Stack incluido
 
 - Python 3.11+
 - Layout `src/`
 - Django ASGI + Uvicorn
-- PostgreSQL + SQLAlchemy + Alembic
+- PostgreSQL como base oficial + SQLite local opcional
 - Configuración híbrida: `.env` para secretos/runtime y YAML para defaults
 - CLI operacional
 - Bootstrap de superadmin inicial
@@ -26,7 +34,7 @@ día 1.
 - Helper `scripts/_common.sh` para multientorno y render de units
 - Pytest + Ruff
 
-## Uso rapido
+## Uso rápido
 
 1. Copiar esta carpeta para una app nueva.
 2. Renombrar:
@@ -40,7 +48,7 @@ día 1.
 
 3. Actualizar `pyproject.toml`, `README.md`, `VERSION`, `.env.example` y
    `config/app.yaml.example`.
-4. Elegir el perfil `APP_SYSTEMD_PROFILE` segun la topologia de la app:
+4. Elegir el perfil `APP_SYSTEMD_PROFILE` según la topología de la app:
 
    ```text
    api-worker-maintenance
@@ -72,34 +80,44 @@ día 1.
    ruff format --check .
    ```
 
-7. Aplicar migraciones y validar Django:
+7. Aplicar migraciones y validar Django con PostgreSQL:
 
    ```bash
+   export DATABASE_URL="postgresql+psycopg://ameli_app:secret@127.0.0.1:5432/ameli_app"
+   python manage.py migrate
+   python manage.py check
+   ```
+
+8. Si no tienes PostgreSQL local, usa el fallback SQLite solo para desarrollo:
+
+   ```bash
+   export DATABASE_URL=
    export AMELI_APP_SQLITE_PATH="${PWD}/django-dev.sqlite3"
    python manage.py migrate
    python manage.py check
    ```
 
-8. Levantar el servicio web oficial:
+9. Levantar el servicio web oficial:
 
    ```bash
    python -m ameli_app.api
    ```
 
-9. Bootstrapear el superadmin inicial:
+10. Bootstrapear el superadmin inicial:
 
    ```bash
    ameli-app bootstrap-admin --config config/app.yaml.example --username admin --password 'ChangeThisNow!1?' --must-change-password
    ```
 
-## Primera instalacion guiada
+## Primera instalación guiada
 
-Para un recorrido completo de primera instalacion, incluyendo:
+Para un recorrido completo de primera instalación, incluyendo:
 
-- quick start local con SQLite
-- primera instalacion Debian con PostgreSQL y systemd
+- quick start oficial con PostgreSQL
+- fallback local con SQLite
+- primera instalación Debian con PostgreSQL y systemd
 - bootstrap inicial del superadmin
-- validacion post-instalacion
+- validación post-instalación
 - update inicial y problemas comunes
 
 usar:
@@ -108,7 +126,7 @@ usar:
 
 ## Rutas base
 
-- `GET /health`: health publico liviano.
+- `GET /health`: health público liviano.
 - `GET /api/health`: health API detallado.
 - `GET /`: dashboard base.
 - `GET /login`: acceso web.
@@ -138,11 +156,12 @@ ameli-app list-users --config config/app.yaml.example
 - La rama `dev` es para pruebas y staging.
 - La rama `main` es estable/productiva.
 - `APP_ENV=prod|dev` separa rutas, puertos, base de datos y unidades systemd.
-- `APP_SYSTEMD_PROFILE` define que roles systemd se habilitan por instancia.
+- `APP_SYSTEMD_PROFILE` define qué roles systemd se habilitan por instancia.
 - Los secretos no se versionan.
-- Los scripts deben ser idempotentes y preservar configuracion existente.
+- Los scripts deben ser idempotentes y preservar configuración existente.
 - Los endpoints mutables o administrativos deben requerir sesión.
-- Si la app expone dashboard público con cuentas, el primer superadmin se crea por script y luego administra usuarios desde `/admin`.
+- Si la app expone dashboard público con cuentas, el primer superadmin se crea
+  por script y luego administra usuarios desde `/admin`.
 
 ## Documento canónico
 
