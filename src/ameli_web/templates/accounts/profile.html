@@ -5,74 +5,199 @@
 {% block header_subtitle %}Autoservicio de cuenta autenticada{% endblock %}
 
 {% block breadcrumbs %}
-<p class="eyebrow" style="margin-bottom:16px;"><a href="/">Dashboard</a> / <strong>Mi perfil</strong></p>
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/">Dashboard</a>
+  <span class="breadcrumbs-sep" aria-hidden="true">/</span>
+  <span class="breadcrumbs-current">Mi perfil</span>
+</nav>
 {% endblock %}
 
 {% block content %}
-<section class="grid">
-  <article class="panel">
-    <h2>Cuenta personal</h2>
-    <dl>
-      <dt>Usuario</dt><dd>@{{ current_user.username }}</dd>
-      <dt>Rol</dt><dd>{{ current_user.role }}</dd>
-      <dt>Alias</dt><dd>{{ current_user.display_alias_value }}</dd>
-      <dt>Tema</dt><dd>{{ current_user.display_theme_label }}</dd>
-      <dt>Ultimo acceso</dt><dd>{{ display_last_login_at }}</dd>
-    </dl>
+<section class="panel profile-hero">
+  <div class="profile-identity">
+    <div class="profile-avatar">
+      {{ current_user.initials }}
+    </div>
+    <div class="profile-identity-copy">
+      <h2 class="profile-name">{{ current_user.display_identity_name }}</h2>
+      <p class="muted profile-username">@{{ current_user.username }} · {{ current_user.role }}</p>
+      <div class="profile-badges">
+        <span class="status-pill {% if current_user.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}">
+          {% if current_user.enabled %}Activo{% else %}Deshabilitado{% endif %}
+        </span>
+        <span class="profile-meta-chip">Tema: {{ current_user.display_theme_label }}</span>
+        <span class="profile-meta-chip">{% if current_user.must_change_password %}Cambio obligatorio{% else %}Clave vigente{% endif %}</span>
+      </div>
+    </div>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <span class="hero-stat-label">Ultimo acceso</span>
+      <span class="hero-stat-value">{{ display_last_login_at }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Sesion actual</span>
+      <span class="hero-stat-value">{{ current_session.display_last_seen_at|default:"-" }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Seguridad</span>
+      <span class="hero-stat-value {% if current_user.must_change_password %}warn-text{% endif %}">
+        {% if current_user.must_change_password %}Cambio pendiente{% else %}Sin alertas{% endif %}
+      </span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Admin</span>
+      <span class="hero-stat-value">{% if can_access_admin %}Disponible{% else %}No habilitado{% endif %}</span>
+    </div>
+  </div>
+  <div class="hero-actions">
+    <a class="icon-action primary" href="#profile-form">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">tune</span>
+      <span>Editar perfil</span>
+    </a>
+    {% if can_access_admin %}
+    <a class="icon-action profile-admin-link" href="/admin/">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">settings</span>
+      <span>Ir a administracion</span>
+    </a>
+    {% endif %}
+  </div>
+</section>
 
-    <h2 style="margin-top:24px;">Editar perfil</h2>
-    <form class="stack" method="post" action="{% url 'accounts:profile-preferences' %}">
-      {% csrf_token %}
-      <label>
-        <span>Alias visible</span>
-        {{ preferences_form.display_name }}
-      </label>
-      <label>
-        <span>Tema</span>
-        {{ preferences_form.theme_preference }}
-      </label>
-      <button type="submit">Guardar perfil</button>
-    </form>
+<nav class="tab-nav" role="tablist">
+  <button class="active" data-tab="profile-tab-general" role="tab" aria-selected="true">General</button>
+  <button data-tab="profile-tab-security" role="tab" aria-selected="false">Seguridad</button>
+  <button data-tab="profile-tab-sessions" role="tab" aria-selected="false">Sesiones</button>
+</nav>
 
-    <h2 style="margin-top:24px;">Cambiar contrasena</h2>
-    <form class="stack" method="post" action="{% url 'accounts:profile-password' %}">
-      {% csrf_token %}
-      <label><span>Contrasena actual</span><input type="password" name="{{ password_form.old_password.html_name }}" autocomplete="current-password" required></label>
-      <label><span>Nueva contrasena</span><input type="password" name="{{ password_form.new_password1.html_name }}" minlength="12" autocomplete="new-password" required></label>
-      <label><span>Confirmar nueva contrasena</span><input type="password" name="{{ password_form.new_password2.html_name }}" minlength="12" autocomplete="new-password" required></label>
-      <button type="submit">Actualizar contrasena</button>
-    </form>
-  </article>
+<section id="profile-tab-general" class="tab-panel active">
+  <div class="tab-grid">
+    <div class="panel">
+      <div class="metric-label">Editar perfil</div>
+      <form id="profile-form" class="stack" method="post" action="{% url 'accounts:profile-preferences' %}">
+        {% csrf_token %}
+        <label>
+          <span>Alias visible</span>
+          {{ preferences_form.display_name }}
+        </label>
+        <label>
+          <span>Tema preferido</span>
+          {{ preferences_form.theme_preference }}
+        </label>
+        <button class="primary" type="submit">Guardar perfil</button>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="metric-label">Identidad y preferencias</div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Usuario</span>
+          <span class="profile-note">@{{ current_user.username }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Rol</span>
+          <span class="profile-note">{{ current_user.role }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Alias</span>
+          <span class="profile-note">{{ current_user.display_alias_value }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Tema</span>
+          <span class="profile-note">{{ current_user.display_theme_label }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <aside class="panel">
-    <h2>Sesiones</h2>
-    <div class="stack">
+<section id="profile-tab-security" class="tab-panel">
+  <div class="tab-grid">
+    <div class="panel">
+      <div class="metric-label">Cambiar contrasena</div>
+      <form class="stack" method="post" action="{% url 'accounts:profile-password' %}">
+        {% csrf_token %}
+        <label><span>Contrasena actual</span><input type="password" name="{{ password_form.old_password.html_name }}" autocomplete="current-password" required></label>
+        <label><span>Nueva contrasena</span><input type="password" name="{{ password_form.new_password1.html_name }}" minlength="12" autocomplete="new-password" required></label>
+        <label><span>Confirmar nueva contrasena</span><input type="password" name="{{ password_form.new_password2.html_name }}" minlength="12" autocomplete="new-password" required></label>
+        <button class="primary" type="submit">Actualizar contrasena</button>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="metric-label">Estado de seguridad</div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Politica</span>
+          <span class="profile-note">12+ / mayus / minus / numero / simbolo</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Cambio obligatorio</span>
+          <span class="profile-note {% if current_user.must_change_password %}warn-text{% endif %}">
+            {% if current_user.must_change_password %}Pendiente{% else %}No{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="profile-tab-sessions" class="tab-panel">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="metric-label">Sesiones registradas</div>
+        <p class="muted panel-copy">Puedes revocar sesiones antiguas y cerrar el resto si detectas actividad sospechosa.</p>
+      </div>
+      <form method="post" action="{% url 'accounts:profile-revoke-others' %}">
+        {% csrf_token %}
+        <button type="submit">Cerrar otras sesiones</button>
+      </form>
+    </div>
+
+    <div class="events">
       {% for session in user_sessions %}
-      <div class="panel">
-        <p><strong>{% if session.is_current %}Sesion actual{% elif session.revoked %}Sesion revocada{% else %}Sesion activa{% endif %}</strong></p>
-        <p>Ultima actividad: {{ session.last_seen_at }}</p>
-        {% if session.ip_address %}<p>IP: {{ session.ip_address }}</p>{% endif %}
-        {% if session.user_agent %}<p>{{ session.user_agent|truncatechars:72 }}</p>{% endif %}
+      <div class="event ev-{% if session.revoked %}DEGRADADO{% else %}OPERATIVO{% endif %}{% if session.is_current %} event-current{% endif %}">
+        <div class="ev-top">
+          <span class="ev-dot"></span>
+          <span class="ev-state">{% if session.is_current %}Sesion actual{% elif session.revoked %}Sesion revocada{% else %}Sesion activa{% endif %}</span>
+          <span class="session-state-badge {% if session.is_current %}current{% elif session.revoked %}revoked{% else %}active{% endif %}">
+            {% if session.is_current %}En uso{% elif session.revoked %}Revocada{% else %}Disponible{% endif %}
+          </span>
+        </div>
+        <div class="session-meta-line">
+          <span class="session-meta-item">Ultima actividad: {{ session.last_seen_at }}</span>
+          {% if session.ip_address %}<span class="session-meta-item">IP: {{ session.ip_address }}</span>{% endif %}
+          {% if session.user_agent %}<span class="session-meta-item">{{ session.user_agent|truncatechars:72 }}</span>{% endif %}
+        </div>
         {% if not session.is_current and not session.revoked %}
-        <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}">
+        <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}" style="margin-top:10px;">
           {% csrf_token %}
-          <button type="submit">Revocar sesion</button>
+          <button type="submit" class="danger">Revocar sesion</button>
         </form>
         {% endif %}
       </div>
       {% empty %}
-      <p>No hay sesiones registradas.</p>
+      <p class="muted">No hay sesiones registradas.</p>
       {% endfor %}
     </div>
-
-    <form class="stack" method="post" action="{% url 'accounts:profile-revoke-others' %}" style="margin-top:16px;">
-      {% csrf_token %}
-      <button type="submit">Cerrar otras sesiones</button>
-    </form>
-
-    {% if can_access_admin %}
-    <p style="margin-top:16px;"><a href="/admin/">Ir a administracion</a></p>
-    {% endif %}
-  </aside>
+  </div>
 </section>
+
+<script>
+  document.querySelectorAll(".tab-nav").forEach((nav) => {
+    nav.querySelectorAll("button[data-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        nav.querySelectorAll("button[data-tab]").forEach((b) => {
+          b.classList.remove("active");
+          b.setAttribute("aria-selected", "false");
+        });
+        btn.classList.add("active");
+        btn.setAttribute("aria-selected", "true");
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        const target = document.getElementById(btn.dataset.tab);
+        if (target) target.classList.add("active");
+      });
+    });
+  });
+</script>
 {% endblock %}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -23,7 +24,12 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 def _default_sqlite_path() -> str:
-    return str(PROJECT_DIR / "django-dev.sqlite3")
+    explicit = os.environ.get("AMELI_APP_SQLITE_PATH", "").strip()
+    if explicit:
+        return explicit
+    if CFG.data_dir:
+        return str(CFG.data_dir / "django-dev.sqlite3")
+    return str(Path(tempfile.gettempdir()) / "ameli-app-template-django-dev.sqlite3")
 
 
 def _database_settings() -> dict[str, str]:

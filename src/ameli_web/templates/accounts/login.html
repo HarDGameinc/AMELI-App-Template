@@ -5,13 +5,18 @@
 {% block header_subtitle %}Acceso autenticado a perfil, administracion y documentacion{% endblock %}
 
 {% block content %}
-<section class="grid">
-  <article class="panel">
-    <h2>Entrar a mi cuenta</h2>
-    <p>Usa una cuenta del template para abrir tu perfil y, si corresponde, la administracion.</p>
+<section class="login-shell">
+  <article class="panel login-panel">
+    <div class="metric-label">Sesion autenticada</div>
+    <h2 style="margin:0 0 12px;font-size:28px;line-height:1.1;">Entrar a mi cuenta</h2>
+    <p class="muted panel-copy">Usa una cuenta del template para abrir tu perfil y, si corresponde, la administracion.</p>
     <form class="stack" method="post" action="">
       {% csrf_token %}
-      {{ form.non_field_errors }}
+      {% if form.non_field_errors %}
+      <div class="error" style="display:block;">
+        {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+      </div>
+      {% endif %}
       <label>
         <span>Usuario</span>
         <input type="text" name="{{ form.username.html_name }}" value="{{ form.username.value|default:'' }}" autocomplete="username" required>
@@ -21,18 +26,38 @@
         <input type="password" name="{{ form.password.html_name }}" autocomplete="current-password" required>
       </label>
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-      <button type="submit">Ingresar</button>
+      <button class="primary" type="submit">Ingresar</button>
     </form>
   </article>
+
   <aside class="panel">
-    <h2>Base estandar</h2>
-    <p>Este template deja lista la capa de usuarios, sesiones, perfil, admin, auditoria y documentacion API para apps AMELI con exposicion publica.</p>
-    <dl style="margin-top:16px;">
-      <dt>Docs</dt><dd>/docs y /redoc</dd>
-      <dt>Perfil</dt><dd>/profile</dd>
-      <dt>Admin</dt><dd>/admin</dd>
-      <dt>Version</dt><dd>{{ version }}</dd>
-    </dl>
+    <div class="metric-label">Perfiles disponibles</div>
+    <div class="profile-matrix compact">
+      <article class="profile-option active">
+        <div class="profile-option-head">
+          <span class="status-pill OPERATIVO">SUPERADMIN</span>
+          <strong>Acceso completo</strong>
+        </div>
+        <p class="muted">Puede abrir su perfil, usar el admin base de Django y gestionar usuarios, auditoria y sesiones.</p>
+      </article>
+      <article class="profile-option">
+        <div class="profile-option-head">
+          <span class="status-pill OPERATIVO">PUBLIC</span>
+          <strong>Autoservicio</strong>
+        </div>
+        <p class="muted">Puede revisar su perfil, cambiar su contrasena y cerrar otras sesiones sin acceso a administracion.</p>
+      </article>
+    </div>
+    <div class="profile-card" style="margin-top:16px;">
+      <div class="profile-row">
+        <span class="metric-label">Docs</span>
+        <span class="profile-note">{% if docs_enabled %}/docs{% else %}off{% endif %}</span>
+      </div>
+      <div class="profile-row">
+        <span class="metric-label">Version</span>
+        <span class="profile-note">{{ version }}</span>
+      </div>
+    </div>
   </aside>
 </section>
 {% endblock %}

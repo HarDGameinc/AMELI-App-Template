@@ -1,57 +1,119 @@
 {% extends "base.html" %}
 
-{% block title %}{{ settings.CFG.app_name }}{% endblock %}
+{% block title %}{{ app_name }}{% endblock %}
 {% block header_title %}{{ app_name }}{% endblock %}
-{% block header_subtitle %}Template Django-first para apps AMELI con usuarios, perfil, admin y docs{% endblock %}
+{% block header_subtitle %}Template Django-first para apps AMELI con cuentas, perfil, administracion y documentacion API{% endblock %}
 
 {% block content %}
 {% if access_notice %}
-<section class="panel" style="margin-bottom:16px;"><p>{{ access_notice }}</p></section>
+<section class="panel notice-panel">
+  <div class="metric-label">Acceso web</div>
+  <p class="muted">{{ access_notice }}</p>
+</section>
 {% endif %}
 
-<section class="grid">
+<section class="summary">
+  <div class="panel">
+    <div class="metric-label">Version</div>
+    <div class="metric-value metric-value-sm">{{ version }}</div>
+    <div class="fresh">Estado del template</div>
+  </div>
+  <div class="panel">
+    <div class="metric-label">Entorno</div>
+    <div class="metric-value metric-value-sm">{{ environment }}</div>
+    <div class="fresh">{{ config.host }}:{{ config.api_port }}</div>
+  </div>
+  <div class="panel">
+    <div class="metric-label">Autenticacion</div>
+    <div class="metric-value metric-value-sm">{% if features.auth_enabled %}Activa{% else %}Deshabilitada{% endif %}</div>
+    <div class="fresh {% if features.auth_enabled %}fresh-ok{% else %}fresh-warn{% endif %}">Sesion web oficial</div>
+  </div>
+  <div class="panel">
+    <div class="metric-label">Documentacion</div>
+    <div class="metric-value metric-value-sm">{% if features.docs_enabled %}/docs{% else %}Off{% endif %}</div>
+    <div class="fresh">{% if features.redoc_enabled %}/redoc{% else %}ReDoc off{% endif %}</div>
+  </div>
+  <div class="panel">
+    <div class="metric-label">Base de datos</div>
+    <div class="metric-value metric-value-sm">{% if database.ok %}Lista{% else %}Revision{% endif %}</div>
+    <div class="fresh {% if database.ok %}fresh-ok{% else %}fresh-warn{% endif %}">{{ database.message }}</div>
+  </div>
+</section>
+
+<section class="panel notice-panel source-policy-panel">
+  <div class="metric-label">Direccion del template</div>
+  <div class="profile-inline-meta">
+    <span class="profile-meta-chip">Django ASGI oficial</span>
+    <span class="profile-meta-chip">Perfil + admin + auditoria</span>
+    <span class="profile-meta-chip">/docs y /redoc</span>
+  </div>
+  <p class="muted panel-copy">Usa esta base para lanzar nuevas apps AMELI con usuarios reales sin rehacer autenticacion, sesiones, perfil, auditoria ni operacion web.</p>
+</section>
+
+<section class="tab-grid wide">
   <article class="panel">
-    <h2>Resumen de la plantilla</h2>
-    <p>Esta base deja lista la capa web oficial en Django ASGI y un set minimo reutilizable para apps AMELI expuestas a internet.</p>
-    <dl style="margin-top:16px;">
-      <dt>Version</dt><dd>{{ version }}</dd>
-      <dt>Entorno</dt><dd>{{ environment }}</dd>
-      <dt>Auth</dt><dd>{% if features.auth_enabled %}habilitada{% else %}deshabilitada{% endif %}</dd>
-      <dt>Admin</dt><dd>{% if features.admin_enabled %}habilitado{% else %}deshabilitado{% endif %}</dd>
-      <dt>Docs</dt><dd>{% if features.docs_enabled %}/docs{% else %}deshabilitadas{% endif %}</dd>
-      <dt>ReDoc</dt><dd>{% if features.redoc_enabled %}/redoc{% else %}deshabilitado{% endif %}</dd>
-    </dl>
+    <div class="panel-header">
+      <div>
+        <div class="metric-label">Capacidades listas para heredar</div>
+        <p class="muted panel-copy">La plantilla ya incluye el shell comun que antes habia que construir proyecto por proyecto.</p>
+      </div>
+    </div>
+    <div class="events">
+      <div class="event ev-OPERATIVO">
+        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Cuenta y autenticacion</span></div>
+        <div class="session-meta-line">
+          <span class="session-meta-item">login/logout</span>
+          <span class="session-meta-item">cambio obligatorio de clave</span>
+          <span class="session-meta-item">politica fuerte</span>
+        </div>
+      </div>
+      <div class="event ev-OPERATIVO">
+        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Perfil de usuario</span></div>
+        <div class="session-meta-line">
+          <span class="session-meta-item">tema</span>
+          <span class="session-meta-item">alias</span>
+          <span class="session-meta-item">sesiones recientes</span>
+        </div>
+      </div>
+      <div class="event ev-OPERATIVO">
+        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Administracion</span></div>
+        <div class="session-meta-line">
+          <span class="session-meta-item">usuarios</span>
+          <span class="session-meta-item">auditoria</span>
+          <span class="session-meta-item">revocacion de sesiones</span>
+        </div>
+      </div>
+      <div class="event ev-OPERATIVO">
+        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Operacion y despliegue</span></div>
+        <div class="session-meta-line">
+          <span class="session-meta-item">install/update</span>
+          <span class="session-meta-item">systemd</span>
+          <span class="session-meta-item">validate_installation</span>
+        </div>
+      </div>
+    </div>
   </article>
 
   <aside class="panel">
-    <h2>Estado operativo</h2>
-    <dl>
-      <dt>Database</dt><dd>{% if database.ok %}alcanzable{% else %}problema{% endif %}</dd>
-      <dt>Configurada</dt><dd>{% if database.configured %}si{% else %}no{% endif %}</dd>
-      <dt>Mensaje</dt><dd>{{ database.message }}</dd>
-    </dl>
+    <div class="metric-label">Siguientes pasos para una app nueva</div>
+    <div class="profile-card">
+      <div class="profile-row">
+        <span class="metric-label">1. Renombrar paquete</span>
+        <span class="profile-note">ameli_app -> tu app</span>
+      </div>
+      <div class="profile-row">
+        <span class="metric-label">2. Definir dominio</span>
+        <span class="profile-note">workers y modelos propios</span>
+      </div>
+      <div class="profile-row">
+        <span class="metric-label">3. Bootstrap admin</span>
+        <span class="profile-note">primer login seguro</span>
+      </div>
+      <div class="profile-row">
+        <span class="metric-label">4. Documentar</span>
+        <span class="profile-note">README + AGENTS</span>
+      </div>
+    </div>
   </aside>
-</section>
-
-<section class="panel" style="margin-top:16px;">
-  <h2>Capacidades base</h2>
-  <div class="grid">
-    <div class="panel">
-      <p><strong>Autenticacion</strong></p>
-      <p>Login/logout, sesiones persistentes, cambio obligatorio de contrasena y politica fuerte.</p>
-    </div>
-    <div class="panel">
-      <p><strong>Cuenta</strong></p>
-      <p>Perfil de usuario, tema, sesiones recientes y autoservicio base.</p>
-    </div>
-    <div class="panel">
-      <p><strong>Administracion</strong></p>
-      <p>Usuarios, auditoria, sesiones y bootstrap de superadmin.</p>
-    </div>
-    <div class="panel">
-      <p><strong>Documentacion</strong></p>
-      <p>Swagger UI y ReDoc servidos desde la capa Django oficial.</p>
-    </div>
-  </div>
 </section>
 {% endblock %}

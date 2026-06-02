@@ -5,47 +5,60 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,600,0,0" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
   </head>
   <body>
-    <main class="page">
-      <section class="toolbar">
-        <div>
-          <p class="eyebrow">{% block eyebrow %}django-first template{% endblock %}</p>
-          <h1>{% block header_title %}{{ app_name }}{% endblock %}</h1>
-          <p class="muted">{% block header_subtitle %}Base comun para apps AMELI con usuarios reales{% endblock %}</p>
-        </div>
-        <div class="toolbar">
-          <a class="status" href="/">Dashboard</a>
-          {% if current_user and can_access_admin %}
-          <a class="status" href="/admin/">Administracion</a>
-          {% endif %}
-          {% if docs_enabled %}<a class="status" href="/docs">API Docs</a>{% endif %}
-          {% if redoc_enabled %}<a class="status" href="/redoc">ReDoc</a>{% endif %}
-          {% if current_user %}
-          <a class="status" href="{% url 'accounts:profile' %}">@{{ current_user.username }}</a>
-          <form method="post" action="{% url 'accounts:logout' %}">
-            {% csrf_token %}
-            <button type="submit">Cerrar sesion</button>
-          </form>
-          {% else %}
-          <a class="status" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Ingresar</a>
-          {% endif %}
-        </div>
-      </section>
+    <header>
+      <div>
+        <h1>{% block header_title %}{{ app_name }}{% endblock %}</h1>
+        <div class="metric-label">{% block header_subtitle %}Base comun para apps AMELI con usuarios reales{% endblock %}</div>
+      </div>
+      <div class="toolbar">
+        <a class="src-badge primary" href="/">Dashboard</a>
+        {% if current_user and can_access_admin %}
+        <a class="src-badge primary" href="/admin/">Administracion</a>
+        {% endif %}
+        {% if docs_enabled %}<a class="src-badge primary" href="/docs">API Docs</a>{% endif %}
+        {% if redoc_enabled %}<a class="src-badge primary" href="/redoc">ReDoc</a>{% endif %}
+        {% if current_user %}
+        <a class="src-badge primary" href="{% url 'accounts:profile' %}">@{{ current_user.username }}</a>
+        <form method="post" action="{% url 'accounts:logout' %}">
+          {% csrf_token %}
+          <button type="submit">Cerrar sesion</button>
+        </form>
+        {% else %}
+        <a class="primary account-login-link" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Ingresar</a>
+        {% endif %}
+      </div>
+    </header>
 
+    <main>
       {% block breadcrumbs %}{% endblock %}
 
       {% if messages %}
-      <section class="stack" style="margin-bottom:16px;">
+      <section class="panel notice-panel">
         {% for message in messages %}
-        <div class="panel"><p>{{ message }}</p></div>
+        <p class="muted">{{ message }}</p>
         {% endfor %}
       </section>
       {% endif %}
 
       {% block content %}{% endblock %}
     </main>
+
+    <footer>
+      <div class="footer-inner">
+        <div>{{ app_name }} <span id="footerVersion">{{ version|default:"" }}</span></div>
+        <div class="footer-links">
+          <a href="/health" target="_blank" rel="noopener">health</a>
+          {% if docs_enabled %}<a href="/docs">docs</a>{% endif %}
+          {% if redoc_enabled %}<a href="/redoc">redoc</a>{% endif %}
+        </div>
+      </div>
+    </footer>
     <script src="{% static 'js/app.js' %}"></script>
   </body>
-</html>
+  </html>

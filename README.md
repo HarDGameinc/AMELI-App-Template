@@ -75,6 +75,7 @@ día 1.
 7. Aplicar migraciones y validar Django:
 
    ```bash
+   export AMELI_APP_SQLITE_PATH="${PWD}/django-dev.sqlite3"
    python manage.py migrate
    python manage.py check
    ```
@@ -90,6 +91,20 @@ día 1.
    ```bash
    ameli-app bootstrap-admin --config config/app.yaml.example --username admin --password 'ChangeThisNow!1?' --must-change-password
    ```
+
+## Primera instalacion guiada
+
+Para un recorrido completo de primera instalacion, incluyendo:
+
+- quick start local con SQLite
+- primera instalacion Debian con PostgreSQL y systemd
+- bootstrap inicial del superadmin
+- validacion post-instalacion
+- update inicial y problemas comunes
+
+usar:
+
+- `docs/FIRST_INSTALL_DJANGO.md`
 
 ## Rutas base
 
