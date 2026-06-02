@@ -1,96 +1,311 @@
 {% extends "base.html" %}
 
-{% block title %}Administración - {{ settings.CFG.app_name }}{% endblock %}
-{% block header_title %}Administración{% endblock %}
-{% block header_subtitle %}Seguridad, cuentas, sesiones y auditoría{% endblock %}
+{% block title %}Administracion - {{ settings.CFG.app_name }}{% endblock %}
+{% block header_title %}Administracion{% endblock %}
+{% block header_subtitle %}Seguridad, cuentas, sesiones y auditoria{% endblock %}
 
 {% block breadcrumbs %}
-<p class="eyebrow" style="margin-bottom:16px;"><a href="/">Dashboard</a> / <strong>Administración</strong></p>
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/">Dashboard</a>
+  <span class="breadcrumbs-sep" aria-hidden="true">/</span>
+  <span class="breadcrumbs-current">Administracion</span>
+</nav>
 {% endblock %}
 
 {% block content %}
-<section class="grid">
-  <article class="panel">
-    <h2>Resumen</h2>
-    <dl>
-      <dt>Versión</dt><dd>{{ version }}</dd>
-      <dt>Usuarios</dt><dd>{{ user_summary.total }}</dd>
-      <dt>Activos</dt><dd>{{ user_summary.enabled }}</dd>
-      <dt>Deshabilitados</dt><dd>{{ user_summary.disabled }}</dd>
-      <dt>Cambio obligatorio</dt><dd>{{ user_summary.pending_password_changes }}</dd>
-    </dl>
-
-    <h2 style="margin-top:24px;">Crear usuario</h2>
-    <form id="create-user-form" class="stack">
-      <label><span>Usuario</span><input type="text" name="username" required></label>
-      <label><span>Contraseña</span><input type="password" name="password" minlength="12" required></label>
-      <label>
-        <span>Rol</span>
-        <select name="role">
-          <option value="public">public</option>
-          <option value="superadmin">superadmin</option>
-        </select>
-      </label>
-      <label><span><input type="checkbox" name="must_change_password"> exigir cambio inicial</span></label>
-      <button type="submit">Crear usuario</button>
-    </form>
-    <p class="feedback" id="create-user-feedback"></p>
-
-    <h2 style="margin-top:24px;">Cambiar mi contraseña</h2>
-    <form id="admin-password-form" class="stack">
-      <label><span>Contraseña actual</span><input type="password" name="current_password" required></label>
-      <label><span>Nueva contraseña</span><input type="password" name="new_password" minlength="12" required></label>
-      <button type="submit">Actualizar contraseña</button>
-    </form>
-    <p class="feedback" id="admin-password-feedback"></p>
-  </article>
-
-  <aside class="panel">
-    <h2>Usuarios</h2>
-    <div class="stack">
-      {% for user_item in users %}
-      <div class="panel">
-        <p><strong>{{ user_item.display_identity_name }}</strong></p>
-        <p>@{{ user_item.username }} · {{ user_item.role }}</p>
-        <p>{% if user_item.enabled %}activo{% else %}deshabilitado{% endif %}</p>
-        {% if user_item.must_change_password %}<p>cambio de contraseña pendiente</p>{% endif %}
-      </div>
-      {% empty %}
-      <p>No hay usuarios creados.</p>
-      {% endfor %}
+<section class="panel profile-hero">
+  <div class="profile-identity">
+    <div class="profile-avatar">
+      {{ current_user.initials }}
     </div>
-  </aside>
+    <div class="profile-identity-copy">
+      <h2 class="profile-name">Consola administrativa</h2>
+      <p class="muted profile-username">@{{ current_user.username }} · {{ current_user.role }}</p>
+      <div class="profile-badges">
+        <span class="status-pill {% if current_user.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}">
+          {% if current_user.enabled %}Activo{% else %}Deshabilitado{% endif %}
+        </span>
+        <span class="profile-meta-chip">Usuarios: {{ user_summary.total }}</span>
+        <span class="profile-meta-chip">{% if user_summary.pending_password_changes %}{{ user_summary.pending_password_changes }} con cambio pendiente{% else %}Sin cambios pendientes{% endif %}</span>
+      </div>
+    </div>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <span class="hero-stat-label">Version</span>
+      <span class="hero-stat-value">{{ version }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Usuarios activos</span>
+      <span class="hero-stat-value">{{ user_summary.enabled }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Sesiones recientes</span>
+      <span class="hero-stat-value">{{ recent_sessions|length }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Auditoria</span>
+      <span class="hero-stat-value">{{ audit_entries|length }} eventos</span>
+    </div>
+  </div>
+  <div class="hero-actions">
+    <a class="icon-action primary" href="#admin-create-user">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person_add</span>
+      <span>Crear usuario</span>
+    </a>
+    <a class="icon-action profile-admin-link" href="{% url 'accounts:profile' %}">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
+      <span>Volver a mi perfil</span>
+    </a>
+  </div>
 </section>
 
-<section class="grid" style="margin-top:16px;">
-  <article class="panel">
-    <h2>Auditoría reciente</h2>
-    <div class="stack">
-      {% for item in audit_entries %}
-      <div class="panel">
-        <p><strong>{{ item.display_action }}</strong></p>
-        <p>Actor: {{ item.display_actor }} · Objetivo: {{ item.display_target }}</p>
-        <p>{{ item.display_time }}</p>
-      </div>
-      {% empty %}
-      <p>Sin auditoría registrada.</p>
-      {% endfor %}
-    </div>
+<section class="summary-cards-compact" style="margin-bottom:16px;">
+  <article class="summary-card-compact">
+    <span class="metric-label">Total</span>
+    <strong>{{ user_summary.total }}</strong>
+    <span class="muted">usuarios creados</span>
   </article>
-  <aside class="panel">
-    <h2>Sesiones recientes</h2>
-    <div class="stack">
-      {% for session in recent_sessions %}
-      <div class="panel">
-        <p><strong>{{ session.username }}</strong>{% if session.is_current %} · actual{% endif %}</p>
-        <p>Última actividad: {{ session.display_last_seen_at }}</p>
-        {% if session.ip_address %}<p>IP: {{ session.ip_address }}</p>{% endif %}
+  <article class="summary-card-compact">
+    <span class="metric-label">Activos</span>
+    <strong>{{ user_summary.enabled }}</strong>
+    <span class="muted">con acceso habilitado</span>
+  </article>
+  <article class="summary-card-compact">
+    <span class="metric-label">Deshabilitados</span>
+    <strong>{{ user_summary.disabled }}</strong>
+    <span class="muted">sin ingreso web</span>
+  </article>
+  <article class="summary-card-compact">
+    <span class="metric-label">Cambio obligatorio</span>
+    <strong>{{ user_summary.pending_password_changes }}</strong>
+    <span class="muted">requieren nueva clave</span>
+  </article>
+</section>
+
+<section class="admin-layout">
+  <div class="admin-layout-main">
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="metric-label">Acciones de seguridad</div>
+          <p class="muted panel-copy">La misma base del Template ya deja listas altas de usuarios, cambio de contrasena del superadmin y auditoria operativa sin depender del admin nativo.</p>
+        </div>
       </div>
-      {% empty %}
-      <p>No hay sesiones recientes.</p>
-      {% endfor %}
-    </div>
-    <p style="margin-top:16px;"><a href="{{ native_admin_url }}">Ir al admin nativo Django</a></p>
+
+      <div class="form-grid-split">
+        <article class="form-card" id="admin-create-user">
+          <div class="form-card-head">
+            <h3 class="form-card-title">Crear usuario</h3>
+            <p class="muted panel-copy">Alta rapida de cuentas web para pruebas o futuras apps.</p>
+          </div>
+          <form id="create-user-form" class="admin-inline-form">
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_username">Usuario</label>
+              <input id="id_admin_username" class="modal-input" type="text" name="username" placeholder="nombre de usuario" required>
+            </div>
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_password">Contrasena inicial</label>
+              <input id="id_admin_password" class="modal-input" type="password" name="password" minlength="12" placeholder="Minimo 12 caracteres" required>
+            </div>
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_role">Rol</label>
+              <select id="id_admin_role" class="modal-input" name="role">
+                <option value="public">public</option>
+                <option value="superadmin">superadmin</option>
+              </select>
+            </div>
+            <label class="modal-form-check">
+              <input type="checkbox" name="must_change_password">
+              <span>Exigir cambio de contrasena en el primer ingreso</span>
+            </label>
+            <div class="modal-actions-row">
+              <button class="primary" type="submit">Crear usuario</button>
+            </div>
+          </form>
+          <p class="muted" id="create-user-feedback"></p>
+        </article>
+
+        <article class="form-card">
+          <div class="form-card-head">
+            <h3 class="form-card-title">Cambiar mi contrasena</h3>
+            <p class="muted panel-copy">Mantiene el mismo patron de seguridad que Metro para la cuenta administradora.</p>
+          </div>
+          <form id="admin-password-form" class="admin-inline-form">
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_current_password">Contrasena actual</label>
+              <input id="id_admin_current_password" class="modal-input" type="password" name="current_password" placeholder="Tu clave actual" required>
+            </div>
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_new_password">Nueva contrasena</label>
+              <input id="id_admin_new_password" class="modal-input" type="password" name="new_password" minlength="12" placeholder="Nueva clave segura" required>
+            </div>
+            <div class="modal-actions-row">
+              <button class="primary" type="submit">Actualizar contrasena</button>
+            </div>
+          </form>
+          <p class="muted" id="admin-password-feedback"></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="metric-label">Usuarios configurados</div>
+          <p class="muted panel-copy">Vista operativa para revisar estado, rol y necesidad de rotacion de clave.</p>
+        </div>
+      </div>
+
+      <div class="users-toolbar">
+        <input type="search" id="users-search" class="users-toolbar-input" placeholder="Buscar por usuario o alias..." autocomplete="off">
+        <select id="users-filter-role" class="users-toolbar-input">
+          <option value="">Todos los roles</option>
+          <option value="superadmin">superadmin</option>
+          <option value="public">public</option>
+        </select>
+        <select id="users-filter-status" class="users-toolbar-input">
+          <option value="">Todos los estados</option>
+          <option value="enabled">Activos</option>
+          <option value="disabled">Deshabilitados</option>
+        </select>
+      </div>
+
+      <div class="admin-user-list" id="users-list">
+        {% for user_item in users %}
+        <article class="event ev-{% if user_item.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}"
+                 data-username="{{ user_item.username|lower }}"
+                 data-display-name="{{ user_item.display_name|default:''|lower }}"
+                 data-role="{{ user_item.role }}"
+                 data-enabled="{% if user_item.enabled %}enabled{% else %}disabled{% endif %}">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <div class="admin-user-title">
+              <strong>{{ user_item.display_identity_name }}</strong>
+              <span class="admin-user-subline">@{{ user_item.username }} · {{ user_item.role }}</span>
+            </div>
+            <span class="session-state-badge {% if user_item.enabled %}active{% else %}revoked{% endif %}">
+              {% if user_item.enabled %}Activo{% else %}Deshabilitado{% endif %}
+            </span>
+            {% if user_item.must_change_password %}
+            <span class="session-state-badge warning">Cambio pendiente</span>
+            {% endif %}
+          </div>
+          <div class="admin-user-summary">
+            <span class="session-meta-item">Creado: {{ user_item.display_created_at }}</span>
+            <span class="session-meta-item">Actualizado: {{ user_item.display_updated_at }}</span>
+            <span class="session-meta-item">Ultimo acceso: {{ user_item.display_last_login_at }}</span>
+            <span class="session-meta-item">Tema: {{ user_item.display_theme_label }}</span>
+          </div>
+        </article>
+        {% empty %}
+        <div class="empty-state">No hay usuarios creados todavia.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="metric-label">Auditoria reciente</div>
+          <p class="muted panel-copy">Registro liviano de login, bootstrap, cambios y otras acciones sensibles.</p>
+        </div>
+      </div>
+
+      <div class="events">
+        {% for item in audit_entries %}
+        <article class="event ev-{{ item.display_tone }}">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">{{ item.display_action }}</span>
+            <span class="session-state-badge {% if item.display_result_class == 'error' %}warning{% else %}active{% endif %}">
+              {{ item.display_result_label }}
+            </span>
+            <span class="ev-dur">{{ item.display_time }}</span>
+          </div>
+          <div class="audit-meta-grid">
+            <div class="audit-meta-line">
+              <span class="audit-chip">Actor: {{ item.display_actor }}</span>
+              <span class="audit-chip">Objetivo: {{ item.display_target }}</span>
+            </div>
+            {% if item.display_reason or item.display_path %}
+            <div class="audit-meta-line">
+              {% if item.display_reason %}<span class="audit-chip subtle">Motivo: {{ item.display_reason }}</span>{% endif %}
+              {% if item.display_path %}<span class="audit-chip subtle">Ruta: {{ item.display_path }}</span>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+        </article>
+        {% empty %}
+        <div class="empty-state">Todavia no hay eventos de auditoria.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <aside class="admin-layout-side">
+    <section class="panel">
+      <div class="metric-label">Cuenta actual</div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Identidad</span>
+          <span class="profile-note">{{ current_user.display_identity_name }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Rol</span>
+          <span class="profile-note">{{ current_user.role }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Estado</span>
+          <span class="profile-note {% if not current_user.enabled %}warn-text{% endif %}">
+            {% if current_user.enabled %}Activo{% else %}Deshabilitado{% endif %}
+          </span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Seguridad</span>
+          <span class="profile-note {% if current_user.must_change_password %}warn-text{% endif %}">
+            {% if current_user.must_change_password %}Cambio pendiente{% else %}Sin alertas{% endif %}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="metric-label">Sesiones recientes</div>
+      <div class="events">
+        {% for session in recent_sessions %}
+        <article class="event ev-{% if session.revoked %}DEGRADADO{% else %}OPERATIVO{% endif %}{% if session.is_current %} event-current{% endif %}">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">{{ session.username }}</span>
+            <span class="session-state-badge {% if session.is_current %}current{% elif session.revoked %}revoked{% else %}active{% endif %}">
+              {% if session.is_current %}Sesion actual{% elif session.revoked %}Revocada{% else %}Activa{% endif %}
+            </span>
+          </div>
+          <div class="admin-inline-meta">
+            <span class="session-meta-item">{{ session.display_last_seen_at }}</span>
+            {% if session.ip_address %}<span class="session-meta-item">{{ session.ip_address }}</span>{% endif %}
+          </div>
+        </article>
+        {% empty %}
+        <div class="empty-state">No hay sesiones recientes.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="metric-label">Accesos rapidos</div>
+      <div class="admin-link-list">
+        <a class="icon-action" href="{% url 'accounts:profile' %}">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
+          <span>Mi perfil</span>
+        </a>
+        <a class="icon-action" href="{{ native_admin_url }}">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield</span>
+          <span>Admin nativo Django</span>
+        </a>
+      </div>
+    </section>
   </aside>
 </section>
 
@@ -107,7 +322,7 @@
     });
     const data = await response.json();
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Operación no completada.");
+      throw new Error(data.error || "Operacion no completada.");
     }
     return data;
   }
@@ -126,7 +341,7 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         });
-        feedback.textContent = "Operación completada. Recargando...";
+        feedback.textContent = "Operacion completada. Recargando...";
         window.setTimeout(() => window.location.reload(), 400);
       } catch (error) {
         feedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
@@ -142,5 +357,31 @@
   }));
 
   bindJsonForm("admin-password-form", "admin-password-feedback", "/admin/change-password", (payload) => payload);
+
+  const usersSearch = document.getElementById("users-search");
+  const usersFilterRole = document.getElementById("users-filter-role");
+  const usersFilterStatus = document.getElementById("users-filter-status");
+  const usersList = document.getElementById("users-list");
+
+  function applyUserFilters() {
+    if (!usersList) return;
+    const term = (usersSearch?.value || "").trim().toLowerCase();
+    const role = usersFilterRole?.value || "";
+    const status = usersFilterStatus?.value || "";
+    usersList.querySelectorAll("[data-username]").forEach((row) => {
+      const username = row.dataset.username || "";
+      const displayName = row.dataset.displayName || "";
+      const rowRole = row.dataset.role || "";
+      const rowStatus = row.dataset.enabled || "";
+      const matchesTerm = !term || username.includes(term) || displayName.includes(term);
+      const matchesRole = !role || rowRole === role;
+      const matchesStatus = !status || rowStatus === status;
+      row.hidden = !(matchesTerm && matchesRole && matchesStatus);
+    });
+  }
+
+  usersSearch?.addEventListener("input", applyUserFilters);
+  usersFilterRole?.addEventListener("change", applyUserFilters);
+  usersFilterStatus?.addEventListener("change", applyUserFilters);
 </script>
 {% endblock %}

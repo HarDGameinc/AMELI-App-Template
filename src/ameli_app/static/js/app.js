@@ -14,3 +14,36 @@ async function refreshHealthBadge() {
 }
 
 refreshHealthBadge();
+
+function setupUserMenu() {
+  const toggle = document.querySelector("[data-user-menu-toggle]");
+  const panel = document.querySelector("[data-user-menu-panel]");
+  if (!(toggle instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
+
+  function closeMenu() {
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  }
+
+  function openMenu() {
+    panel.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+  }
+
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (panel.hidden) {
+      openMenu();
+      return;
+    }
+    closeMenu();
+  });
+
+  panel.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", closeMenu);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
+}
+
+setupUserMenu();

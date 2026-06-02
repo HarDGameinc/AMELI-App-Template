@@ -346,6 +346,11 @@
              border-radius:8px; padding:16px; }
     .login-shell { display:grid; grid-template-columns:minmax(320px, 520px) minmax(260px, 1fr); gap:16px; align-items:start; }
     .login-panel { max-width:520px; }
+    .login-panel .modal-copy { max-width:46ch; }
+    .login-meta-grid { display:grid; gap:12px; }
+    .login-metrics { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+    .login-metric { border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+             background:rgba(127,140,170,.06); display:grid; gap:4px; }
     .panel-header { display:flex; align-items:flex-start; justify-content:space-between;
              gap:16px; margin-bottom:14px; }
     .panel-header-stacked { margin-bottom:14px; }
@@ -403,6 +408,39 @@
              background:var(--surface); color:var(--ink); font-size:13px; }
     .users-toolbar-input:focus { outline:none; border-color:var(--accent); }
     select.users-toolbar-input { flex:0 0 auto; min-width:160px; }
+    .summary-cards-compact { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+    .summary-card-compact { border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+             background:rgba(127,140,170,.06); display:grid; gap:4px; }
+    .summary-card-compact strong { font-size:22px; line-height:1; }
+    .admin-layout { display:grid; gap:16px; align-items:start; }
+    .admin-layout-main { display:grid; gap:16px; }
+    .admin-layout-side { display:grid; gap:16px; }
+    @media (min-width:980px) {
+      .admin-layout { grid-template-columns:minmax(0,1.5fr) minmax(300px,.9fr); }
+    }
+    .form-grid-split { display:grid; gap:16px; }
+    @media (min-width:900px) {
+      .form-grid-split { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    .form-card { display:grid; gap:14px; }
+    .form-card-head { display:grid; gap:6px; }
+    .form-card-title { margin:0; font-size:20px; line-height:1.15; }
+    .form-card .modal-actions-row { margin-top:2px; justify-content:flex-start; }
+    .admin-user-list { display:grid; gap:8px; }
+    .admin-user-list .event { padding:12px 14px; }
+    .admin-user-list .event .ev-top { align-items:flex-start; flex-wrap:wrap; }
+    .admin-user-title { display:grid; gap:2px; }
+    .admin-user-title strong { font-size:14px; }
+    .admin-user-subline { color:var(--muted); font-size:12px; }
+    .admin-user-summary { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .admin-side-stack { display:grid; gap:12px; }
+    .empty-state { border:1px dashed var(--line); border-radius:12px; padding:16px;
+             color:var(--muted); background:rgba(127,140,170,.04); }
+    .admin-inline-form { display:flex; flex-direction:column; gap:12px; }
+    .admin-inline-meta { display:flex; flex-wrap:wrap; gap:8px; }
+    .admin-inline-meta .session-meta-item { font-weight:600; }
+    .admin-link-list { display:grid; gap:8px; }
+    .login-shell .profile-card { margin-top:16px; }
     .status-pill { display:inline-flex; align-items:center; min-height:28px;
              border-radius:999px; padding:0 10px; font-size:12px; font-weight:700;
              color:#fff; white-space:nowrap; }

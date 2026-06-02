@@ -8,54 +8,73 @@
 <section class="login-shell">
   <article class="panel login-panel">
     <div class="metric-label">Sesion autenticada</div>
-    <h2 style="margin:0 0 12px;font-size:28px;line-height:1.1;">Entrar a mi cuenta</h2>
-    <p class="muted panel-copy">Usa una cuenta del template para abrir tu perfil y, si corresponde, la administracion.</p>
-    <form class="stack" method="post" action="">
+    <h2 class="modal-title">Entrar a mi cuenta</h2>
+    <p class="muted modal-copy">Usa una cuenta del template para abrir tu perfil y, si corresponde, la administracion. Mantiene el mismo patron de acceso seguro que ya estamos usando en Metro.</p>
+    <form class="login-form" method="post" action="">
       {% csrf_token %}
       {% if form.non_field_errors %}
-      <div class="error" style="display:block;">
+      <div class="login-form-error visible">
         {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
       </div>
       {% endif %}
-      <label>
-        <span>Usuario</span>
-        <input type="text" name="{{ form.username.html_name }}" value="{{ form.username.value|default:'' }}" autocomplete="username" required>
+      <label class="login-form-label" for="id_login_username">
+        Usuario
       </label>
-      <label>
-        <span>Contrasena</span>
-        <input type="password" name="{{ form.password.html_name }}" autocomplete="current-password" required>
+      <input id="id_login_username" class="login-form-input" type="text" name="{{ form.username.html_name }}" value="{{ form.username.value|default:'' }}" autocomplete="username" placeholder="admin o nombre de usuario" required>
+
+      <label class="login-form-label" for="id_login_password">
+        Contrasena
       </label>
+      <input id="id_login_password" class="login-form-input" type="password" name="{{ form.password.html_name }}" autocomplete="current-password" placeholder="Tu contrasena" required>
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-      <button class="primary" type="submit">Ingresar</button>
+      <button class="primary login-form-submit" type="submit">Ingresar</button>
     </form>
   </article>
 
   <aside class="panel">
-    <div class="metric-label">Perfiles disponibles</div>
-    <div class="profile-matrix compact">
-      <article class="profile-option active">
-        <div class="profile-option-head">
-          <span class="status-pill OPERATIVO">SUPERADMIN</span>
-          <strong>Acceso completo</strong>
+    <div class="login-meta-grid">
+      <div>
+        <div class="metric-label">Perfiles disponibles</div>
+        <div class="profile-matrix compact">
+          <article class="profile-option active">
+            <div class="profile-option-head">
+              <span class="status-pill OPERATIVO">SUPERADMIN</span>
+              <strong>Acceso completo</strong>
+            </div>
+            <p class="muted">Puede abrir su perfil, entrar a administracion, gestionar usuarios y revisar auditoria y sesiones.</p>
+          </article>
+          <article class="profile-option">
+            <div class="profile-option-head">
+              <span class="status-pill OPERATIVO">PUBLIC</span>
+              <strong>Autoservicio</strong>
+            </div>
+            <p class="muted">Puede revisar su perfil, cambiar su contrasena y cerrar otras sesiones sin acceso administrativo.</p>
+          </article>
         </div>
-        <p class="muted">Puede abrir su perfil, usar el admin base de Django y gestionar usuarios, auditoria y sesiones.</p>
-      </article>
-      <article class="profile-option">
-        <div class="profile-option-head">
-          <span class="status-pill OPERATIVO">PUBLIC</span>
-          <strong>Autoservicio</strong>
+      </div>
+
+      <div class="login-metrics">
+        <div class="login-metric">
+          <span class="metric-label">Version</span>
+          <strong>{{ version }}</strong>
+          <span class="muted">Base Django-first</span>
         </div>
-        <p class="muted">Puede revisar su perfil, cambiar su contrasena y cerrar otras sesiones sin acceso a administracion.</p>
-      </article>
+        <div class="login-metric">
+          <span class="metric-label">Acceso</span>
+          <strong>{% if docs_enabled %}/docs{% else %}off{% endif %}</strong>
+          <span class="muted">Swagger y ReDoc</span>
+        </div>
+      </div>
     </div>
-    <div class="profile-card" style="margin-top:16px;">
+
+    <div class="profile-card">
       <div class="profile-row">
-        <span class="metric-label">Docs</span>
-        <span class="profile-note">{% if docs_enabled %}/docs{% else %}off{% endif %}</span>
+        <span class="metric-label">Direccion del template</span>
+        <span class="profile-note">Sesion + perfil + admin</span>
       </div>
       <div class="profile-row">
-        <span class="metric-label">Version</span>
-        <span class="profile-note">{{ version }}</span>
+        <span class="metric-label">Documentacion</span>
+        <span class="profile-note">{% if docs_enabled %}/docs{% else %}off{% endif %}{% if redoc_enabled %} · /redoc{% endif %}</span>
       </div>
     </div>
   </aside>

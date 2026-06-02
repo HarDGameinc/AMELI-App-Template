@@ -24,11 +24,52 @@
         {% if docs_enabled %}<a class="src-badge primary" href="/docs">API Docs</a>{% endif %}
         {% if redoc_enabled %}<a class="src-badge primary" href="/redoc">ReDoc</a>{% endif %}
         {% if current_user %}
-        <a class="src-badge primary" href="{% url 'accounts:profile' %}">@{{ current_user.username }}</a>
-        <form method="post" action="{% url 'accounts:logout' %}">
-          {% csrf_token %}
-          <button type="submit">Cerrar sesion</button>
-        </form>
+        <div class="user-menu">
+          <button class="user-menu-toggle account-entry" type="button" data-user-menu-toggle aria-expanded="false" aria-haspopup="true">
+            <span class="menu-avatar{% if current_user.has_avatar %} has-image{% endif %}">
+              {% if current_user.has_avatar %}
+              <img class="menu-avatar-image" src="{{ current_user.avatar_url }}" alt="">
+              {% else %}
+              {{ current_user.initials }}
+              {% endif %}
+            </span>
+            <span class="user-menu-copy">
+              <strong>{{ current_user.display_identity_name }}</strong>
+              <span>@{{ current_user.username }}</span>
+            </span>
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="user-menu-panel" data-user-menu-panel hidden>
+            <div class="user-menu-head">
+              <strong>{{ current_user.display_identity_name }}</strong>
+              <span class="user-menu-identity-line">
+                <span class="muted">@{{ current_user.username }} · {{ current_user.role }}</span>
+                <span class="status-pill {% if current_user.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %} status-pill-mini">
+                  {% if current_user.enabled %}activo{% else %}deshabilitado{% endif %}
+                </span>
+              </span>
+            </div>
+            <div class="user-menu-section-label">Navegacion</div>
+            <a class="icon-action" href="{% url 'accounts:profile' %}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
+              <span>Ver mi perfil</span>
+            </a>
+            {% if can_access_admin %}
+            <a class="icon-action" href="/admin/">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">settings</span>
+              <span>Ir a administracion</span>
+            </a>
+            {% endif %}
+            <hr class="menu-divider">
+            <form method="post" action="{% url 'accounts:logout' %}" class="menu-logout-form">
+              {% csrf_token %}
+              <button type="submit" class="icon-action menu-logout-btn">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">logout</span>
+                <span>Cerrar sesion</span>
+              </button>
+            </form>
+          </div>
+        </div>
         {% else %}
         <a class="primary account-login-link" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Ingresar</a>
         {% endif %}
