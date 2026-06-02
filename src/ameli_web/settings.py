@@ -43,7 +43,8 @@ def _database_settings() -> dict[str, str]:
         }
 
     parsed = urlparse(dsn)
-    if parsed.scheme not in {"postgres", "postgresql"}:
+    base_scheme = parsed.scheme.split("+", 1)[0]
+    if base_scheme not in {"postgres", "postgresql"}:
         raise RuntimeError(f"Unsupported DATABASE_URL scheme for Django: {parsed.scheme}")
     return {
         "ENGINE": "django.db.backends.postgresql",
