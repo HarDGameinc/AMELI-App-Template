@@ -254,10 +254,13 @@
 </section>
 
 <script>
+document.addEventListener("DOMContentLoaded", () => {
   const passwordForm = document.getElementById("profile-password-form");
   const passwordCurrentInput = document.getElementById("profile-cp-current");
   const passwordFeedback = document.getElementById("profile-password-feedback");
-  const passwordExperience = passwordForm ? window.AmeliPassword.setupForm(passwordForm) : null;
+  const passwordExperience = passwordForm && window.AmeliPassword
+    ? window.AmeliPassword.setupForm(passwordForm)
+    : null;
 
   document.querySelectorAll(".tab-nav").forEach((nav) => {
     nav.querySelectorAll("button[data-tab]").forEach((btn) => {
@@ -325,5 +328,6 @@
       }
     }
   });
+});
 </script>
 {% endblock %}

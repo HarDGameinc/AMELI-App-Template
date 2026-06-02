@@ -538,6 +538,7 @@
 </div>
 
 <script>
+document.addEventListener("DOMContentLoaded", () => {
   const csrfToken = "{{ csrf_token }}";
 
   async function requestJson(url, options = {}) {
@@ -847,5 +848,6 @@
         break;
     }
   });
+});
 </script>
 {% endblock %}
