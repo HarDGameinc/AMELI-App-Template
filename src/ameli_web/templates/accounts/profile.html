@@ -128,7 +128,7 @@
         <div class="metric-label">Cambiar contrasena</div>
         <p class="muted panel-copy">Mantiene la misma politica fuerte del Metro: 12 caracteres minimo, mezcla obligatoria y simbolos permitidos.</p>
       </div>
-      <form id="profile-password-form" class="form-card" method="post" action="{% url 'accounts:profile-password' %}">
+      <form id="profile-password-form" class="form-card" method="post" action="{% url 'accounts:profile-password' %}" data-password-form>
         {% csrf_token %}
         <div class="modal-form-row">
           <label class="modal-form-label" for="profile-cp-current">Contrasena actual</label>
@@ -142,7 +142,7 @@
         <div class="modal-form-row">
           <label class="modal-form-label" for="profile-cp-new">Nueva contrasena</label>
           <div class="modal-input-with-action">
-            <input id="profile-cp-new" class="modal-input" type="password" name="{{ password_form.new_password1.html_name }}" minlength="12" autocomplete="new-password" placeholder="Minimo 12 caracteres" required>
+            <input id="profile-cp-new" class="modal-input" type="password" name="{{ password_form.new_password1.html_name }}" minlength="12" autocomplete="new-password" placeholder="Minimo 12 caracteres" data-password-new required>
             <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-cp-new" aria-label="Mostrar u ocultar nueva contrasena">
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
             </button>
@@ -152,15 +152,15 @@
         <div class="modal-form-row">
           <label class="modal-form-label" for="profile-cp-confirm">Confirmar nueva contrasena</label>
           <div class="modal-input-with-action">
-            <input id="profile-cp-confirm" class="modal-input" type="password" name="{{ password_form.new_password2.html_name }}" minlength="12" autocomplete="new-password" placeholder="Repite la nueva contrasena" required>
+            <input id="profile-cp-confirm" class="modal-input" type="password" name="{{ password_form.new_password2.html_name }}" minlength="12" autocomplete="new-password" placeholder="Repite la nueva contrasena" data-password-confirm required>
             <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-cp-confirm" aria-label="Mostrar u ocultar confirmacion de contrasena">
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
             </button>
           </div>
-          <div class="modal-form-help" id="profile-password-match-hint">Confirma la nueva contrasena antes de guardar.</div>
+          <div class="modal-form-help" id="profile-password-match-hint" data-password-match-hint>Confirma la nueva contrasena antes de guardar.</div>
         </div>
         <div class="password-actions-inline">
-          <button class="icon-action" id="profile-password-generate" type="button">
+          <button class="icon-action" id="profile-password-generate" type="button" data-password-generate>
             <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
             <span>Generar contrasena</span>
           </button>
@@ -177,17 +177,17 @@
           <p class="password-policy-note"><strong>Simbolos permitidos:</strong> !@#$%^&*()-_=+?</p>
         </div>
         <div class="password-strength-shell">
-          <div class="password-strength-bar"><span id="profile-password-strength-bar"></span></div>
+          <div class="password-strength-bar"><span id="profile-password-strength-bar" data-password-strength-bar></span></div>
           <div class="password-strength-copy">
-            <strong id="profile-password-strength-label">Debil</strong>
-            <span class="muted" id="profile-password-strength-hint">Debe tener al menos 12 caracteres.</span>
+            <strong id="profile-password-strength-label" data-password-strength-label>Debil</strong>
+            <span class="muted" id="profile-password-strength-hint" data-password-strength-hint>Debe tener al menos 12 caracteres.</span>
           </div>
         </div>
         <div class="modal-actions-row">
-          <button class="primary" id="profile-password-submit" type="submit">Actualizar contrasena</button>
+          <button class="primary" id="profile-password-submit" type="submit" data-password-submit>Actualizar contrasena</button>
         </div>
       </form>
-      <p class="muted" id="profile-password-feedback"></p>
+      <p class="muted" id="profile-password-feedback" data-password-feedback></p>
     </div>
     <div class="panel">
       <div class="metric-label">Estado de seguridad</div>
@@ -254,114 +254,10 @@
 </section>
 
 <script>
-  const allowedPasswordSymbols = "!@#$%^&*()-_=+?";
   const passwordForm = document.getElementById("profile-password-form");
   const passwordCurrentInput = document.getElementById("profile-cp-current");
-  const passwordNewInput = document.getElementById("profile-cp-new");
-  const passwordConfirmInput = document.getElementById("profile-cp-confirm");
   const passwordFeedback = document.getElementById("profile-password-feedback");
-  const passwordSubmitButton = document.getElementById("profile-password-submit");
-  const passwordMatchHint = document.getElementById("profile-password-match-hint");
-  const passwordStrengthBar = document.getElementById("profile-password-strength-bar");
-  const passwordStrengthLabel = document.getElementById("profile-password-strength-label");
-  const passwordStrengthHint = document.getElementById("profile-password-strength-hint");
-  const generatePasswordButton = document.getElementById("profile-password-generate");
-  const passwordPolicyItems = new Map(
-    Array.from(document.querySelectorAll("[data-policy-check]")).map((node) => [node.dataset.policyCheck, node])
-  );
-
-  function generatedPasswordValue(length = 18) {
-    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    const lower = "abcdefghijkmnopqrstuvwxyz";
-    const digits = "23456789";
-    const all = upper + lower + digits + allowedPasswordSymbols;
-    const randomIndex = (max) => {
-      if (window.crypto?.getRandomValues) {
-        const values = new Uint32Array(1);
-        window.crypto.getRandomValues(values);
-        return values[0] % max;
-      }
-      return Math.floor(Math.random() * max);
-    };
-    const chars = [
-      upper[randomIndex(upper.length)],
-      lower[randomIndex(lower.length)],
-      digits[randomIndex(digits.length)],
-      allowedPasswordSymbols[randomIndex(allowedPasswordSymbols.length)],
-    ];
-    while (chars.length < length) {
-      chars.push(all[randomIndex(all.length)]);
-    }
-    for (let index = chars.length - 1; index > 0; index -= 1) {
-      const swapIndex = randomIndex(index + 1);
-      [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
-    }
-    return chars.join("");
-  }
-
-  function passwordStrengthState(value) {
-    const checks = {
-      length: value.length >= 12,
-      upper: /[A-Z]/.test(value),
-      lower: /[a-z]/.test(value),
-      digit: /\d/.test(value),
-      symbol: [...value].some((char) => allowedPasswordSymbols.includes(char)),
-    };
-    const score = Object.values(checks).filter(Boolean).length;
-    if (score <= 2) {
-      return { level: "weak", label: "Debil", hint: "Debe tener al menos 12 caracteres.", percent: 24, checks };
-    }
-    if (score <= 4) {
-      return { level: "medium", label: "Media", hint: "Cumple la base, pero aun puedes reforzarla.", percent: 62, checks };
-    }
-    return { level: "strong", label: "Fuerte", hint: "Cumple largo, mezcla y simbolos permitidos.", percent: 100, checks };
-  }
-
-  function syncPasswordStrength() {
-    const currentValue = String(passwordNewInput?.value || "");
-    const state = passwordStrengthState(currentValue);
-    if (passwordStrengthBar) {
-      passwordStrengthBar.style.width = `${state.percent}%`;
-      passwordStrengthBar.classList.remove("weak", "medium", "strong");
-      passwordStrengthBar.classList.add(state.level);
-    }
-    if (passwordStrengthLabel) passwordStrengthLabel.textContent = state.label;
-    if (passwordStrengthHint) passwordStrengthHint.textContent = state.hint;
-    Object.entries(state.checks).forEach(([key, valid]) => {
-      const node = passwordPolicyItems.get(key);
-      if (!node) return;
-      node.classList.toggle("pass", valid);
-      node.classList.toggle("fail", !valid);
-    });
-    return state;
-  }
-
-  function syncPasswordMatchState() {
-    if (!passwordMatchHint || !passwordConfirmInput) return false;
-    const nextPassword = String(passwordNewInput?.value || "");
-    const confirmedPassword = String(passwordConfirmInput.value || "");
-    if (!confirmedPassword) {
-      passwordMatchHint.textContent = "Confirma la nueva contrasena antes de guardar.";
-      passwordMatchHint.classList.remove("warn-text", "ok-text");
-      return false;
-    }
-    if (nextPassword !== confirmedPassword) {
-      passwordMatchHint.textContent = "La confirmacion no coincide con la nueva contrasena.";
-      passwordMatchHint.classList.add("warn-text");
-      passwordMatchHint.classList.remove("ok-text");
-      return false;
-    }
-    passwordMatchHint.textContent = "La confirmacion coincide.";
-    passwordMatchHint.classList.remove("warn-text");
-    passwordMatchHint.classList.add("ok-text");
-    return true;
-  }
-
-  function syncPasswordFormState() {
-    const strength = syncPasswordStrength();
-    const matches = syncPasswordMatchState();
-    if (passwordSubmitButton) passwordSubmitButton.disabled = strength.level === "weak" || !matches;
-  }
+  const passwordExperience = passwordForm ? window.AmeliPassword.setupForm(passwordForm) : null;
 
   document.querySelectorAll(".tab-nav").forEach((nav) => {
     nav.querySelectorAll("button[data-tab]").forEach((btn) => {
@@ -387,50 +283,15 @@
     });
   });
 
-  document.addEventListener("click", (event) => {
-    const toggle = event.target.closest("[data-password-toggle]");
-    if (!toggle) return;
-    const target = document.getElementById(toggle.dataset.passwordToggle || "");
-    if (!(target instanceof HTMLInputElement)) return;
-    const nextType = target.type === "password" ? "text" : "password";
-    target.type = nextType;
-    const icon = toggle.querySelector(".material-symbols-rounded");
-    if (icon) icon.textContent = nextType === "password" ? "visibility" : "visibility_off";
-  });
-
-  generatePasswordButton?.addEventListener("click", () => {
-    const nextPassword = generatedPasswordValue();
-    if (passwordNewInput) {
-      passwordNewInput.value = nextPassword;
-      passwordNewInput.type = "text";
-    }
-    if (passwordConfirmInput) {
-      passwordConfirmInput.value = nextPassword;
-      passwordConfirmInput.type = "text";
-    }
-    document.querySelectorAll('[data-password-toggle="profile-cp-new"], [data-password-toggle="profile-cp-confirm"]').forEach((button) => {
-      const icon = button.querySelector(".material-symbols-rounded");
-      if (icon) icon.textContent = "visibility_off";
-    });
-    if (passwordFeedback) {
-      passwordFeedback.textContent = "Contrasena generada con el estandar permitido. Guardala en un lugar seguro antes de continuar.";
-    }
-    syncPasswordFormState();
-  });
-
-  passwordNewInput?.addEventListener("input", syncPasswordFormState);
-  passwordConfirmInput?.addEventListener("input", syncPasswordFormState);
-  syncPasswordFormState();
-
   passwordForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const matches = syncPasswordMatchState();
-    const strength = syncPasswordStrength();
-    if (!matches) {
+    if (!passwordExperience) return;
+    const state = passwordExperience.sync();
+    if (!state.matches) {
       if (passwordFeedback) passwordFeedback.textContent = "Confirma la nueva contrasena antes de guardar.";
       return;
     }
-    if (strength.level === "weak") {
+    if (state.strength.level === "weak") {
       if (passwordFeedback) passwordFeedback.textContent = "La nueva contrasena aun es debil. Refuerzala antes de guardar.";
       return;
     }
@@ -438,7 +299,7 @@
     try {
       const payload = {
         current_password: String(passwordCurrentInput?.value || ""),
-        new_password: String(passwordNewInput?.value || ""),
+        new_password: passwordExperience.getValue(),
       };
       const response = await fetch("{% url 'accounts:profile-password' %}", {
         method: "POST",
