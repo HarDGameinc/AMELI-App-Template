@@ -10,7 +10,11 @@ MAX_AVATAR_BYTES = 3 * 1024 * 1024
 
 class TemplateAuthenticationForm(AuthenticationForm):
     username = forms.CharField(label="Usuario")
-    password = forms.CharField(label="Contraseña", strip=False, widget=forms.PasswordInput)
+    password = forms.CharField(
+        label="Contrasena",
+        strip=False,
+        widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}),
+    )
 
 
 class ProfilePreferencesForm(forms.ModelForm):
@@ -18,8 +22,15 @@ class ProfilePreferencesForm(forms.ModelForm):
         model = User
         fields = ["display_name", "theme_preference"]
         widgets = {
-            "display_name": forms.TextInput(attrs={"maxlength": 80, "placeholder": "Alias visible (opcional)"}),
-            "theme_preference": forms.Select(),
+            "display_name": forms.TextInput(
+                attrs={
+                    "class": "modal-input",
+                    "maxlength": 80,
+                    "placeholder": "Alias visible (opcional)",
+                    "autocomplete": "nickname",
+                }
+            ),
+            "theme_preference": forms.Select(attrs={"class": "modal-input"}),
         }
         labels = {
             "display_name": "Alias visible",
@@ -38,6 +49,36 @@ class AvatarUploadForm(forms.Form):
 
 
 class ProfilePasswordForm(PasswordChangeForm):
-    old_password = forms.CharField(label="Contraseña actual", strip=False, widget=forms.PasswordInput)
-    new_password1 = forms.CharField(label="Nueva contraseña", strip=False, widget=forms.PasswordInput)
-    new_password2 = forms.CharField(label="Repite la nueva contraseña", strip=False, widget=forms.PasswordInput)
+    old_password = forms.CharField(
+        label="Contrasena actual",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "modal-input",
+                "autocomplete": "current-password",
+                "placeholder": "Tu clave actual",
+            }
+        ),
+    )
+    new_password1 = forms.CharField(
+        label="Nueva contrasena",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "modal-input",
+                "autocomplete": "new-password",
+                "placeholder": "Minimo 12 caracteres",
+            }
+        ),
+    )
+    new_password2 = forms.CharField(
+        label="Repite la nueva contrasena",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "modal-input",
+                "autocomplete": "new-password",
+                "placeholder": "Repite la nueva contrasena",
+            }
+        ),
+    )
