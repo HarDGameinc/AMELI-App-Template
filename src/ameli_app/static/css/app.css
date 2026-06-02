@@ -433,6 +433,15 @@
     .admin-user-title strong { font-size:14px; }
     .admin-user-subline { color:var(--muted); font-size:12px; }
     .admin-user-summary { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .admin-user-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;
+             padding-top:10px; border-top:1px solid var(--line); }
+    .admin-user-actions button.icon-action { background:var(--surface); border:1px solid var(--line);
+             border-radius:6px; min-height:34px; padding:6px 10px; font-weight:600;
+             color:var(--ink); cursor:pointer; font-size:12px; }
+    .admin-user-actions button.icon-action:hover { border-color:var(--accent); color:var(--accent); }
+    .admin-user-actions button.icon-action.danger { color:var(--bad); border-color:rgba(229,86,74,.45); }
+    .admin-user-actions button.icon-action.danger:hover { border-color:var(--bad); background:rgba(212,84,84,.06); }
+    .admin-user-actions button.icon-action .icon-glyph { font-size:16px; }
     .admin-side-stack { display:grid; gap:12px; }
     .empty-state { border:1px dashed var(--line); border-radius:12px; padding:16px;
              color:var(--muted); background:rgba(127,140,170,.04); }

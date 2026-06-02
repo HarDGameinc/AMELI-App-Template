@@ -99,14 +99,53 @@
             <h3 class="form-card-title">Crear usuario</h3>
             <p class="muted panel-copy">Alta rapida de cuentas web para pruebas o futuras apps.</p>
           </div>
-          <form id="create-user-form" class="admin-inline-form">
+          <form id="create-user-form" class="admin-inline-form" data-password-form>
             <div class="modal-form-row">
               <label class="modal-form-label" for="id_admin_username">Usuario</label>
               <input id="id_admin_username" class="modal-input" type="text" name="username" placeholder="nombre de usuario" required>
             </div>
             <div class="modal-form-row">
               <label class="modal-form-label" for="id_admin_password">Contrasena inicial</label>
-              <input id="id_admin_password" class="modal-input" type="password" name="password" minlength="12" placeholder="Minimo 12 caracteres" required>
+              <div class="modal-input-with-action">
+                <input id="id_admin_password" class="modal-input" type="password" name="password" minlength="12" autocomplete="new-password" placeholder="Minimo 12 caracteres" data-password-new required>
+                <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="id_admin_password" aria-label="Mostrar u ocultar contrasena">
+                  <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+                </button>
+              </div>
+            </div>
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_password_confirm">Confirmar contrasena</label>
+              <div class="modal-input-with-action">
+                <input id="id_admin_password_confirm" class="modal-input" type="password" minlength="12" autocomplete="new-password" placeholder="Repite la contrasena" data-password-confirm required>
+                <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="id_admin_password_confirm" aria-label="Mostrar u ocultar confirmacion">
+                  <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+                </button>
+              </div>
+              <div class="modal-form-help" data-password-match-hint>Confirma la contrasena antes de guardar.</div>
+            </div>
+            <div class="password-actions-inline">
+              <button class="icon-action" type="button" data-password-generate>
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
+                <span>Generar contrasena</span>
+              </button>
+            </div>
+            <div class="password-policy-card">
+              <strong>Politica obligatoria</strong>
+              <div class="password-policy-grid">
+                <div class="password-policy-item" data-policy-check="length"><span class="password-policy-dot"></span><span>Minimo 12 caracteres</span></div>
+                <div class="password-policy-item" data-policy-check="upper"><span class="password-policy-dot"></span><span>Al menos 1 mayuscula</span></div>
+                <div class="password-policy-item" data-policy-check="lower"><span class="password-policy-dot"></span><span>Al menos 1 minuscula</span></div>
+                <div class="password-policy-item" data-policy-check="digit"><span class="password-policy-dot"></span><span>Al menos 1 numero</span></div>
+                <div class="password-policy-item" data-policy-check="symbol"><span class="password-policy-dot"></span><span>Al menos 1 simbolo permitido</span></div>
+              </div>
+              <p class="password-policy-note"><strong>Simbolos permitidos:</strong> !@#$%^&*()-_=+?</p>
+            </div>
+            <div class="password-strength-shell">
+              <div class="password-strength-bar"><span data-password-strength-bar></span></div>
+              <div class="password-strength-copy">
+                <strong data-password-strength-label>Debil</strong>
+                <span class="muted" data-password-strength-hint>Debe tener al menos 12 caracteres.</span>
+              </div>
             </div>
             <div class="modal-form-row">
               <label class="modal-form-label" for="id_admin_role">Rol</label>
@@ -120,10 +159,10 @@
               <span>Exigir cambio de contrasena en el primer ingreso</span>
             </label>
             <div class="modal-actions-row">
-              <button class="primary" type="submit">Crear usuario</button>
+              <button class="primary" type="submit" data-password-submit>Crear usuario</button>
             </div>
+            <p class="muted" id="create-user-feedback" data-password-feedback></p>
           </form>
-          <p class="muted" id="create-user-feedback"></p>
         </article>
 
         <article class="form-card">
@@ -131,20 +170,64 @@
             <h3 class="form-card-title">Cambiar mi contrasena</h3>
             <p class="muted panel-copy">Mantiene el mismo patron de seguridad que Metro para la cuenta administradora.</p>
           </div>
-          <form id="admin-password-form" class="admin-inline-form">
+          <form id="admin-password-form" class="admin-inline-form" data-password-form>
             <div class="modal-form-row">
               <label class="modal-form-label" for="id_admin_current_password">Contrasena actual</label>
-              <input id="id_admin_current_password" class="modal-input" type="password" name="current_password" placeholder="Tu clave actual" required>
+              <div class="modal-input-with-action">
+                <input id="id_admin_current_password" class="modal-input" type="password" name="current_password" autocomplete="current-password" placeholder="Tu clave actual" required>
+                <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="id_admin_current_password" aria-label="Mostrar u ocultar contrasena actual">
+                  <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+                </button>
+              </div>
             </div>
             <div class="modal-form-row">
               <label class="modal-form-label" for="id_admin_new_password">Nueva contrasena</label>
-              <input id="id_admin_new_password" class="modal-input" type="password" name="new_password" minlength="12" placeholder="Nueva clave segura" required>
+              <div class="modal-input-with-action">
+                <input id="id_admin_new_password" class="modal-input" type="password" name="new_password" minlength="12" autocomplete="new-password" placeholder="Nueva clave segura" data-password-new required>
+                <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="id_admin_new_password" aria-label="Mostrar u ocultar nueva contrasena">
+                  <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+                </button>
+              </div>
+            </div>
+            <div class="modal-form-row">
+              <label class="modal-form-label" for="id_admin_new_password_confirm">Confirmar nueva contrasena</label>
+              <div class="modal-input-with-action">
+                <input id="id_admin_new_password_confirm" class="modal-input" type="password" minlength="12" autocomplete="new-password" placeholder="Repite la nueva contrasena" data-password-confirm required>
+                <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="id_admin_new_password_confirm" aria-label="Mostrar u ocultar confirmacion">
+                  <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+                </button>
+              </div>
+              <div class="modal-form-help" data-password-match-hint>Confirma la nueva contrasena antes de guardar.</div>
+            </div>
+            <div class="password-actions-inline">
+              <button class="icon-action" type="button" data-password-generate>
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
+                <span>Generar contrasena</span>
+              </button>
+            </div>
+            <div class="password-policy-card">
+              <strong>Politica obligatoria</strong>
+              <div class="password-policy-grid">
+                <div class="password-policy-item" data-policy-check="length"><span class="password-policy-dot"></span><span>Minimo 12 caracteres</span></div>
+                <div class="password-policy-item" data-policy-check="upper"><span class="password-policy-dot"></span><span>Al menos 1 mayuscula</span></div>
+                <div class="password-policy-item" data-policy-check="lower"><span class="password-policy-dot"></span><span>Al menos 1 minuscula</span></div>
+                <div class="password-policy-item" data-policy-check="digit"><span class="password-policy-dot"></span><span>Al menos 1 numero</span></div>
+                <div class="password-policy-item" data-policy-check="symbol"><span class="password-policy-dot"></span><span>Al menos 1 simbolo permitido</span></div>
+              </div>
+              <p class="password-policy-note"><strong>Simbolos permitidos:</strong> !@#$%^&*()-_=+?</p>
+            </div>
+            <div class="password-strength-shell">
+              <div class="password-strength-bar"><span data-password-strength-bar></span></div>
+              <div class="password-strength-copy">
+                <strong data-password-strength-label>Debil</strong>
+                <span class="muted" data-password-strength-hint>Debe tener al menos 12 caracteres.</span>
+              </div>
             </div>
             <div class="modal-actions-row">
-              <button class="primary" type="submit">Actualizar contrasena</button>
+              <button class="primary" type="submit" data-password-submit>Actualizar contrasena</button>
             </div>
+            <p class="muted" id="admin-password-feedback" data-password-feedback></p>
           </form>
-          <p class="muted" id="admin-password-feedback"></p>
         </article>
       </div>
     </section>
@@ -175,9 +258,11 @@
         {% for user_item in users %}
         <article class="event ev-{% if user_item.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}"
                  data-username="{{ user_item.username|lower }}"
+                 data-username-raw="{{ user_item.username }}"
                  data-display-name="{{ user_item.display_name|default:''|lower }}"
                  data-role="{{ user_item.role }}"
-                 data-enabled="{% if user_item.enabled %}enabled{% else %}disabled{% endif %}">
+                 data-enabled="{% if user_item.enabled %}enabled{% else %}disabled{% endif %}"
+                 data-must-change="{% if user_item.must_change_password %}yes{% else %}no{% endif %}">
           <div class="ev-top">
             <span class="ev-dot"></span>
             <div class="admin-user-title">
@@ -197,6 +282,30 @@
             <span class="session-meta-item">Ultimo acceso: {{ user_item.display_last_login_at }}</span>
             <span class="session-meta-item">Tema: {{ user_item.display_theme_label }}</span>
           </div>
+          {% if user_item.username != current_user.username %}
+          <div class="admin-user-actions">
+            <button class="icon-action" type="button" data-user-action="reset-password" data-username="{{ user_item.username }}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">lock_reset</span>
+              <span>Restablecer contrasena</span>
+            </button>
+            <button class="icon-action" type="button" data-user-action="toggle-enabled" data-username="{{ user_item.username }}" data-enabled="{% if user_item.enabled %}1{% else %}0{% endif %}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">{% if user_item.enabled %}block{% else %}check_circle{% endif %}</span>
+              <span>{% if user_item.enabled %}Deshabilitar{% else %}Habilitar{% endif %}</span>
+            </button>
+            <button class="icon-action" type="button" data-user-action="change-role" data-username="{{ user_item.username }}" data-role="{{ user_item.role }}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_person</span>
+              <span>Cambiar rol</span>
+            </button>
+            <button class="icon-action" type="button" data-user-action="toggle-force-change" data-username="{{ user_item.username }}" data-must-change="{% if user_item.must_change_password %}1{% else %}0{% endif %}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
+              <span>{% if user_item.must_change_password %}Quitar cambio obligatorio{% else %}Forzar cambio{% endif %}</span>
+            </button>
+            <button class="icon-action danger" type="button" data-user-action="delete" data-username="{{ user_item.username }}">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">delete</span>
+              <span>Eliminar</span>
+            </button>
+          </div>
+          {% endif %}
         </article>
         {% empty %}
         <div class="empty-state">No hay usuarios creados todavia.</div>
@@ -309,6 +418,125 @@
   </aside>
 </section>
 
+<div class="modal-backdrop utility-modal" id="reset-password-modal" hidden data-modal="reset-password">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <h3 class="modal-title">Restablecer contrasena</h3>
+      <button type="button" class="login-modal-close" data-modal-close aria-label="Cerrar">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <p class="modal-copy">Define la nueva clave inicial. Puedes exigir que el usuario la cambie en su proximo ingreso.</p>
+    <div class="modal-user-target" data-modal-target>@usuario</div>
+    <form id="reset-password-form" data-password-form>
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="reset-cp-new">Nueva contrasena</label>
+        <div class="modal-input-with-action">
+          <input id="reset-cp-new" class="modal-input" type="password" minlength="12" autocomplete="new-password" placeholder="Minimo 12 caracteres" data-password-new required>
+          <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="reset-cp-new" aria-label="Mostrar u ocultar contrasena">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="reset-cp-confirm">Confirmar contrasena</label>
+        <div class="modal-input-with-action">
+          <input id="reset-cp-confirm" class="modal-input" type="password" minlength="12" autocomplete="new-password" placeholder="Repite la contrasena" data-password-confirm required>
+          <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="reset-cp-confirm" aria-label="Mostrar u ocultar confirmacion">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+          </button>
+        </div>
+        <div class="modal-form-help" data-password-match-hint>Confirma la contrasena antes de guardar.</div>
+      </div>
+      <div class="password-actions-inline">
+        <button class="icon-action" type="button" data-password-generate>
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
+          <span>Generar contrasena</span>
+        </button>
+      </div>
+      <div class="password-policy-card">
+        <strong>Politica obligatoria</strong>
+        <div class="password-policy-grid">
+          <div class="password-policy-item" data-policy-check="length"><span class="password-policy-dot"></span><span>Minimo 12 caracteres</span></div>
+          <div class="password-policy-item" data-policy-check="upper"><span class="password-policy-dot"></span><span>Al menos 1 mayuscula</span></div>
+          <div class="password-policy-item" data-policy-check="lower"><span class="password-policy-dot"></span><span>Al menos 1 minuscula</span></div>
+          <div class="password-policy-item" data-policy-check="digit"><span class="password-policy-dot"></span><span>Al menos 1 numero</span></div>
+          <div class="password-policy-item" data-policy-check="symbol"><span class="password-policy-dot"></span><span>Al menos 1 simbolo permitido</span></div>
+        </div>
+        <p class="password-policy-note"><strong>Simbolos permitidos:</strong> !@#$%^&*()-_=+?</p>
+      </div>
+      <div class="password-strength-shell">
+        <div class="password-strength-bar"><span data-password-strength-bar></span></div>
+        <div class="password-strength-copy">
+          <strong data-password-strength-label>Debil</strong>
+          <span class="muted" data-password-strength-hint>Debe tener al menos 12 caracteres.</span>
+        </div>
+      </div>
+      <label class="modal-form-check">
+        <input type="checkbox" id="reset-must-change" checked>
+        <span>Exigir cambio en el proximo ingreso</span>
+      </label>
+      <div class="modal-actions-row">
+        <button type="button" class="icon-action" data-modal-close>Cancelar</button>
+        <button class="primary" type="submit" data-password-submit>Guardar nueva clave</button>
+      </div>
+      <p class="muted" id="reset-password-feedback" data-password-feedback></p>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop utility-modal" id="change-role-modal" hidden data-modal="change-role">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <h3 class="modal-title">Cambiar rol</h3>
+      <button type="button" class="login-modal-close" data-modal-close aria-label="Cerrar">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <p class="modal-copy">El cambio de rol entre <strong>public</strong> y <strong>superadmin</strong> ajusta los permisos de la cuenta. Solo superadmin accede a esta consola.</p>
+    <div class="modal-user-target" data-modal-target>@usuario</div>
+    <form id="change-role-form">
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="change-role-select">Nuevo rol</label>
+        <select id="change-role-select" class="modal-input">
+          <option value="public">public</option>
+          <option value="superadmin">superadmin</option>
+        </select>
+      </div>
+      <div class="modal-actions-row">
+        <button type="button" class="icon-action" data-modal-close>Cancelar</button>
+        <button class="primary" type="submit">Aplicar rol</button>
+      </div>
+      <p class="muted" id="change-role-feedback"></p>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop utility-modal" id="delete-user-modal" hidden data-modal="delete-user">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <h3 class="modal-title danger-text">Eliminar usuario</h3>
+      <button type="button" class="login-modal-close" data-modal-close aria-label="Cerrar">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <p class="modal-copy">Esta accion elimina la cuenta de la base. Las sesiones quedaran cerradas y los registros de auditoria se mantienen.</p>
+    <div class="modal-user-target" data-modal-target>@usuario</div>
+    <form id="delete-user-form">
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="delete-user-confirm">Para confirmar, tipea el nombre de usuario exacto</label>
+        <input id="delete-user-confirm" class="modal-input" type="text" autocomplete="off" placeholder="Nombre de usuario" required>
+        <div class="modal-form-help" id="delete-user-hint">La accion se habilita cuando coincide con el usuario objetivo.</div>
+      </div>
+      <div class="modal-actions-row">
+        <button type="button" class="icon-action" data-modal-close>Cancelar</button>
+        <button class="primary danger" type="submit" id="delete-user-submit" disabled>Eliminar cuenta</button>
+      </div>
+      <p class="muted" id="delete-user-feedback"></p>
+    </form>
+  </div>
+</div>
+
 <script>
   const csrfToken = "{{ csrf_token }}";
 
@@ -320,22 +548,36 @@
         "x-csrf-token": csrfToken,
       },
     });
-    const data = await response.json();
+    let data = {};
+    try { data = await response.json(); } catch {}
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "Operacion no completada.");
     }
     return data;
   }
 
-  function bindJsonForm(formId, feedbackId, url, builder) {
+  function bindPasswordForm(formId, feedbackId, url, buildPayload) {
     const form = document.getElementById(formId);
     const feedback = document.getElementById(feedbackId);
-    if (!form || !feedback) return;
+    if (!form || !feedback) return null;
+    const experience = window.AmeliPassword?.setupForm(form) || null;
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (experience) {
+        const state = experience.sync();
+        if (!state.matches) {
+          feedback.textContent = "Confirma la contrasena antes de guardar.";
+          return;
+        }
+        if (state.strength.level === "weak") {
+          feedback.textContent = "La contrasena aun es debil. Refuerzala antes de guardar.";
+          return;
+        }
+      }
       feedback.textContent = "Guardando...";
       try {
-        const payload = builder(Object.fromEntries(new FormData(form).entries()));
+        const payload = buildPayload(form, experience);
         await requestJson(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -347,16 +589,26 @@
         feedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       }
     });
+    return { form, feedback, experience };
   }
 
-  bindJsonForm("create-user-form", "create-user-feedback", "/admin/users", (payload) => ({
-    username: payload.username,
-    password: payload.password,
-    role: payload.role,
-    must_change_password: payload.must_change_password === "on",
-  }));
+  bindPasswordForm("create-user-form", "create-user-feedback", "/admin/users", (form, experience) => {
+    const data = Object.fromEntries(new FormData(form).entries());
+    return {
+      username: data.username,
+      password: experience ? experience.getValue() : data.password,
+      role: data.role,
+      must_change_password: data.must_change_password === "on",
+    };
+  });
 
-  bindJsonForm("admin-password-form", "admin-password-feedback", "/admin/change-password", (payload) => payload);
+  bindPasswordForm("admin-password-form", "admin-password-feedback", "/admin/change-password", (form, experience) => {
+    const data = Object.fromEntries(new FormData(form).entries());
+    return {
+      current_password: data.current_password,
+      new_password: experience ? experience.getValue() : data.new_password,
+    };
+  });
 
   const usersSearch = document.getElementById("users-search");
   const usersFilterRole = document.getElementById("users-filter-role");
@@ -383,5 +635,217 @@
   usersSearch?.addEventListener("input", applyUserFilters);
   usersFilterRole?.addEventListener("change", applyUserFilters);
   usersFilterStatus?.addEventListener("change", applyUserFilters);
+
+  // ---- Modal infrastructure ----
+  const openModals = new Set();
+
+  function openModal(modalId, contextSetup) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return null;
+    if (typeof contextSetup === "function") contextSetup(modal);
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    openModals.add(modalId);
+    return modal;
+  }
+
+  function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.hidden = true;
+    openModals.delete(modalId);
+    if (openModals.size === 0) document.body.classList.remove("modal-open");
+  }
+
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => {
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal(modal.id);
+    });
+    modal.querySelectorAll("[data-modal-close]").forEach((button) => {
+      button.addEventListener("click", () => closeModal(modal.id));
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && openModals.size > 0) {
+      const last = Array.from(openModals).pop();
+      if (last) closeModal(last);
+    }
+  });
+
+  // ---- Reset password modal ----
+  const resetForm = document.getElementById("reset-password-form");
+  const resetFeedback = document.getElementById("reset-password-feedback");
+  const resetMustChange = document.getElementById("reset-must-change");
+  const resetExperience = resetForm ? window.AmeliPassword?.setupForm(resetForm) : null;
+  let resetTargetUsername = "";
+
+  function openResetPasswordModal(username) {
+    resetTargetUsername = username;
+    openModal("reset-password-modal", (modal) => {
+      modal.querySelectorAll("[data-modal-target]").forEach((node) => { node.textContent = `@${username}`; });
+      if (resetForm) resetForm.reset();
+      if (resetMustChange) resetMustChange.checked = true;
+      if (resetFeedback) resetFeedback.textContent = "";
+      resetExperience?.sync();
+    });
+  }
+
+  resetForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!resetExperience || !resetTargetUsername) return;
+    const state = resetExperience.sync();
+    if (!state.matches) {
+      resetFeedback.textContent = "Confirma la contrasena antes de guardar.";
+      return;
+    }
+    if (state.strength.level === "weak") {
+      resetFeedback.textContent = "La contrasena aun es debil. Refuerzala antes de guardar.";
+      return;
+    }
+    resetFeedback.textContent = "Guardando...";
+    try {
+      await requestJson(`/admin/users/${encodeURIComponent(resetTargetUsername)}/reset-password`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          password: resetExperience.getValue(),
+          must_change_password: Boolean(resetMustChange?.checked),
+        }),
+      });
+      resetFeedback.textContent = "Contrasena actualizada. Recargando...";
+      window.setTimeout(() => window.location.reload(), 400);
+    } catch (error) {
+      resetFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    }
+  });
+
+  // ---- Change role modal ----
+  const changeRoleForm = document.getElementById("change-role-form");
+  const changeRoleSelect = document.getElementById("change-role-select");
+  const changeRoleFeedback = document.getElementById("change-role-feedback");
+  let changeRoleTargetUsername = "";
+
+  function openChangeRoleModal(username, currentRole) {
+    changeRoleTargetUsername = username;
+    openModal("change-role-modal", (modal) => {
+      modal.querySelectorAll("[data-modal-target]").forEach((node) => { node.textContent = `@${username}`; });
+      if (changeRoleSelect) changeRoleSelect.value = currentRole === "superadmin" ? "superadmin" : "public";
+      if (changeRoleFeedback) changeRoleFeedback.textContent = "";
+    });
+  }
+
+  changeRoleForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!changeRoleTargetUsername || !changeRoleSelect) return;
+    const next = changeRoleSelect.value;
+    if (changeRoleFeedback) changeRoleFeedback.textContent = "Guardando...";
+    try {
+      await requestJson(`/admin/users/${encodeURIComponent(changeRoleTargetUsername)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: next }),
+      });
+      if (changeRoleFeedback) changeRoleFeedback.textContent = "Rol actualizado. Recargando...";
+      window.setTimeout(() => window.location.reload(), 400);
+    } catch (error) {
+      if (changeRoleFeedback) changeRoleFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    }
+  });
+
+  // ---- Delete user modal ----
+  const deleteForm = document.getElementById("delete-user-form");
+  const deleteConfirmInput = document.getElementById("delete-user-confirm");
+  const deleteHint = document.getElementById("delete-user-hint");
+  const deleteSubmit = document.getElementById("delete-user-submit");
+  const deleteFeedback = document.getElementById("delete-user-feedback");
+  let deleteTargetUsername = "";
+
+  function syncDeleteConfirm() {
+    if (!deleteConfirmInput || !deleteSubmit) return;
+    const ok = deleteConfirmInput.value.trim() === deleteTargetUsername;
+    deleteSubmit.disabled = !ok;
+    if (!deleteHint) return;
+    if (!deleteConfirmInput.value) {
+      deleteHint.textContent = "La accion se habilita cuando coincide con el usuario objetivo.";
+      deleteHint.classList.remove("warn-text", "ok-text");
+    } else if (ok) {
+      deleteHint.textContent = "Coincide. La eliminacion esta habilitada.";
+      deleteHint.classList.remove("warn-text");
+      deleteHint.classList.add("ok-text");
+    } else {
+      deleteHint.textContent = "El nombre no coincide aun.";
+      deleteHint.classList.add("warn-text");
+      deleteHint.classList.remove("ok-text");
+    }
+  }
+
+  function openDeleteUserModal(username) {
+    deleteTargetUsername = username;
+    openModal("delete-user-modal", (modal) => {
+      modal.querySelectorAll("[data-modal-target]").forEach((node) => { node.textContent = `@${username}`; });
+      if (deleteForm) deleteForm.reset();
+      if (deleteFeedback) deleteFeedback.textContent = "";
+      syncDeleteConfirm();
+    });
+  }
+
+  deleteConfirmInput?.addEventListener("input", syncDeleteConfirm);
+
+  deleteForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!deleteTargetUsername) return;
+    if (deleteConfirmInput?.value.trim() !== deleteTargetUsername) return;
+    if (deleteFeedback) deleteFeedback.textContent = "Eliminando...";
+    try {
+      await requestJson(`/admin/users/${encodeURIComponent(deleteTargetUsername)}`, { method: "DELETE" });
+      if (deleteFeedback) deleteFeedback.textContent = "Usuario eliminado. Recargando...";
+      window.setTimeout(() => window.location.reload(), 400);
+    } catch (error) {
+      if (deleteFeedback) deleteFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    }
+  });
+
+  // ---- Direct PATCH actions: enable/disable, force-change toggle ----
+  async function patchUser(username, payload, button) {
+    const originalDisabled = button.disabled;
+    button.disabled = true;
+    try {
+      await requestJson(`/admin/users/${encodeURIComponent(username)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      window.location.reload();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Error inesperado.");
+      button.disabled = originalDisabled;
+    }
+  }
+
+  usersList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-user-action]");
+    if (!(button instanceof HTMLButtonElement)) return;
+    const action = button.dataset.userAction;
+    const username = button.dataset.username || "";
+    if (!username || !action) return;
+    switch (action) {
+      case "reset-password":
+        openResetPasswordModal(username);
+        break;
+      case "toggle-enabled":
+        patchUser(username, { enabled: button.dataset.enabled !== "1" }, button);
+        break;
+      case "change-role":
+        openChangeRoleModal(username, button.dataset.role || "public");
+        break;
+      case "toggle-force-change":
+        patchUser(username, { must_change_password: button.dataset.mustChange !== "1" }, button);
+        break;
+      case "delete":
+        openDeleteUserModal(username);
+        break;
+    }
+  });
 </script>
 {% endblock %}
