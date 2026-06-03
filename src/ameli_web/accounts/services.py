@@ -304,6 +304,11 @@ def update_user_account(actor_username: str, username: str, *, password: str | N
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
+    is_self = (actor_username or "").lower() == (username or "").lower()
+    if is_self and enabled is False:
+        raise ValueError("cannot disable your own account")
+    if is_self and role is not None and role != user.role:
+        raise ValueError("cannot change your own role")
     if password:
         _validate_password_value(password, user=user)
         user.set_password(password)
@@ -333,6 +338,8 @@ def delete_user_account(actor_username: str, username: str) -> dict[str, Any]:
 
 
 def reset_user_password(actor_username: str, username: str, *, password: str | None = None, must_change_password: bool = True) -> dict[str, Any]:
+    if (actor_username or "").lower() == (username or "").lower():
+        raise ValueError("use change password from your profile to reset your own account")
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
