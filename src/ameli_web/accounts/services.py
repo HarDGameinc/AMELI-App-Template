@@ -301,14 +301,14 @@ def create_public_user(actor_username: str, username: str, password: str, *, mus
 
 
 def update_user_account(actor_username: str, username: str, *, password: str | None = None, enabled: bool | None = None, must_change_password: bool | None = None, role: str | None = None) -> dict[str, Any]:
-    user = User.objects.filter(username__iexact=username).first()
-    if user is None:
-        raise ValueError("user not found")
     is_self = (actor_username or "").lower() == (username or "").lower()
     if is_self and enabled is False:
         raise ValueError("cannot disable your own account")
-    if is_self and role is not None and role != user.role:
+    if is_self and role is not None:
         raise ValueError("cannot change your own role")
+    user = User.objects.filter(username__iexact=username).first()
+    if user is None:
+        raise ValueError("user not found")
     if password:
         _validate_password_value(password, user=user)
         user.set_password(password)
