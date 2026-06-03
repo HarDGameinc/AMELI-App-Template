@@ -10,11 +10,14 @@ from django.core.files.storage import default_storage
 from django.db.models import Count
 from django.utils import timezone
 
+from django.conf import settings as django_settings
+
 from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
 
-from .models import UserSession
+from . import mfa
+from .models import MFARecoveryCode, UserSession
 
 User = get_user_model()
 ROLE_GROUPS = {
@@ -384,3 +387,105 @@ def change_password_for_user(username: str, current_password: str, new_password:
     revoked = revoke_other_sessions(user, current_session_key=current_session_key or "")
     record_audit("password_change", actor=user, target_username=user.username, payload={"revoked_sessions": revoked})
     return {"ok": True, "status": "updated", "revoked_sessions": revoked, "user": serialize_user(user)}
+
+
+# ---------------------------------------------------------------------------
+# MFA / TOTP
+# ---------------------------------------------------------------------------
+
+
+def serialize_mfa_status(user) -> dict[str, Any]:
+    """Return the MFA snapshot used to render the profile and admin views."""
+    pending = bool(user.mfa_secret) and not user.mfa_enabled
+    remaining = (
+        MFARecoveryCode.objects.filter(user=user, used_at__isnull=True).count()
+        if user.mfa_enabled
+        else 0
+    )
+    return {
+        "enabled": bool(user.mfa_enabled),
+        "pending_enrollment": pending,
+        "required_by_admin": bool(user.mfa_required),
+        "recovery_codes_remaining": remaining,
+    }
+
+
+def start_mfa_enrollment(actor_username: str) -> dict[str, Any]:
+    """Generate a fresh TOTP secret for the user and return enrollment data.
+
+    Any existing pending enrollment is overwritten. Already-enrolled users
+    must call disable first.
+    """
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if user.mfa_enabled:
+        raise ValueError("mfa is already enabled; disable it before re-enrolling")
+    secret = mfa.generate_secret()
+    user.mfa_secret = secret
+    user.mfa_enabled = False
+    user.save(update_fields=["mfa_secret", "mfa_enabled", "updated_at"])
+    MFARecoveryCode.objects.filter(user=user).delete()
+    issuer = django_settings.CFG.app_name
+    uri = mfa.provisioning_uri(secret, username=user.username, issuer=issuer)
+    record_audit("mfa_enrollment_started", actor=user, target_username=user.username, payload={})
+    return {
+        "ok": True,
+        "status": "pending",
+        "secret": secret,
+        "provisioning_uri": uri,
+        "qr_svg": mfa.render_qr_svg(uri),
+        "issuer": issuer,
+    }
+
+
+def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
+    """Verify the user's first TOTP code and finalize enrollment.
+
+    Returns the freshly generated recovery codes in plaintext one time.
+    The hashes are stored; the plaintext is never persisted.
+    """
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if user.mfa_enabled:
+        raise ValueError("mfa is already enabled")
+    if not user.mfa_secret:
+        raise ValueError("no pending enrollment; start enrollment first")
+    if not mfa.verify_totp(user.mfa_secret, code):
+        raise ValueError("invalid verification code")
+    user.mfa_enabled = True
+    user.mfa_required = False
+    user.save(update_fields=["mfa_enabled", "mfa_required", "updated_at"])
+    codes = mfa.generate_recovery_codes()
+    MFARecoveryCode.objects.bulk_create(
+        [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
+    )
+    record_audit(
+        "mfa_enrollment_completed",
+        actor=user,
+        target_username=user.username,
+        payload={"recovery_codes_count": len(codes)},
+    )
+    return {
+        "ok": True,
+        "status": "enabled",
+        "recovery_codes": codes,
+    }
+
+
+def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
+    """Disable MFA for the calling user after re-confirming their password."""
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if not user.mfa_enabled and not user.mfa_secret:
+        return {"ok": True, "status": "already-disabled"}
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
+    user.mfa_enabled = False
+    user.mfa_secret = ""
+    user.save(update_fields=["mfa_enabled", "mfa_secret", "updated_at"])
+    MFARecoveryCode.objects.filter(user=user).delete()
+    record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={})
+    return {"ok": True, "status": "disabled"}

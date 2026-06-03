@@ -203,10 +203,114 @@
           </span>
         </div>
         <div class="profile-row">
+          <span class="metric-label">2FA</span>
+          <span class="profile-note {% if not mfa_status.enabled %}warn-text{% endif %}">
+            {% if mfa_status.enabled %}Activo · {{ mfa_status.recovery_codes_remaining }} codigos{% else %}Inactivo{% endif %}
+          </span>
+        </div>
+        <div class="profile-row">
           <span class="metric-label">Otras sesiones</span>
           <span class="profile-note">Se revocan al cambiar tu clave</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="panel" id="profile-mfa-panel" data-mfa-state="{% if mfa_status.enabled %}enabled{% else %}disabled{% endif %}">
+    <div class="form-card-head">
+      <div class="metric-label">Autenticacion de dos factores (2FA)</div>
+      <p class="muted panel-copy">Sumale una capa extra a tu cuenta con una app de autenticacion como Google Authenticator, Authy o 1Password. Cuando este activa, ademas de tu contrasena vas a tener que tipear un codigo de 6 digitos en cada ingreso.</p>
+    </div>
+
+    <div id="profile-mfa-disabled" class="form-card"{% if mfa_status.enabled %} hidden{% endif %}>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Estado actual</span>
+          <span class="profile-note warn-text">Inactivo</span>
+        </div>
+        {% if mfa_status.required_by_admin %}
+        <div class="profile-row">
+          <span class="metric-label">Política</span>
+          <span class="profile-note warn-text">Requerido por el administrador</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-actions-row">
+        <button class="primary" id="profile-mfa-activate" type="button">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+          <span>Activar 2FA</span>
+        </button>
+      </div>
+      <p class="muted" id="profile-mfa-activate-feedback"></p>
+    </div>
+
+    <div id="profile-mfa-pending" class="form-card" hidden>
+      <p class="muted panel-copy">Escanea este codigo QR con tu app de autenticacion. Si no podes escanear, copia la clave de respaldo y pegala manualmente.</p>
+      <div class="mfa-pending-grid">
+        <div class="mfa-qr-shell">
+          <div id="profile-mfa-qr"></div>
+        </div>
+        <div class="mfa-pending-meta">
+          <div class="profile-card">
+            <div class="profile-row">
+              <span class="metric-label">Clave manual</span>
+              <span class="profile-note" id="profile-mfa-secret-text">-</span>
+            </div>
+            <div class="profile-row">
+              <span class="metric-label">Algoritmo</span>
+              <span class="profile-note">TOTP / SHA1 / 6 digitos / 30s</span>
+            </div>
+          </div>
+          <div class="modal-form-row">
+            <label class="modal-form-label" for="profile-mfa-code">Codigo de la app</label>
+            <input id="profile-mfa-code" class="modal-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123 456">
+            <div class="modal-form-help">Tipeá el código que muestra tu app después de escanear.</div>
+          </div>
+          <div class="modal-actions-row">
+            <button type="button" class="icon-action" id="profile-mfa-cancel">Cancelar</button>
+            <button class="primary" type="button" id="profile-mfa-verify">Verificar y activar</button>
+          </div>
+          <p class="muted" id="profile-mfa-verify-feedback"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="profile-mfa-recovery" class="form-card" hidden>
+      <h3 class="form-card-title">Guarda tus codigos de recuperacion</h3>
+      <p class="muted panel-copy warn-text"><strong>Estos codigos se muestran una sola vez.</strong> Guardalos en un lugar seguro (gestor de contraseñas, papel impreso). Cada código sirve una sola vez si pierdes acceso a tu app de autenticacion.</p>
+      <ul class="mfa-recovery-list" id="profile-mfa-recovery-list"></ul>
+      <div class="modal-actions-row">
+        <button class="primary" type="button" id="profile-mfa-recovery-ack">Listo, los guarde</button>
+      </div>
+    </div>
+
+    <div id="profile-mfa-enabled" class="form-card"{% if not mfa_status.enabled %} hidden{% endif %}>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Estado actual</span>
+          <span class="profile-note">Activo</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Códigos de recuperacion disponibles</span>
+          <span class="profile-note {% if mfa_status.recovery_codes_remaining == 0 %}warn-text{% endif %}">{{ mfa_status.recovery_codes_remaining }}</span>
+        </div>
+      </div>
+      <div class="modal-form-row" style="margin-top:14px;">
+        <label class="modal-form-label" for="profile-mfa-disable-password">Contrasena actual</label>
+        <div class="modal-input-with-action">
+          <input id="profile-mfa-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
+          <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-disable-password" aria-label="Mostrar u ocultar contrasena">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-actions-row">
+        <button class="primary danger" type="button" id="profile-mfa-disable">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+          <span>Desactivar 2FA</span>
+        </button>
+      </div>
+      <p class="muted" id="profile-mfa-disable-feedback"></p>
     </div>
   </div>
 </section>
@@ -326,6 +430,129 @@ document.addEventListener("DOMContentLoaded", () => {
       if (passwordFeedback) {
         passwordFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       }
+    }
+  });
+
+  // ---- MFA enrollment / disable ----
+  const csrfTokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+  const mfaPanel = document.getElementById("profile-mfa-panel");
+  const mfaSections = {
+    disabled: document.getElementById("profile-mfa-disabled"),
+    pending: document.getElementById("profile-mfa-pending"),
+    recovery: document.getElementById("profile-mfa-recovery"),
+    enabled: document.getElementById("profile-mfa-enabled"),
+  };
+
+  function showMfaSection(name) {
+    Object.entries(mfaSections).forEach(([key, node]) => {
+      if (node) node.hidden = key !== name;
+    });
+  }
+
+  async function postJson(url, payload = null) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-csrf-token": csrfTokenInput,
+      },
+      body: payload === null ? "" : JSON.stringify(payload),
+    });
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Operacion no completada.");
+    }
+    return data;
+  }
+
+  const activateBtn = document.getElementById("profile-mfa-activate");
+  const activateFeedback = document.getElementById("profile-mfa-activate-feedback");
+  const verifyBtn = document.getElementById("profile-mfa-verify");
+  const cancelBtn = document.getElementById("profile-mfa-cancel");
+  const verifyFeedback = document.getElementById("profile-mfa-verify-feedback");
+  const codeInput = document.getElementById("profile-mfa-code");
+  const qrSlot = document.getElementById("profile-mfa-qr");
+  const secretText = document.getElementById("profile-mfa-secret-text");
+  const recoveryAck = document.getElementById("profile-mfa-recovery-ack");
+  const recoveryList = document.getElementById("profile-mfa-recovery-list");
+  const disableBtn = document.getElementById("profile-mfa-disable");
+  const disablePassword = document.getElementById("profile-mfa-disable-password");
+  const disableFeedback = document.getElementById("profile-mfa-disable-feedback");
+
+  activateBtn?.addEventListener("click", async () => {
+    activateBtn.disabled = true;
+    if (activateFeedback) activateFeedback.textContent = "Generando codigo QR...";
+    try {
+      const data = await postJson("{% url 'accounts:profile-mfa-start' %}");
+      if (qrSlot) qrSlot.innerHTML = data.qr_svg || "";
+      if (secretText) secretText.textContent = data.secret || "-";
+      if (codeInput) codeInput.value = "";
+      if (verifyFeedback) verifyFeedback.textContent = "";
+      if (activateFeedback) activateFeedback.textContent = "";
+      showMfaSection("pending");
+      codeInput?.focus();
+    } catch (error) {
+      if (activateFeedback) activateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      activateBtn.disabled = false;
+    }
+  });
+
+  cancelBtn?.addEventListener("click", async () => {
+    try {
+      await postJson("{% url 'accounts:profile-mfa-disable' %}", { current_password: "" });
+    } catch {
+      // Even if the server rejects (no password), we just close the pending UI.
+    }
+    window.location.reload();
+  });
+
+  verifyBtn?.addEventListener("click", async () => {
+    const code = String(codeInput?.value || "").trim();
+    if (!code) {
+      if (verifyFeedback) verifyFeedback.textContent = "Tipeá el código de la app.";
+      return;
+    }
+    verifyBtn.disabled = true;
+    if (verifyFeedback) verifyFeedback.textContent = "Verificando...";
+    try {
+      const data = await postJson("{% url 'accounts:profile-mfa-confirm' %}", { code });
+      if (recoveryList && Array.isArray(data.recovery_codes)) {
+        recoveryList.innerHTML = "";
+        data.recovery_codes.forEach((codeValue) => {
+          const li = document.createElement("li");
+          li.textContent = codeValue;
+          recoveryList.appendChild(li);
+        });
+      }
+      showMfaSection("recovery");
+    } catch (error) {
+      if (verifyFeedback) verifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      verifyBtn.disabled = false;
+    }
+  });
+
+  recoveryAck?.addEventListener("click", () => {
+    window.location.reload();
+  });
+
+  disableBtn?.addEventListener("click", async () => {
+    const password = String(disablePassword?.value || "").trim();
+    if (!password) {
+      if (disableFeedback) disableFeedback.textContent = "Confirma tu contrasena para desactivar.";
+      return;
+    }
+    disableBtn.disabled = true;
+    if (disableFeedback) disableFeedback.textContent = "Desactivando...";
+    try {
+      await postJson("{% url 'accounts:profile-mfa-disable' %}", { current_password: password });
+      if (disableFeedback) disableFeedback.textContent = "2FA desactivado. Recargando...";
+      window.setTimeout(() => window.location.reload(), 400);
+    } catch (error) {
+      if (disableFeedback) disableFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+      disableBtn.disabled = false;
     }
   });
 });

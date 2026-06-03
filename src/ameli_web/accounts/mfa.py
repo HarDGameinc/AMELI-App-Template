@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import secrets
 
 import pyotp
+import qrcode
+import qrcode.image.svg
 
 # Alphabet without easily-confused characters (0/O, 1/I/l). Used for
 # recovery codes only; the TOTP secret itself uses base32 via pyotp.
@@ -82,3 +85,12 @@ def hash_recovery_code(code: str) -> str:
 def recovery_codes_match(stored_hash: str, candidate: str) -> bool:
     """Constant-time comparison between a stored hash and a candidate code."""
     return hmac.compare_digest(stored_hash, hash_recovery_code(candidate))
+
+
+def render_qr_svg(uri: str) -> str:
+    """Render an otpauth:// URI as an inline SVG QR code."""
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(uri, image_factory=factory, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    return buf.getvalue().decode("utf-8")

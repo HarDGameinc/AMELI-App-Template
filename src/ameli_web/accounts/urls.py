@@ -23,5 +23,11 @@ urlpatterns = [
     path("profile/sessions/revoke-others", views.revoke_other_sessions_view),
     path("profile/sessions/<str:session_key>/revoke/", views.revoke_session_view, name="profile-revoke-session"),
     path("profile/sessions/<str:session_key>/revoke", views.revoke_session_view),
+    path("profile/mfa/start/", views.mfa_start_view, name="profile-mfa-start"),
+    path("profile/mfa/start", views.mfa_start_view),
+    path("profile/mfa/confirm/", views.mfa_confirm_view, name="profile-mfa-confirm"),
+    path("profile/mfa/confirm", views.mfa_confirm_view),
+    path("profile/mfa/disable/", views.mfa_disable_view, name="profile-mfa-disable"),
+    path("profile/mfa/disable", views.mfa_disable_view),
     path("api/admin/session", views.admin_session_json, name="admin-session-json"),
 ]

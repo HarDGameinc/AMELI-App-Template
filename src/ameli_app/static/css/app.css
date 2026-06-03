@@ -433,6 +433,20 @@
     .admin-user-title strong { font-size:14px; }
     .admin-user-subline { color:var(--muted); font-size:12px; }
     .admin-user-summary { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .mfa-pending-grid { display:grid; grid-template-columns:minmax(0, 220px) minmax(0, 1fr); gap:18px;
+             align-items:start; margin-top:14px; }
+    .mfa-qr-shell { background:#fff; border:1px solid var(--line); border-radius:14px;
+             padding:14px; display:flex; align-items:center; justify-content:center; }
+    .mfa-qr-shell svg { width:100%; height:auto; max-width:200px; display:block; }
+    .mfa-pending-meta { display:grid; gap:12px; }
+    .mfa-recovery-list { list-style:none; padding:0; margin:14px 0;
+             display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px; }
+    .mfa-recovery-list li { background:rgba(127,140,170,.08); border:1px solid var(--line);
+             border-radius:10px; padding:10px 14px; font-family:"SFMono-Regular", Menlo, Consolas, monospace;
+             font-size:13px; font-weight:700; letter-spacing:.04em; text-align:center; }
+    @media (max-width:680px) {
+      .mfa-pending-grid { grid-template-columns:1fr; }
+    }
     .admin-user-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;
              padding-top:10px; border-top:1px solid var(--line); }
     .admin-user-actions button.icon-action { background:var(--surface); border:1px solid var(--line);

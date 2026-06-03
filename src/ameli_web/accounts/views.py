@@ -18,13 +18,17 @@ from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm
 from .models import UserSession
 from .services import (
     change_password_for_user,
+    confirm_mfa_enrollment,
     delete_avatar,
+    disable_mfa_for_self,
     list_user_sessions,
     record_audit,
     replace_avatar,
     revoke_other_sessions,
     revoke_session_record,
+    serialize_mfa_status,
     serialize_user,
+    start_mfa_enrollment,
 )
 
 User = get_user_model()
@@ -91,6 +95,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
+        "mfa_status": serialize_mfa_status(request.user),
         "display_last_login_at": format_timestamp_ui(request.user.last_login),
         "csrf_token": get_token(request),
     }
@@ -266,3 +271,52 @@ def admin_session_json(request: HttpRequest) -> JsonResponse:
         payload["user"] = serialize_user(request.user)
         payload["can_access_admin"] = request.user.is_staff
     return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def mfa_start_view(request: HttpRequest) -> JsonResponse:
+    try:
+        result = start_mfa_enrollment(request.user.username)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    # Expose the freshly generated QR svg and provisioning URI to the
+    # caller. The plaintext secret is also returned so the user can copy
+    # it into authenticator apps that do not accept QR.
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_confirm_view(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    code = str(payload.get("code") or "").strip()
+    try:
+        result = confirm_mfa_enrollment(request.user.username, code)
+    except ValueError as exc:
+        record_audit(
+            "mfa_enrollment_failed",
+            actor=request.user,
+            target_username=request.user.username,
+            payload={"reason": str(exc)},
+        )
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_disable_view(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = disable_mfa_for_self(request.user.username, current_password=current_password)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
