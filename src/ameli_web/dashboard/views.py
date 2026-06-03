@@ -5,6 +5,7 @@ from typing import Any
 from django.conf import settings
 from django.contrib.messages import get_messages
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from ameli_app import __version__
@@ -37,15 +38,7 @@ def home(request):
     context = _dashboard_payload()
     context["access_notice"] = flash_messages[0] if flash_messages else ""
     context["current_user"] = serialize_user(request.user) if request.user.is_authenticated else None
-    return HttpResponse(
-        render_dashboard_html(context),
-    )
-
-
-def render_dashboard_html(context: dict[str, Any]) -> str:
-    from django.template.loader import render_to_string
-
-    return render_to_string("dashboard/home.html", context)
+    return render(request, "dashboard/home.html", context)
 
 
 def _openapi_schema() -> dict[str, Any]:
