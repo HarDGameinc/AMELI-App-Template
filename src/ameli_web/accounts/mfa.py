@@ -88,9 +88,18 @@ def recovery_codes_match(stored_hash: str, candidate: str) -> bool:
 
 
 def render_qr_svg(uri: str) -> str:
-    """Render an otpauth:// URI as an inline SVG QR code."""
-    factory = qrcode.image.svg.SvgImage
-    img = qrcode.make(uri, image_factory=factory, box_size=10, border=2)
+    """Render an otpauth:// URI as an inline SVG QR code.
+
+    Uses SvgPathImage (single <path>) instead of the rect-based default
+    so that the result embeds cleanly via innerHTML without inheriting
+    surrounding styles. Strips the <?xml ... ?> prolog because browsers
+    do not need it for inline SVG.
+    """
+    factory = qrcode.image.svg.SvgPathImage
+    img = qrcode.make(uri, image_factory=factory, box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf)
-    return buf.getvalue().decode("utf-8")
+    raw = buf.getvalue().decode("utf-8")
+    if raw.startswith("<?xml"):
+        raw = raw.split("?>", 1)[1].lstrip()
+    return raw

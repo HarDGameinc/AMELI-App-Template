@@ -436,8 +436,10 @@
     .mfa-pending-grid { display:grid; grid-template-columns:minmax(0, 220px) minmax(0, 1fr); gap:18px;
              align-items:start; margin-top:14px; }
     .mfa-qr-shell { background:#fff; border:1px solid var(--line); border-radius:14px;
-             padding:14px; display:flex; align-items:center; justify-content:center; }
-    .mfa-qr-shell svg { width:100%; height:auto; max-width:200px; display:block; }
+             padding:14px; display:flex; align-items:center; justify-content:center;
+             min-height:200px; }
+    .mfa-qr-shell svg { width:200px; height:200px; display:block; color:#000; }
+    .mfa-qr-shell svg path { fill:#000; stroke:none; }
     .mfa-pending-meta { display:grid; gap:12px; }
     .mfa-recovery-list { list-style:none; padding:0; margin:14px 0;
              display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px; }
