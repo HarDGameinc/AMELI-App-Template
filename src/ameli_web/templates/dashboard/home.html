@@ -2,118 +2,249 @@
 
 {% block title %}{{ app_name }}{% endblock %}
 {% block header_title %}{{ app_name }}{% endblock %}
-{% block header_subtitle %}Template Django-first para apps AMELI con cuentas, perfil, administracion y documentacion API{% endblock %}
+{% block header_subtitle %}Base Django-first para apps AMELI con cuentas, perfil, administracion y documentacion API{% endblock %}
 
 {% block content %}
 {% if access_notice %}
 <section class="panel notice-panel">
-  <div class="metric-label">Acceso web</div>
+  <div class="metric-label">Acceso</div>
   <p class="muted">{{ access_notice }}</p>
 </section>
 {% endif %}
 
-<section class="summary">
-  <div class="panel">
-    <div class="metric-label">Version</div>
-    <div class="metric-value metric-value-sm">{{ version }}</div>
-    <div class="fresh">Estado del template</div>
+<section class="panel profile-hero">
+  <div class="profile-identity">
+    <div class="profile-avatar">
+      {% if current_user %}{{ current_user.initials }}{% else %}AM{% endif %}
+    </div>
+    <div class="profile-identity-copy">
+      <h2 class="profile-name">
+        {% if current_user %}Hola, {{ current_user.display_identity_name }}{% else %}{{ app_name }}{% endif %}
+      </h2>
+      <p class="muted profile-username">
+        {% if current_user %}@{{ current_user.username }} · {{ current_user.role }}{% else %}Template Django-first listo para heredar{% endif %}
+      </p>
+      <div class="profile-badges">
+        <span class="status-pill OPERATIVO">{{ environment }}</span>
+        <span class="profile-meta-chip">Version {{ version }}</span>
+        <span class="profile-meta-chip{% if not database.ok %} warn-text{% endif %}">
+          {% if database.ok %}Base lista{% else %}Base en revision{% endif %}
+        </span>
+      </div>
+    </div>
   </div>
-  <div class="panel">
-    <div class="metric-label">Entorno</div>
-    <div class="metric-value metric-value-sm">{{ environment }}</div>
-    <div class="fresh">{{ config.host }}:{{ config.api_port }}</div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <span class="hero-stat-label">Entorno</span>
+      <span class="hero-stat-value">{{ environment }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Puerto API</span>
+      <span class="hero-stat-value">{{ config.api_port }}</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Autenticacion</span>
+      <span class="hero-stat-value{% if not features.auth_enabled %} warn-text{% endif %}">
+        {% if features.auth_enabled %}Activa{% else %}Off{% endif %}
+      </span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Documentacion</span>
+      <span class="hero-stat-value">{% if features.docs_enabled %}/docs{% else %}Off{% endif %}</span>
+    </div>
   </div>
-  <div class="panel">
-    <div class="metric-label">Autenticacion</div>
-    <div class="metric-value metric-value-sm">{% if features.auth_enabled %}Activa{% else %}Deshabilitada{% endif %}</div>
-    <div class="fresh {% if features.auth_enabled %}fresh-ok{% else %}fresh-warn{% endif %}">Sesion web oficial</div>
-  </div>
-  <div class="panel">
-    <div class="metric-label">Documentacion</div>
-    <div class="metric-value metric-value-sm">{% if features.docs_enabled %}/docs{% else %}Off{% endif %}</div>
-    <div class="fresh">{% if features.redoc_enabled %}/redoc{% else %}ReDoc off{% endif %}</div>
-  </div>
-  <div class="panel">
-    <div class="metric-label">Base de datos</div>
-    <div class="metric-value metric-value-sm">{% if database.ok %}Lista{% else %}Revision{% endif %}</div>
-    <div class="fresh {% if database.ok %}fresh-ok{% else %}fresh-warn{% endif %}">{{ database.message }}</div>
+  <div class="hero-actions">
+    {% if current_user %}
+    <a class="icon-action primary" href="{% url 'accounts:profile' %}">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
+      <span>Mi perfil</span>
+    </a>
+    {% if can_access_admin %}
+    <a class="icon-action" href="/admin/">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">settings</span>
+      <span>Administracion</span>
+    </a>
+    {% endif %}
+    {% if features.docs_enabled %}
+    <a class="icon-action" href="/docs">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">menu_book</span>
+      <span>API Docs</span>
+    </a>
+    {% endif %}
+    {% else %}
+    <a class="icon-action primary" href="{% url 'accounts:login' %}?next=/">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">login</span>
+      <span>Ingresar</span>
+    </a>
+    {% if features.docs_enabled %}
+    <a class="icon-action" href="/docs">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">menu_book</span>
+      <span>API Docs</span>
+    </a>
+    {% endif %}
+    <a class="icon-action" href="/health">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">monitoring</span>
+      <span>Health</span>
+    </a>
+    {% endif %}
   </div>
 </section>
 
-<section class="panel notice-panel source-policy-panel">
-  <div class="metric-label">Direccion del template</div>
-  <div class="profile-inline-meta">
-    <span class="profile-meta-chip">Django ASGI oficial</span>
-    <span class="profile-meta-chip">Perfil + admin + auditoria</span>
-    <span class="profile-meta-chip">/docs y /redoc</span>
-  </div>
-  <p class="muted panel-copy">Usa esta base para lanzar nuevas apps AMELI con usuarios reales sin rehacer autenticacion, sesiones, perfil, auditoria ni operacion web.</p>
-</section>
-
-<section class="tab-grid wide">
-  <article class="panel">
-    <div class="panel-header">
-      <div>
-        <div class="metric-label">Capacidades listas para heredar</div>
-        <p class="muted panel-copy">La plantilla ya incluye el shell comun que antes habia que construir proyecto por proyecto.</p>
-      </div>
-    </div>
-    <div class="events">
-      <div class="event ev-OPERATIVO">
-        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Cuenta y autenticacion</span></div>
-        <div class="session-meta-line">
-          <span class="session-meta-item">login/logout</span>
-          <span class="session-meta-item">cambio obligatorio de clave</span>
-          <span class="session-meta-item">politica fuerte</span>
-        </div>
-      </div>
-      <div class="event ev-OPERATIVO">
-        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Perfil de usuario</span></div>
-        <div class="session-meta-line">
-          <span class="session-meta-item">tema</span>
-          <span class="session-meta-item">alias</span>
-          <span class="session-meta-item">sesiones recientes</span>
-        </div>
-      </div>
-      <div class="event ev-OPERATIVO">
-        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Administracion</span></div>
-        <div class="session-meta-line">
-          <span class="session-meta-item">usuarios</span>
-          <span class="session-meta-item">auditoria</span>
-          <span class="session-meta-item">revocacion de sesiones</span>
-        </div>
-      </div>
-      <div class="event ev-OPERATIVO">
-        <div class="ev-top"><span class="ev-dot"></span><span class="ev-state">Operacion y despliegue</span></div>
-        <div class="session-meta-line">
-          <span class="session-meta-item">install/update</span>
-          <span class="session-meta-item">systemd</span>
-          <span class="session-meta-item">validate_installation</span>
-        </div>
-      </div>
-    </div>
+<section class="summary-cards-compact" style="margin-bottom:16px;">
+  <article class="summary-card-compact">
+    <span class="metric-label">Entorno</span>
+    <strong>{{ environment }}</strong>
+    <span class="muted">{{ config.host }}:{{ config.api_port }}</span>
   </article>
+  <article class="summary-card-compact">
+    <span class="metric-label">Base de datos</span>
+    <strong>{% if database.ok %}Lista{% else %}Revision{% endif %}</strong>
+    <span class="muted">{{ database.message|default:"Estado desconocido" }}</span>
+  </article>
+  <article class="summary-card-compact">
+    <span class="metric-label">Autenticacion</span>
+    <strong>{% if features.auth_enabled %}Activa{% else %}Off{% endif %}</strong>
+    <span class="muted">Sesion web oficial</span>
+  </article>
+  <article class="summary-card-compact">
+    <span class="metric-label">Documentacion</span>
+    <strong>{% if features.docs_enabled %}/docs{% else %}Off{% endif %}</strong>
+    <span class="muted">{% if features.redoc_enabled %}/redoc disponible{% else %}ReDoc off{% endif %}</span>
+  </article>
+</section>
 
-  <aside class="panel">
-    <div class="metric-label">Siguientes pasos para una app nueva</div>
-    <div class="profile-card">
-      <div class="profile-row">
-        <span class="metric-label">1. Renombrar paquete</span>
-        <span class="profile-note">ameli_app -> tu app</span>
+<section class="admin-layout">
+  <div class="admin-layout-main">
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="metric-label">Capacidades listas para heredar</div>
+          <p class="muted panel-copy">La plantilla ya incluye el shell comun que antes habia que construir proyecto por proyecto.</p>
+        </div>
       </div>
-      <div class="profile-row">
-        <span class="metric-label">2. Definir dominio</span>
-        <span class="profile-note">workers y modelos propios</span>
+      <div class="events">
+        <article class="event ev-OPERATIVO">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">Cuenta y autenticacion</span>
+            <span class="session-state-badge active">Listo</span>
+          </div>
+          <div class="session-meta-line">
+            <span class="session-meta-item">login/logout</span>
+            <span class="session-meta-item">cambio obligatorio</span>
+            <span class="session-meta-item">politica fuerte de password</span>
+            <span class="session-meta-item">audit log</span>
+          </div>
+        </article>
+        <article class="event ev-OPERATIVO">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">Perfil de usuario</span>
+            <span class="session-state-badge active">Listo</span>
+          </div>
+          <div class="session-meta-line">
+            <span class="session-meta-item">alias y tema</span>
+            <span class="session-meta-item">cambio de password con politica</span>
+            <span class="session-meta-item">sesiones activas con revocacion</span>
+          </div>
+        </article>
+        <article class="event ev-OPERATIVO">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">Administracion</span>
+            <span class="session-state-badge active">Listo</span>
+          </div>
+          <div class="session-meta-line">
+            <span class="session-meta-item">crear/editar/eliminar usuarios</span>
+            <span class="session-meta-item">cambio de rol y password reset</span>
+            <span class="session-meta-item">self-guards backend</span>
+            <span class="session-meta-item">auditoria por accion</span>
+          </div>
+        </article>
+        <article class="event ev-OPERATIVO">
+          <div class="ev-top">
+            <span class="ev-dot"></span>
+            <span class="ev-state">Operacion y despliegue</span>
+            <span class="session-state-badge active">Listo</span>
+          </div>
+          <div class="session-meta-line">
+            <span class="session-meta-item">install/update/backup</span>
+            <span class="session-meta-item">systemd multientorno</span>
+            <span class="session-meta-item">validate_installation</span>
+            <span class="session-meta-item">pytest + ruff</span>
+          </div>
+        </article>
       </div>
-      <div class="profile-row">
-        <span class="metric-label">3. Bootstrap admin</span>
-        <span class="profile-note">primer login seguro</span>
+    </section>
+  </div>
+
+  <aside class="admin-layout-side">
+    {% if current_user %}
+    <section class="panel">
+      <div class="metric-label">Accesos rapidos</div>
+      <div class="admin-link-list">
+        <a class="icon-action" href="{% url 'accounts:profile' %}">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
+          <span>Mi perfil</span>
+        </a>
+        {% if can_access_admin %}
+        <a class="icon-action" href="/admin/">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">settings</span>
+          <span>Administracion</span>
+        </a>
+        {% endif %}
+        {% if features.docs_enabled %}
+        <a class="icon-action" href="/docs">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">menu_book</span>
+          <span>API Docs</span>
+        </a>
+        {% endif %}
+        {% if features.redoc_enabled %}
+        <a class="icon-action" href="/redoc">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">description</span>
+          <span>ReDoc</span>
+        </a>
+        {% endif %}
+        <a class="icon-action" href="/health">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">monitoring</span>
+          <span>Health</span>
+        </a>
       </div>
-      <div class="profile-row">
-        <span class="metric-label">4. Documentar</span>
-        <span class="profile-note">README + AGENTS</span>
+    </section>
+    {% else %}
+    <section class="panel">
+      <div class="metric-label">Siguientes pasos para una app nueva</div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">1. Renombrar paquete</span>
+          <span class="profile-note">ameli_app → tu app</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">2. Definir dominio</span>
+          <span class="profile-note">workers y modelos propios</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">3. Bootstrap admin</span>
+          <span class="profile-note">primer login seguro</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">4. Documentar</span>
+          <span class="profile-note">README + AGENTS</span>
+        </div>
       </div>
-    </div>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="metric-label">Direccion del template</div>
+      <p class="muted panel-copy">Usa esta base para lanzar nuevas apps AMELI con usuarios reales sin rehacer autenticacion, sesiones, perfil, auditoria ni operacion web.</p>
+      <div class="profile-inline-meta" style="margin-top:8px;">
+        <span class="profile-meta-chip">Django ASGI</span>
+        <span class="profile-meta-chip">PostgreSQL</span>
+        <span class="profile-meta-chip">systemd</span>
+        <span class="profile-meta-chip">{% if features.docs_enabled %}OpenAPI{% else %}OpenAPI off{% endif %}</span>
+      </div>
+    </section>
   </aside>
 </section>
 {% endblock %}
