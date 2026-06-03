@@ -34,6 +34,9 @@ class User(AbstractUser):
     theme_preference = models.CharField(max_length=10, choices=THEME_CHOICES, default=THEME_AUTO)
     avatar = models.ImageField(upload_to=avatar_upload_to, blank=True, null=True)
     must_change_password = models.BooleanField(default=False)
+    mfa_secret = models.CharField(max_length=64, blank=True, default="")
+    mfa_enabled = models.BooleanField(default=False)
+    mfa_required = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -95,3 +98,16 @@ class UserSession(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username}::{self.session_key}"
+
+
+class MFARecoveryCode(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username}::recovery"
