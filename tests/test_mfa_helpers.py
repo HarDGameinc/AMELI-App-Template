@@ -119,12 +119,13 @@ def test_generate_recovery_codes_respects_count_argument():
 # ---- Recovery code hashing ----
 
 
-def test_normalize_recovery_code_uppercases_and_strips_unknown():
-    raw = "  abcd efgh ijkl  "
-    normalized = normalize_recovery_code(raw)
+def test_normalize_recovery_code_uppercases_and_strips_separators():
+    # Lowercase becomes uppercase, dashes / spaces / non-alphabet chars get
+    # dropped. The alphabet intentionally excludes confusing pairs like
+    # 0/O and 1/I/L so any of those characters in raw input also drop.
+    normalized = normalize_recovery_code("  abcd-efgh jklm  ")
 
-    # Lowercase letters get upper-cased, non-alphabet chars get dropped
-    assert normalized == "ABCDEFGHIJKL"
+    assert normalized == "ABCDEFGHJKLM"
 
 
 def test_hash_recovery_code_is_deterministic_and_case_insensitive():

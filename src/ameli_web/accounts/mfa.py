@@ -62,8 +62,15 @@ def generate_recovery_codes(count: int = RECOVERY_CODES_PER_ENROLLMENT) -> list[
 
 
 def normalize_recovery_code(code: str) -> str:
-    """Canonicalize a code for hashing/lookup (uppercase, no spaces)."""
-    return "".join(ch for ch in code.upper() if ch in RECOVERY_ALPHABET + "-")
+    """Canonicalize a code for hashing/lookup.
+
+    Drops anything that is not an alphabet character (including dashes,
+    spaces and the easily-confused characters intentionally excluded
+    from the alphabet) and upper-cases the rest. This means a user may
+    type the code in any combination of capitalization, spacing or
+    separator style and still match the stored hash.
+    """
+    return "".join(ch for ch in code.upper() if ch in RECOVERY_ALPHABET)
 
 
 def hash_recovery_code(code: str) -> str:
