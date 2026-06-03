@@ -45,7 +45,7 @@ def sync_user_groups(user) -> None:
 
 def record_audit(action: str, *, actor=None, target_username: str | None = None, payload: dict[str, Any] | None = None) -> AuditEvent:
     return AuditEvent.objects.create(
-        actor_username=getattr(actor, "username", None),
+        actor_username=(getattr(actor, "username", None) or ""),
         target_username=(target_username or ""),
         action=action,
         payload=payload or {},
