@@ -535,6 +535,32 @@ def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, 
     return {"ok": True, "status": "disabled"}
 
 
+def regenerate_recovery_codes(actor_username: str) -> dict[str, Any]:
+    """Invalidate every existing recovery code and emit 10 fresh ones.
+
+    The plaintext codes are returned once for the user to copy down; only
+    the hashes are persisted. Requires MFA to be already enabled — there
+    is no point regenerating codes that protect nothing.
+    """
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if not user.mfa_enabled:
+        raise ValueError("mfa is not enabled; activate 2fa before regenerating recovery codes")
+    MFARecoveryCode.objects.filter(user=user).delete()
+    codes = mfa.generate_recovery_codes()
+    MFARecoveryCode.objects.bulk_create(
+        [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
+    )
+    record_audit(
+        "mfa_recovery_codes_regenerated",
+        actor=user,
+        target_username=user.username,
+        payload={"recovery_codes_count": len(codes)},
+    )
+    return {"ok": True, "status": "regenerated", "recovery_codes": codes}
+
+
 def consume_recovery_code(user, candidate: str) -> bool:
     """Burn a single recovery code if it matches an unused row for the user.
 

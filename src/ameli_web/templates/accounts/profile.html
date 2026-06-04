@@ -305,6 +305,10 @@
         </div>
       </div>
       <div class="modal-actions-row">
+        <button class="icon-action" type="button" id="profile-mfa-regenerate">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
+          <span>Regenerar codigos de recuperacion</span>
+        </button>
         <button class="primary danger" type="button" id="profile-mfa-disable">
           <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
           <span>Desactivar 2FA</span>
@@ -479,6 +483,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const disableBtn = document.getElementById("profile-mfa-disable");
   const disablePassword = document.getElementById("profile-mfa-disable-password");
   const disableFeedback = document.getElementById("profile-mfa-disable-feedback");
+  const regenerateBtn = document.getElementById("profile-mfa-regenerate");
 
   activateBtn?.addEventListener("click", async () => {
     activateBtn.disabled = true;
@@ -553,6 +558,28 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       if (disableFeedback) disableFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       disableBtn.disabled = false;
+    }
+  });
+
+  regenerateBtn?.addEventListener("click", async () => {
+    if (!confirm("Confirmas regenerar tus codigos de recuperacion? Todos los codigos actuales dejaran de funcionar.")) {
+      return;
+    }
+    regenerateBtn.disabled = true;
+    try {
+      const data = await postJson("{% url 'accounts:profile-mfa-regenerate' %}");
+      if (recoveryList && Array.isArray(data.recovery_codes)) {
+        recoveryList.innerHTML = "";
+        data.recovery_codes.forEach((codeValue) => {
+          const li = document.createElement("li");
+          li.textContent = codeValue;
+          recoveryList.appendChild(li);
+        });
+      }
+      showMfaSection("recovery");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Error inesperado.");
+      regenerateBtn.disabled = false;
     }
   });
 });

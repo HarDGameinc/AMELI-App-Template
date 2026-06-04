@@ -8,7 +8,9 @@ from ameli_web.accounts.models import MFARecoveryCode
 from ameli_web.accounts.services import (
     bootstrap_superadmin,
     confirm_mfa_enrollment,
+    consume_recovery_code,
     disable_mfa_for_self,
+    regenerate_recovery_codes,
     serialize_mfa_status,
     start_mfa_enrollment,
 )
@@ -202,3 +204,50 @@ def test_serialize_mfa_status_for_enabled_user(admin_user):
     assert status["enabled"] is True
     assert status["pending_enrollment"] is False
     assert status["recovery_codes_remaining"] == 10
+
+
+# ---- regenerate_recovery_codes ----
+
+
+@pytest.mark.django_db
+def test_regenerate_recovery_codes_invalidates_old_and_returns_fresh_ones(admin_user):
+    start_result = start_mfa_enrollment("admin")
+    code = pyotp.TOTP(start_result["secret"]).now()
+    enrolled = confirm_mfa_enrollment("admin", code)
+    old_codes = set(enrolled["recovery_codes"])
+
+    result = regenerate_recovery_codes("admin")
+
+    assert result["status"] == "regenerated"
+    new_codes = set(result["recovery_codes"])
+    assert len(new_codes) == 10
+    # The new batch must not overlap with the old one (random alphabet
+    # collisions across 10 codes are astronomically unlikely).
+    assert new_codes.isdisjoint(old_codes)
+    # Status counter is back to 10 unused codes.
+    assert serialize_mfa_status(_refresh(admin_user))["recovery_codes_remaining"] == 10
+
+
+@pytest.mark.django_db
+def test_regenerate_recovery_codes_burns_old_codes(admin_user):
+    start_result = start_mfa_enrollment("admin")
+    code = pyotp.TOTP(start_result["secret"]).now()
+    enrolled = confirm_mfa_enrollment("admin", code)
+    old_code = enrolled["recovery_codes"][0]
+
+    regenerate_recovery_codes("admin")
+
+    # The previously valid recovery code must no longer match anything.
+    assert consume_recovery_code(_refresh(admin_user), old_code) is False
+
+
+@pytest.mark.django_db
+def test_regenerate_recovery_codes_rejects_when_mfa_disabled(admin_user):
+    with pytest.raises(ValueError, match="mfa is not enabled"):
+        regenerate_recovery_codes("admin")
+
+
+@pytest.mark.django_db
+def test_regenerate_recovery_codes_rejects_when_user_missing(db):
+    with pytest.raises(ValueError, match="user not found"):
+        regenerate_recovery_codes("nobody")

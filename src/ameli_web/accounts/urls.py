@@ -31,5 +31,7 @@ urlpatterns = [
     path("profile/mfa/confirm", views.mfa_confirm_view),
     path("profile/mfa/disable/", views.mfa_disable_view, name="profile-mfa-disable"),
     path("profile/mfa/disable", views.mfa_disable_view),
+    path("profile/mfa/regenerate-codes/", views.mfa_regenerate_view, name="profile-mfa-regenerate"),
+    path("profile/mfa/regenerate-codes", views.mfa_regenerate_view),
     path("api/admin/session", views.admin_session_json, name="admin-session-json"),
 ]

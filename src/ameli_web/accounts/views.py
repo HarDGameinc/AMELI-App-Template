@@ -28,6 +28,7 @@ from .services import (
     disable_mfa_for_self,
     list_user_sessions,
     record_audit,
+    regenerate_recovery_codes,
     replace_avatar,
     revoke_other_sessions,
     revoke_session_record,
@@ -344,6 +345,16 @@ def mfa_disable_view(request: HttpRequest) -> JsonResponse:
     current_password = str(payload.get("current_password") or "").strip()
     try:
         result = disable_mfa_for_self(request.user.username, current_password=current_password)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_regenerate_view(request: HttpRequest) -> JsonResponse:
+    try:
+        result = regenerate_recovery_codes(request.user.username)
     except ValueError as exc:
         return _json_error(str(exc))
     return JsonResponse(result)
