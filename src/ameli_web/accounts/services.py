@@ -133,6 +133,8 @@ def serialize_user(user) -> dict[str, Any]:
         "enabled": user.is_active,
         "has_avatar": bool(user.avatar),
         "must_change_password": user.must_change_password,
+        "mfa_enabled": bool(user.mfa_enabled),
+        "mfa_required": bool(user.mfa_required),
         "created_at": user.created_at.isoformat() if getattr(user, "created_at", None) else None,
         "updated_at": user.updated_at.isoformat() if getattr(user, "updated_at", None) else None,
         "display_created_at": format_timestamp_ui(getattr(user, "created_at", None)),
@@ -303,12 +305,14 @@ def create_public_user(actor_username: str, username: str, password: str, *, mus
     )
 
 
-def update_user_account(actor_username: str, username: str, *, password: str | None = None, enabled: bool | None = None, must_change_password: bool | None = None, role: str | None = None) -> dict[str, Any]:
+def update_user_account(actor_username: str, username: str, *, password: str | None = None, enabled: bool | None = None, must_change_password: bool | None = None, role: str | None = None, mfa_required: bool | None = None) -> dict[str, Any]:
     is_self = (actor_username or "").lower() == (username or "").lower()
     if is_self and enabled is False:
         raise ValueError("cannot disable your own account")
     if is_self and role is not None:
         raise ValueError("cannot change your own role")
+    if is_self and mfa_required is not None:
+        raise ValueError("cannot toggle your own mfa requirement; manage 2fa from your profile")
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
@@ -321,10 +325,21 @@ def update_user_account(actor_username: str, username: str, *, password: str | N
         user.must_change_password = must_change_password
     if role in {User.ROLE_PUBLIC, User.ROLE_SUPERADMIN}:
         user.role = role
+    if mfa_required is not None:
+        user.mfa_required = bool(mfa_required)
     user.save()
     sync_user_groups(user)
     actor = User.objects.filter(username__iexact=actor_username).first()
-    record_audit("update_user", actor=actor, target_username=user.username, payload={"enabled": user.is_active, "role": user.role})
+    record_audit(
+        "update_user",
+        actor=actor,
+        target_username=user.username,
+        payload={
+            "enabled": user.is_active,
+            "role": user.role,
+            "mfa_required": user.mfa_required,
+        },
+    )
     return {"ok": True, "status": "updated", "user": serialize_user(user)}
 
 
@@ -488,6 +503,35 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
     user.save(update_fields=["mfa_enabled", "mfa_secret", "updated_at"])
     MFARecoveryCode.objects.filter(user=user).delete()
     record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={})
+    return {"ok": True, "status": "disabled"}
+
+
+def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, Any]:
+    """Forcibly disable MFA for a user (e.g. lost device support case).
+
+    Unlike disable_mfa_for_self, this does not ask for the target's
+    password — it is an admin recovery action. Rejects self use so a
+    superadmin still has to go through their own profile (and password)
+    to disable their own MFA.
+    """
+    is_self = (actor_username or "").lower() == (username or "").lower()
+    if is_self:
+        raise ValueError("cannot disable your own mfa from the admin; use your profile instead")
+    user = User.objects.filter(username__iexact=username).first()
+    if user is None:
+        raise ValueError("user not found")
+    user.mfa_enabled = False
+    user.mfa_secret = ""
+    user.mfa_required = False
+    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_required", "updated_at"])
+    MFARecoveryCode.objects.filter(user=user).delete()
+    actor = User.objects.filter(username__iexact=actor_username).first()
+    record_audit(
+        "mfa_disabled_by_admin",
+        actor=actor,
+        target_username=user.username,
+        payload={},
+    )
     return {"ok": True, "status": "disabled"}
 
 

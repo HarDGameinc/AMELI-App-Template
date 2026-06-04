@@ -33,6 +33,11 @@ urlpatterns = [
         admin_views.admin_reset_user_password,
         name="admin-reset-user-password",
     ),
+    path(
+        "admin/users/<str:username>/disable-mfa",
+        admin_views.admin_disable_user_mfa,
+        name="admin-disable-user-mfa",
+    ),
     path("admin/change-password", admin_views.admin_change_password, name="admin-change-password"),
     path("django-admin/", admin.site.urls),
 ]

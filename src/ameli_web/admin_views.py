@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from ameli_app import __version__
 from ameli_web.accounts.models import User, UserSession
 from ameli_web.accounts.services import (
+    admin_disable_mfa_for_user,
     change_password_for_user,
     create_user_account,
     delete_user_account,
@@ -157,7 +158,18 @@ def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
             enabled=payload.get("enabled"),
             must_change_password=payload.get("must_change_password"),
             role=payload.get("role"),
+            mfa_required=payload.get("mfa_required"),
         )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@require_POST
+@superadmin_required
+def admin_disable_user_mfa(request: HttpRequest, username: str) -> JsonResponse:
+    try:
+        result = admin_disable_mfa_for_user(actor_username=request.user.username, username=username)
     except ValueError as exc:
         return _json_error(str(exc))
     return JsonResponse(result)
