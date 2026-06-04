@@ -180,7 +180,10 @@ def test_serialize_mfa_status_for_disabled_user(admin_user):
     status = serialize_mfa_status(admin_user)
 
     assert status["enabled"] is False
-    assert status["pending_enrollment"] is False
+    assert status["totp_enabled"] is False
+    assert status["email_enabled"] is False
+    assert status["totp_pending"] is False
+    assert status["email_pending"] is False
     assert status["recovery_codes_remaining"] == 0
 
 
@@ -190,7 +193,8 @@ def test_serialize_mfa_status_for_pending_user(admin_user):
     status = serialize_mfa_status(_refresh(admin_user))
 
     assert status["enabled"] is False
-    assert status["pending_enrollment"] is True
+    assert status["totp_enabled"] is False
+    assert status["totp_pending"] is True
 
 
 @pytest.mark.django_db
@@ -202,7 +206,9 @@ def test_serialize_mfa_status_for_enabled_user(admin_user):
     status = serialize_mfa_status(_refresh(admin_user))
 
     assert status["enabled"] is True
-    assert status["pending_enrollment"] is False
+    assert status["totp_enabled"] is True
+    assert status["email_enabled"] is False
+    assert status["totp_pending"] is False
     assert status["recovery_codes_remaining"] == 10
 
 

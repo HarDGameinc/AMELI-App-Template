@@ -114,7 +114,8 @@ def test_start_mfa_email_enrollment_requires_email_on_file(admin_user):
 @pytest.mark.django_db
 def test_start_mfa_email_enrollment_rejects_when_already_enabled(public_user_with_email):
     start_mfa_email_enrollment("viewer")
-    # Mark as enabled (simulating completed enrollment from another flow)
+    # Simulate a completed email enrollment from another flow.
+    public_user_with_email.mfa_email_enabled = True
     public_user_with_email.mfa_enabled = True
     public_user_with_email.save()
 
@@ -138,14 +139,19 @@ def test_start_mfa_email_enrollment_burns_old_email_challenges(public_user_with_
 
 
 @pytest.mark.django_db
-def test_start_mfa_email_enrollment_clears_pending_totp_secret(public_user_with_email):
+def test_start_mfa_email_enrollment_preserves_totp_secret(public_user_with_email):
+    """Stacked methods can coexist — starting email enrollment must not
+    wipe a previously-issued TOTP secret. This is the regression guard
+    for the stacked refactor: pre-refactor the service nuked the secret
+    on every email start; post-refactor TOTP keeps living its own life.
+    """
     public_user_with_email.mfa_secret = "FAKETOTPSECRET12345"
     public_user_with_email.save()
 
     start_mfa_email_enrollment("viewer")
 
     refreshed = _refresh(public_user_with_email)
-    assert refreshed.mfa_secret == ""
+    assert refreshed.mfa_secret == "FAKETOTPSECRET12345"
 
 
 # ---- confirm_mfa_email_enrollment ----
@@ -177,8 +183,8 @@ def test_confirm_mfa_email_enrollment_activates_email_mfa(public_user_with_email
     assert len(result["recovery_codes"]) == 10
     refreshed = _refresh(public_user_with_email)
     assert refreshed.mfa_enabled is True
-    assert refreshed.mfa_method == "email"
-    assert refreshed.mfa_secret == ""
+    assert refreshed.mfa_email_enabled is True
+    assert refreshed.mfa_totp_enabled is False
     assert MFARecoveryCode.objects.filter(user=refreshed).count() == 10
 
 
@@ -301,7 +307,8 @@ def test_disable_mfa_for_self_clears_method(public_user_with_email):
 
     refreshed = _refresh(public_user_with_email)
     assert refreshed.mfa_enabled is False
-    assert refreshed.mfa_method == ""
+    assert refreshed.mfa_totp_enabled is False
+    assert refreshed.mfa_email_enabled is False
     assert MFAEmailChallenge.objects.filter(user=refreshed).count() == 0
 
 
@@ -314,7 +321,8 @@ def test_admin_disable_mfa_for_user_clears_method(admin_user, public_user_with_e
 
     refreshed = _refresh(public_user_with_email)
     assert refreshed.mfa_enabled is False
-    assert refreshed.mfa_method == ""
+    assert refreshed.mfa_totp_enabled is False
+    assert refreshed.mfa_email_enabled is False
     assert MFAEmailChallenge.objects.filter(user=refreshed).count() == 0
 
 
@@ -329,7 +337,8 @@ def test_serialize_mfa_status_exposes_method_for_email_user(public_user_with_ema
     status = serialize_mfa_status(_refresh(public_user_with_email))
 
     assert status["enabled"] is True
-    assert status["method"] == "email"
+    assert status["email_enabled"] is True
+    assert status["totp_enabled"] is False
     assert status["has_email"] is True
 
 
@@ -338,4 +347,5 @@ def test_serialize_mfa_status_method_empty_for_unenrolled(public_user_with_email
     status = serialize_mfa_status(public_user_with_email)
 
     assert status["enabled"] is False
-    assert status["method"] == ""
+    assert status["totp_enabled"] is False
+    assert status["email_enabled"] is False

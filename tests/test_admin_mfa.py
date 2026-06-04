@@ -142,7 +142,8 @@ def test_serialize_user_includes_mfa_fields(admin_and_tester, tester_with_mfa):
     assert payload["mfa_enabled"] is True
     assert payload["mfa_required"] is False
     # tester_with_mfa was enrolled via the TOTP flow
-    assert payload["mfa_method"] == "totp"
+    assert payload["mfa_totp_enabled"] is True
+    assert payload["mfa_email_enabled"] is False
 
 
 @pytest.mark.django_db
@@ -152,4 +153,5 @@ def test_serialize_user_reports_method_when_unenrolled(admin_and_tester):
     payload = serialize_user(admin_and_tester["tester"])
 
     assert payload["mfa_enabled"] is False
-    assert payload["mfa_method"] == ""
+    assert payload["mfa_totp_enabled"] is False
+    assert payload["mfa_email_enabled"] is False

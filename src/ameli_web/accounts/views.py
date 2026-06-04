@@ -434,7 +434,15 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         return redirect("accounts:login")
 
     next_url = request.session.get(PENDING_MFA_NEXT_KEY) or "/profile/"
-    method = user.mfa_method or "totp"
+    # Commit 4 of the stacked refactor will let the user pick between
+    # available methods. For now, prefer TOTP when present (industry
+    # primary) and fall back to email.
+    if user.mfa_totp_enabled:
+        method = "totp"
+    elif user.mfa_email_enabled:
+        method = "email"
+    else:
+        method = "totp"
     context = {
         "version": __version__,
         "next_url": next_url,
@@ -504,7 +512,7 @@ def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
     user = _pending_mfa_user(request)
     if user is None:
         return _json_error("la sesion de ingreso expiro; vuelve a /login/", status=401)
-    if (user.mfa_method or "totp") != "email":
+    if not user.mfa_email_enabled:
         return _json_error("el reenvio por email solo aplica al metodo email", status=400)
     try:
         result = send_mfa_email_login_code(user)

@@ -152,7 +152,7 @@ def test_profile_mfa_email_confirm_completes_enrollment(client, public_user):
     assert len(payload["recovery_codes"]) == 10
     refreshed = User.objects.get(pk=public_user.pk)
     assert refreshed.mfa_enabled is True
-    assert refreshed.mfa_method == "email"
+    assert refreshed.mfa_email_enabled is True
 
 
 @pytest.mark.django_db

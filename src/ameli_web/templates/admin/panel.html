@@ -278,7 +278,9 @@
             <span class="session-state-badge warning">Cambio pendiente</span>
             {% endif %}
             {% if user_item.mfa_enabled %}
-              {% if user_item.mfa_method == "email" %}
+              {% if user_item.mfa_totp_enabled and user_item.mfa_email_enabled %}
+              <span class="session-state-badge active">2FA TOTP+Email</span>
+              {% elif user_item.mfa_email_enabled %}
               <span class="session-state-badge active">2FA Email</span>
               {% else %}
               <span class="session-state-badge active">2FA TOTP</span>

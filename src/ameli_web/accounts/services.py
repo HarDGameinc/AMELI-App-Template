@@ -142,7 +142,8 @@ def serialize_user(user) -> dict[str, Any]:
         "must_change_password": user.must_change_password,
         "mfa_enabled": bool(user.mfa_enabled),
         "mfa_required": bool(user.mfa_required),
-        "mfa_method": user.mfa_method or ("totp" if user.mfa_enabled else ""),
+        "mfa_totp_enabled": bool(user.mfa_totp_enabled),
+        "mfa_email_enabled": bool(user.mfa_email_enabled),
         "created_at": user.created_at.isoformat() if getattr(user, "created_at", None) else None,
         "updated_at": user.updated_at.isoformat() if getattr(user, "updated_at", None) else None,
         "display_created_at": format_timestamp_ui(getattr(user, "created_at", None)),
@@ -419,23 +420,24 @@ def change_password_for_user(username: str, current_password: str, new_password:
 
 def serialize_mfa_status(user) -> dict[str, Any]:
     """Return the MFA snapshot used to render the profile and admin views."""
-    pending_totp = bool(user.mfa_secret) and not user.mfa_enabled
+    totp_pending = bool(user.mfa_secret) and not user.mfa_totp_enabled
     has_pending_email_challenge = MFAEmailChallenge.objects.filter(
         user=user, used_at__isnull=True, expires_at__gt=timezone.now()
     ).exists()
-    pending = pending_totp or (not user.mfa_enabled and has_pending_email_challenge)
+    email_pending = not user.mfa_email_enabled and has_pending_email_challenge
     remaining = (
         MFARecoveryCode.objects.filter(user=user, used_at__isnull=True).count()
         if user.mfa_enabled
         else 0
     )
-    method = user.mfa_method or ("totp" if user.mfa_enabled else "")
     return {
         "enabled": bool(user.mfa_enabled),
-        "pending_enrollment": pending,
+        "totp_enabled": bool(user.mfa_totp_enabled),
+        "email_enabled": bool(user.mfa_email_enabled),
+        "totp_pending": totp_pending,
+        "email_pending": email_pending,
         "required_by_admin": bool(user.mfa_required),
         "recovery_codes_remaining": remaining,
-        "method": method,
         "has_email": bool(getattr(user, "email", "")),
     }
 
@@ -443,20 +445,18 @@ def serialize_mfa_status(user) -> dict[str, Any]:
 def start_mfa_enrollment(actor_username: str) -> dict[str, Any]:
     """Generate a fresh TOTP secret for the user and return enrollment data.
 
-    Any existing pending enrollment is overwritten. Already-enrolled users
-    must call disable first.
+    Any existing pending TOTP enrollment is overwritten. Existing email
+    enrollment is preserved (stacked methods may coexist). Re-enrolling
+    a method that is already enabled requires disabling it first.
     """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if user.mfa_enabled:
-        raise ValueError("mfa is already enabled; disable it before re-enrolling")
+    if user.mfa_totp_enabled:
+        raise ValueError("totp mfa is already enabled; disable it before re-enrolling")
     secret = mfa.generate_secret()
     user.mfa_secret = secret
-    user.mfa_enabled = False
-    user.save(update_fields=["mfa_secret", "mfa_enabled", "updated_at"])
-    MFARecoveryCode.objects.filter(user=user).delete()
-    MFAEmailChallenge.objects.filter(user=user).delete()
+    user.save(update_fields=["mfa_secret", "updated_at"])
     issuer = django_settings.CFG.app_name
     uri = mfa.provisioning_uri(secret, username=user.username, issuer=issuer)
     record_audit("mfa_enrollment_started", actor=user, target_username=user.username, payload={})
@@ -479,50 +479,110 @@ def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if user.mfa_enabled:
-        raise ValueError("mfa is already enabled")
+    if user.mfa_totp_enabled:
+        raise ValueError("totp mfa is already enabled")
     if not user.mfa_secret:
         raise ValueError("no pending enrollment; start enrollment first")
     if not mfa.verify_totp(user.mfa_secret, code):
         raise ValueError("invalid verification code")
+    was_enabled = user.mfa_enabled
+    user.mfa_totp_enabled = True
     user.mfa_enabled = True
     user.mfa_required = False
-    user.mfa_method = User.MFA_METHOD_TOTP
-    user.save(update_fields=["mfa_enabled", "mfa_required", "mfa_method", "updated_at"])
-    MFAEmailChallenge.objects.filter(user=user).delete()
-    codes = mfa.generate_recovery_codes()
-    MFARecoveryCode.objects.bulk_create(
-        [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
-    )
+    user.save(update_fields=["mfa_totp_enabled", "mfa_enabled", "mfa_required", "updated_at"])
+    # Only mint a fresh recovery batch the first time the user enables
+    # ANY method. Stacking the second method keeps the existing codes.
+    if not was_enabled:
+        MFARecoveryCode.objects.filter(user=user).delete()
+        codes = mfa.generate_recovery_codes()
+        MFARecoveryCode.objects.bulk_create(
+            [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
+        )
+    else:
+        codes = []  # caller stays on the existing batch
     record_audit(
         "mfa_enrollment_completed",
         actor=user,
         target_username=user.username,
-        payload={"recovery_codes_count": len(codes)},
+        payload={"method": "totp", "recovery_codes_count": len(codes)},
     )
     return {
         "ok": True,
         "status": "enabled",
+        "method": "totp",
         "recovery_codes": codes,
     }
 
 
-def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
-    """Disable MFA for the calling user after re-confirming their password."""
+def disable_mfa_totp_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
+    """Disable just the TOTP factor for the calling user."""
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if not user.mfa_enabled and not user.mfa_secret and not user.mfa_method:
+    if not user.mfa_totp_enabled and not user.mfa_secret:
         return {"ok": True, "status": "already-disabled"}
     if not current_password or not user.check_password(current_password):
         raise ValueError("current password is invalid")
+    user.mfa_totp_enabled = False
+    user.mfa_secret = ""
+    user.mfa_enabled = bool(user.mfa_email_enabled)
+    user.save(update_fields=["mfa_totp_enabled", "mfa_secret", "mfa_enabled", "updated_at"])
+    if not user.mfa_enabled:
+        MFARecoveryCode.objects.filter(user=user).delete()
+    record_audit(
+        "mfa_disabled_by_self",
+        actor=user,
+        target_username=user.username,
+        payload={"method": "totp"},
+    )
+    return {"ok": True, "status": "disabled", "method": "totp"}
+
+
+def disable_mfa_email_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
+    """Disable just the email factor for the calling user."""
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    has_pending = MFAEmailChallenge.objects.filter(user=user).exists()
+    if not user.mfa_email_enabled and not has_pending:
+        return {"ok": True, "status": "already-disabled"}
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
+    user.mfa_email_enabled = False
+    user.mfa_enabled = bool(user.mfa_totp_enabled)
+    user.save(update_fields=["mfa_email_enabled", "mfa_enabled", "updated_at"])
+    MFAEmailChallenge.objects.filter(user=user).delete()
+    if not user.mfa_enabled:
+        MFARecoveryCode.objects.filter(user=user).delete()
+    record_audit(
+        "mfa_disabled_by_self",
+        actor=user,
+        target_username=user.username,
+        payload={"method": "email"},
+    )
+    return {"ok": True, "status": "disabled", "method": "email"}
+
+
+# Legacy alias for callers that used to nuke everything. New code should
+# prefer one of the per-method helpers above so the user can keep their
+# remaining factor active.
+def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
+    """Disable every active MFA factor for the calling user."""
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if not user.mfa_enabled and not user.mfa_secret and not user.mfa_totp_enabled and not user.mfa_email_enabled:
+        return {"ok": True, "status": "already-disabled"}
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
+    user.mfa_totp_enabled = False
+    user.mfa_email_enabled = False
     user.mfa_enabled = False
     user.mfa_secret = ""
-    user.mfa_method = ""
-    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_method", "updated_at"])
+    user.save(update_fields=["mfa_totp_enabled", "mfa_email_enabled", "mfa_enabled", "mfa_secret", "updated_at"])
     MFARecoveryCode.objects.filter(user=user).delete()
     MFAEmailChallenge.objects.filter(user=user).delete()
-    record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={})
+    record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={"method": "all"})
     return {"ok": True, "status": "disabled"}
 
 
@@ -540,11 +600,21 @@ def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, 
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
+    user.mfa_totp_enabled = False
+    user.mfa_email_enabled = False
     user.mfa_enabled = False
     user.mfa_secret = ""
     user.mfa_required = False
-    user.mfa_method = ""
-    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_required", "mfa_method", "updated_at"])
+    user.save(
+        update_fields=[
+            "mfa_totp_enabled",
+            "mfa_email_enabled",
+            "mfa_enabled",
+            "mfa_secret",
+            "mfa_required",
+            "updated_at",
+        ]
+    )
     MFARecoveryCode.objects.filter(user=user).delete()
     MFAEmailChallenge.objects.filter(user=user).delete()
     actor = User.objects.filter(username__iexact=actor_username).first()
@@ -650,19 +720,19 @@ def consume_email_mfa_code(user, candidate: str) -> bool:
 
 
 def start_mfa_email_enrollment(actor_username: str) -> dict[str, Any]:
-    """Begin the email-based MFA enrollment for the calling user."""
+    """Begin the email-based MFA enrollment for the calling user.
+
+    Coexists with TOTP — the user's mfa_secret is left untouched so a
+    user may stack both methods. Already-enrolled email users have to
+    disable email first to re-enroll.
+    """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if user.mfa_enabled:
-        raise ValueError("mfa is already enabled; disable it before re-enrolling")
+    if user.mfa_email_enabled:
+        raise ValueError("email mfa is already enabled; disable it before re-enrolling")
     if not user.email:
         raise ValueError("set an email on your account before enrolling email mfa")
-    # Wipe any pending TOTP secret so the two methods cannot race.
-    if user.mfa_secret:
-        user.mfa_secret = ""
-        user.save(update_fields=["mfa_secret", "updated_at"])
-    MFARecoveryCode.objects.filter(user=user).delete()
     result = _create_and_send_email_challenge(user)
     record_audit(
         "mfa_email_enrollment_started",
@@ -678,19 +748,25 @@ def confirm_mfa_email_enrollment(actor_username: str, code: str) -> dict[str, An
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if user.mfa_enabled:
-        raise ValueError("mfa is already enabled")
+    if user.mfa_email_enabled:
+        raise ValueError("email mfa is already enabled")
     if not consume_email_mfa_code(user, code):
         raise ValueError("invalid or expired verification code")
+    was_enabled = user.mfa_enabled
+    user.mfa_email_enabled = True
     user.mfa_enabled = True
     user.mfa_required = False
-    user.mfa_method = User.MFA_METHOD_EMAIL
-    user.mfa_secret = ""
-    user.save(update_fields=["mfa_enabled", "mfa_required", "mfa_method", "mfa_secret", "updated_at"])
-    codes = mfa.generate_recovery_codes()
-    MFARecoveryCode.objects.bulk_create(
-        [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
-    )
+    user.save(update_fields=["mfa_email_enabled", "mfa_enabled", "mfa_required", "updated_at"])
+    # Only mint a fresh recovery batch the first time the user enables
+    # ANY method. Stacking the second method keeps the existing codes.
+    if not was_enabled:
+        MFARecoveryCode.objects.filter(user=user).delete()
+        codes = mfa.generate_recovery_codes()
+        MFARecoveryCode.objects.bulk_create(
+            [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
+        )
+    else:
+        codes = []
     record_audit(
         "mfa_email_enrollment_completed",
         actor=user,
@@ -700,14 +776,14 @@ def confirm_mfa_email_enrollment(actor_username: str, code: str) -> dict[str, An
     return {
         "ok": True,
         "status": "enabled",
-        "method": User.MFA_METHOD_EMAIL,
+        "method": "email",
         "recovery_codes": codes,
     }
 
 
 def send_mfa_email_login_code(user) -> dict[str, Any]:
     """Generate and deliver an MFA code as part of an in-progress login."""
-    if not user.mfa_enabled or user.mfa_method != User.MFA_METHOD_EMAIL:
+    if not user.mfa_email_enabled:
         raise ValueError("email mfa is not enrolled for this user")
     if not user.email:
         raise ValueError("no email on file for this account")

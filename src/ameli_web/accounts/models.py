@@ -28,12 +28,12 @@ class User(AbstractUser):
         (THEME_LIGHT, "Claro"),
         (THEME_DARK, "Oscuro"),
     ]
+    # Semantic constants kept for service / view code that needs to refer
+    # to method "kinds" symbolically. Actual storage is now the
+    # mfa_totp_enabled / mfa_email_enabled booleans below so both methods
+    # can be enrolled simultaneously (stacked-methods industry pattern).
     MFA_METHOD_TOTP = "totp"
     MFA_METHOD_EMAIL = "email"
-    MFA_METHOD_CHOICES = [
-        (MFA_METHOD_TOTP, "App de autenticacion"),
-        (MFA_METHOD_EMAIL, "Email"),
-    ]
 
     display_name = models.CharField(max_length=80, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_PUBLIC)
@@ -43,7 +43,8 @@ class User(AbstractUser):
     mfa_secret = models.CharField(max_length=64, blank=True, default="")
     mfa_enabled = models.BooleanField(default=False)
     mfa_required = models.BooleanField(default=False)
-    mfa_method = models.CharField(max_length=10, choices=MFA_METHOD_CHOICES, blank=True, default="")
+    mfa_totp_enabled = models.BooleanField(default=False)
+    mfa_email_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
