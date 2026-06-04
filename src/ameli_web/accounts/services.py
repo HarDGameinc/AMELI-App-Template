@@ -142,6 +142,7 @@ def serialize_user(user) -> dict[str, Any]:
         "must_change_password": user.must_change_password,
         "mfa_enabled": bool(user.mfa_enabled),
         "mfa_required": bool(user.mfa_required),
+        "mfa_method": user.mfa_method or ("totp" if user.mfa_enabled else ""),
         "created_at": user.created_at.isoformat() if getattr(user, "created_at", None) else None,
         "updated_at": user.updated_at.isoformat() if getattr(user, "updated_at", None) else None,
         "display_created_at": format_timestamp_ui(getattr(user, "created_at", None)),
