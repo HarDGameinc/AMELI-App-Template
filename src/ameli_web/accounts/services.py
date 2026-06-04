@@ -489,3 +489,21 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
     MFARecoveryCode.objects.filter(user=user).delete()
     record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={})
     return {"ok": True, "status": "disabled"}
+
+
+def consume_recovery_code(user, candidate: str) -> bool:
+    """Burn a single recovery code if it matches an unused row for the user.
+
+    Returns True when a code was consumed, False otherwise. The match is
+    case- and separator-insensitive thanks to normalize_recovery_code.
+    """
+    if not candidate:
+        return False
+    code_hash = mfa.hash_recovery_code(candidate)
+    record = MFARecoveryCode.objects.filter(user=user, code_hash=code_hash, used_at__isnull=True).first()
+    if record is None:
+        return False
+    record.used_at = timezone.now()
+    record.save(update_fields=["used_at"])
+    record_audit("mfa_recovery_code_used", actor=user, target_username=user.username, payload={})
+    return True

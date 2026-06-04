@@ -2,23 +2,28 @@ from __future__ import annotations
 
 import json
 
+from datetime import datetime, timedelta
+
 from django.contrib import messages
-from django.contrib.auth import get_user_model, logout as auth_logout, update_session_auth_hash
+from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
+from django.utils import timezone
+from django.views.decorators.http import require_http_methods, require_POST
 
 from ameli_app import __version__
 from ameli_web.utils import format_timestamp_ui
 
+from . import mfa as mfa_lib
 from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm, TemplateAuthenticationForm
 from .models import UserSession
 from .services import (
     change_password_for_user,
     confirm_mfa_enrollment,
+    consume_recovery_code,
     delete_avatar,
     disable_mfa_for_self,
     list_user_sessions,
@@ -30,6 +35,11 @@ from .services import (
     serialize_user,
     start_mfa_enrollment,
 )
+
+PENDING_MFA_SESSION_KEY = "pending_mfa_user_id"
+PENDING_MFA_STARTED_KEY = "pending_mfa_started_at"
+PENDING_MFA_NEXT_KEY = "pending_mfa_next"
+PENDING_MFA_TTL = timedelta(minutes=10)
 
 User = get_user_model()
 
@@ -69,6 +79,23 @@ class TemplateLoginView(LoginView):
 
     def get_success_url(self):
         return self.get_redirect_url() or "/profile/"
+
+    def form_valid(self, form):
+        user = form.get_user()
+        if getattr(user, "mfa_enabled", False):
+            # Hold off on auth_login. The login is only completed once the
+            # second factor is verified at /login/verify-mfa/.
+            self.request.session[PENDING_MFA_SESSION_KEY] = user.pk
+            self.request.session[PENDING_MFA_STARTED_KEY] = timezone.now().isoformat()
+            self.request.session[PENDING_MFA_NEXT_KEY] = self.get_success_url()
+            record_audit(
+                "login_mfa_required",
+                actor=user,
+                target_username=user.username,
+                payload={"path": "/login/"},
+            )
+            return redirect("accounts:verify-mfa")
+        return super().form_valid(form)
 
 
 @require_POST
@@ -320,3 +347,84 @@ def mfa_disable_view(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return _json_error(str(exc))
     return JsonResponse(result)
+
+
+def _clear_pending_mfa(request: HttpRequest) -> None:
+    for key in (PENDING_MFA_SESSION_KEY, PENDING_MFA_STARTED_KEY, PENDING_MFA_NEXT_KEY):
+        request.session.pop(key, None)
+
+
+def _pending_mfa_user(request: HttpRequest):
+    user_id = request.session.get(PENDING_MFA_SESSION_KEY)
+    started = request.session.get(PENDING_MFA_STARTED_KEY)
+    if not user_id or not started:
+        return None
+    try:
+        started_at = datetime.fromisoformat(str(started))
+    except ValueError:
+        return None
+    if timezone.now() - started_at > PENDING_MFA_TTL:
+        return None
+    return User.objects.filter(pk=user_id, is_active=True).first()
+
+
+@require_http_methods(["GET", "POST"])
+def verify_mfa_view(request: HttpRequest) -> HttpResponse:
+    if request.user.is_authenticated:
+        # Already fully signed in. Drop any stale pending state and send
+        # them on their way so this view never short-circuits an existing
+        # session into someone else's account.
+        _clear_pending_mfa(request)
+        return redirect("/profile/")
+
+    user = _pending_mfa_user(request)
+    if user is None:
+        _clear_pending_mfa(request)
+        messages.error(request, "La sesion de ingreso expiro. Vuelve a tipear usuario y contrasena.")
+        return redirect("accounts:login")
+
+    next_url = request.session.get(PENDING_MFA_NEXT_KEY) or "/profile/"
+    context = {
+        "version": __version__,
+        "next_url": next_url,
+        "pending_username": user.username,
+    }
+
+    if request.method == "GET":
+        return render(request, "accounts/verify_mfa.html", context)
+
+    candidate = str(request.POST.get("code") or "").strip()
+    if not candidate:
+        context["form_error"] = "Tipea el codigo de tu app o un codigo de recuperacion."
+        return render(request, "accounts/verify_mfa.html", context, status=400)
+
+    digits_only = candidate.replace(" ", "")
+    success = False
+    auth_mode = "totp"
+
+    if digits_only.isdigit() and len(digits_only) == 6:
+        success = mfa_lib.verify_totp(user.mfa_secret, digits_only)
+    if not success:
+        if consume_recovery_code(user, candidate):
+            success = True
+            auth_mode = "recovery"
+
+    if not success:
+        record_audit(
+            "login_mfa_failed",
+            actor=user,
+            target_username=user.username,
+            payload={"reason": "invalid-code"},
+        )
+        context["form_error"] = "Codigo invalido. Intenta de nuevo."
+        return render(request, "accounts/verify_mfa.html", context, status=400)
+
+    _clear_pending_mfa(request)
+    auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    record_audit(
+        "login_mfa_success",
+        actor=user,
+        target_username=user.username,
+        payload={"auth_mode": auth_mode},
+    )
+    return redirect(next_url)

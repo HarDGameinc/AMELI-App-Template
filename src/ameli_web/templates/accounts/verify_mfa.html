@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Verificar segundo factor - {{ app_name }}{% endblock %}
+{% block header_title %}Confirma tu segundo factor{% endblock %}
+{% block header_subtitle %}Segundo paso del ingreso autenticado{% endblock %}
+
+{% block content %}
+<section class="login-shell">
+  <article class="panel login-panel">
+    <div class="metric-label">Verificacion 2FA</div>
+    <h2 class="modal-title">Tu codigo de 6 digitos</h2>
+    <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Tipea el codigo que muestra tu app de autenticacion o, si perdiste el acceso, uno de tus codigos de recuperacion.</p>
+    <form class="login-form" method="post" action="">
+      {% csrf_token %}
+      {% if form_error %}
+      <div class="login-form-error visible">
+        <div>{{ form_error }}</div>
+      </div>
+      {% endif %}
+      <label class="login-form-label" for="id_mfa_code">
+        Codigo
+      </label>
+      <input id="id_mfa_code" class="login-form-input" type="text" name="code"
+             inputmode="text" autocomplete="one-time-code"
+             placeholder="123 456 o XXXX-XXXX-XXXX"
+             autofocus required>
+      <button class="primary login-form-submit" type="submit">Verificar y continuar</button>
+    </form>
+    <p class="muted modal-copy" style="margin-top:14px;">
+      <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
+    </p>
+  </article>
+
+  <aside class="panel">
+    <div class="login-meta-grid">
+      <div>
+        <div class="metric-label">¿Como funciona?</div>
+        <div class="profile-matrix compact">
+          <article class="profile-option active">
+            <div class="profile-option-head">
+              <span class="status-pill OPERATIVO">CODIGO TOTP</span>
+              <strong>App de autenticacion</strong>
+            </div>
+            <p class="muted">Tipea los 6 digitos que muestra Google Authenticator, Authy, 1Password u otra app TOTP. El codigo se renueva cada 30 segundos.</p>
+          </article>
+          <article class="profile-option">
+            <div class="profile-option-head">
+              <span class="status-pill DEGRADADO">RECUPERACION</span>
+              <strong>Codigo de respaldo</strong>
+            </div>
+            <p class="muted">Si perdiste acceso a tu app, usa uno de los codigos XXXX-XXXX-XXXX que guardaste al activar 2FA. Cada uno solo sirve una vez.</p>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-card">
+      <div class="profile-row">
+        <span class="metric-label">Esta sesion expira en</span>
+        <span class="profile-note">10 minutos</span>
+      </div>
+      <div class="profile-row">
+        <span class="metric-label">¿Sin acceso a la app ni codigos?</span>
+        <span class="profile-note">Contacta al administrador</span>
+      </div>
+    </div>
+  </aside>
+</section>
+{% endblock %}
