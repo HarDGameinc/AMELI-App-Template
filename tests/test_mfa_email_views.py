@@ -189,11 +189,13 @@ def test_login_with_email_mfa_redirects_to_verify_step(client, user_with_email_m
 @pytest.mark.django_db
 def test_verify_mfa_get_for_email_user_triggers_email_send(client, user_with_email_mfa):
     client.post("/login/", {"username": "viewer", "password": USER_PASSWORD})
-    # The earlier enrollment burned one challenge; clear its trail
-    # so this GET's auto-send is unambiguously the email under test.
+    # The earlier enrollment burned one challenge; clear its trail AND
+    # age its created_at so the rate-limit cooldown does not block the
+    # auto-send the GET handler is supposed to trigger.
     mail.outbox.clear()
     MFAEmailChallenge.objects.filter(user=user_with_email_mfa["user"]).update(
-        used_at=timezone.now()
+        used_at=timezone.now(),
+        created_at=timezone.now() - timedelta(minutes=2),
     )
 
     response = client.get("/login/verify-mfa/")
@@ -209,9 +211,11 @@ def test_verify_mfa_get_for_email_user_triggers_email_send(client, user_with_ema
 def test_verify_mfa_with_valid_email_code_completes_login(client, user_with_email_mfa):
     client.post("/login/", {"username": "viewer", "password": USER_PASSWORD})
     mail.outbox.clear()
-    # Force a new code via the GET handler
+    # Mark the enrollment challenge as used + age it past the resend
+    # cooldown so the GET below actually fires send_mfa_email_login_code.
     MFAEmailChallenge.objects.filter(user=user_with_email_mfa["user"]).update(
-        used_at=timezone.now()
+        used_at=timezone.now(),
+        created_at=timezone.now() - timedelta(minutes=2),
     )
     client.get("/login/verify-mfa/")
     code = _extract_code_from_outbox()
