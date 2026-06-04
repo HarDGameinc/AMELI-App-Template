@@ -434,26 +434,45 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         return redirect("accounts:login")
 
     next_url = request.session.get(PENDING_MFA_NEXT_KEY) or "/profile/"
+    method = user.mfa_method or "totp"
     context = {
         "version": __version__,
         "next_url": next_url,
         "pending_username": user.username,
+        "method": method,
+        "email_hint": user.email if method == "email" else "",
     }
 
     if request.method == "GET":
+        if method == "email":
+            has_pending = MFAEmailChallenge.objects.filter(
+                user=user,
+                used_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            ).exists()
+            if not has_pending:
+                try:
+                    send_mfa_email_login_code(user)
+                except ValueError:
+                    # Rate-limited at this very moment; user can hit
+                    # "Reenviar codigo" once the cooldown expires.
+                    pass
         return render(request, "accounts/verify_mfa.html", context)
 
     candidate = str(request.POST.get("code") or "").strip()
     if not candidate:
-        context["form_error"] = "Tipea el codigo de tu app o un codigo de recuperacion."
+        context["form_error"] = "Tipea el codigo o un codigo de recuperacion."
         return render(request, "accounts/verify_mfa.html", context, status=400)
 
     digits_only = candidate.replace(" ", "")
     success = False
-    auth_mode = "totp"
+    auth_mode = method
 
     if digits_only.isdigit() and len(digits_only) == 6:
-        success = mfa_lib.verify_totp(user.mfa_secret, digits_only)
+        if method == "email":
+            success = consume_email_mfa_code(user, digits_only)
+        else:
+            success = mfa_lib.verify_totp(user.mfa_secret, digits_only)
     if not success:
         if consume_recovery_code(user, candidate):
             success = True
@@ -464,7 +483,7 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
             "login_mfa_failed",
             actor=user,
             target_username=user.username,
-            payload={"reason": "invalid-code"},
+            payload={"reason": "invalid-code", "method": method},
         )
         context["form_error"] = "Codigo invalido. Intenta de nuevo."
         return render(request, "accounts/verify_mfa.html", context, status=400)
@@ -478,6 +497,20 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         payload={"auth_mode": auth_mode},
     )
     return redirect(next_url)
+
+
+@require_POST
+def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
+    user = _pending_mfa_user(request)
+    if user is None:
+        return _json_error("la sesion de ingreso expiro; vuelve a /login/", status=401)
+    if (user.mfa_method or "totp") != "email":
+        return _json_error("el reenvio por email solo aplica al metodo email", status=400)
+    try:
+        result = send_mfa_email_login_code(user)
+    except ValueError as exc:
+        return _json_error(str(exc), status=429)
+    return JsonResponse(result)
 
 
 def _build_public_base_url(request: HttpRequest) -> str:

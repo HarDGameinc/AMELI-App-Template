@@ -9,7 +9,11 @@
   <article class="panel login-panel">
     <div class="metric-label">Verificacion 2FA</div>
     <h2 class="modal-title">Tu codigo de 6 digitos</h2>
+    {% if method == "email" %}
+    <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Te enviamos un codigo de 6 digitos a <strong>{{ email_hint }}</strong>. Tipealo abajo. Si no llega, esperá un minuto y usá Reenviar codigo. Tambien podes usar un codigo de recuperacion XXXX-XXXX-XXXX si perdiste acceso al email.</p>
+    {% else %}
     <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Tipea el codigo que muestra tu app de autenticacion o, si perdiste el acceso, uno de tus codigos de recuperacion.</p>
+    {% endif %}
     <form class="login-form" method="post" action="">
       {% csrf_token %}
       {% if form_error %}
@@ -26,6 +30,15 @@
              autofocus required>
       <button class="primary login-form-submit" type="submit">Verificar y continuar</button>
     </form>
+    {% if method == "email" %}
+    <div class="modal-actions-row" style="margin-top:12px;">
+      <button class="icon-action" type="button" id="verify-mfa-resend">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">refresh</span>
+        <span>Reenviar codigo</span>
+      </button>
+    </div>
+    <p class="muted" id="verify-mfa-resend-feedback"></p>
+    {% endif %}
     <p class="muted modal-copy" style="margin-top:14px;">
       <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
     </p>
@@ -36,6 +49,15 @@
       <div>
         <div class="metric-label">¿Como funciona?</div>
         <div class="profile-matrix compact">
+          {% if method == "email" %}
+          <article class="profile-option active">
+            <div class="profile-option-head">
+              <span class="status-pill OPERATIVO">CODIGO POR EMAIL</span>
+              <strong>Email</strong>
+            </div>
+            <p class="muted">Te llega un codigo de 6 digitos a tu email registrado cada vez que ingreses. El codigo expira en 10 minutos y solo sirve una vez. Si no llega, podes pedir otro hasta 5 veces por hora.</p>
+          </article>
+          {% else %}
           <article class="profile-option active">
             <div class="profile-option-head">
               <span class="status-pill OPERATIVO">CODIGO TOTP</span>
@@ -43,12 +65,13 @@
             </div>
             <p class="muted">Tipea los 6 digitos que muestra Google Authenticator, Authy, 1Password u otra app TOTP. El codigo se renueva cada 30 segundos.</p>
           </article>
+          {% endif %}
           <article class="profile-option">
             <div class="profile-option-head">
               <span class="status-pill DEGRADADO">RECUPERACION</span>
               <strong>Codigo de respaldo</strong>
             </div>
-            <p class="muted">Si perdiste acceso a tu app, usa uno de los codigos XXXX-XXXX-XXXX que guardaste al activar 2FA. Cada uno solo sirve una vez.</p>
+            <p class="muted">Si perdiste acceso {% if method == "email" %}al email{% else %}a tu app{% endif %}, usa uno de los codigos XXXX-XXXX-XXXX que guardaste al activar 2FA. Cada uno solo sirve una vez.</p>
           </article>
         </div>
       </div>
@@ -60,10 +83,44 @@
         <span class="profile-note">10 minutos</span>
       </div>
       <div class="profile-row">
-        <span class="metric-label">¿Sin acceso a la app ni codigos?</span>
+        <span class="metric-label">¿Sin acceso {% if method == "email" %}al email{% else %}a la app{% endif %} ni codigos?</span>
         <span class="profile-note">Contacta al administrador</span>
       </div>
     </div>
   </aside>
 </section>
+
+{% if method == "email" %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const resendBtn = document.getElementById("verify-mfa-resend");
+  const resendFeedback = document.getElementById("verify-mfa-resend-feedback");
+  const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+
+  resendBtn?.addEventListener("click", async () => {
+    resendBtn.disabled = true;
+    if (resendFeedback) resendFeedback.textContent = "Enviando otro codigo...";
+    try {
+      const response = await fetch("{% url 'accounts:verify-mfa-resend' %}", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
+      });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Operacion no completada.");
+      }
+      if (resendFeedback) resendFeedback.textContent = "Codigo enviado. Reviza tu email.";
+    } catch (error) {
+      if (resendFeedback) resendFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      resendBtn.disabled = false;
+    }
+  });
+});
+</script>
+{% endif %}
 {% endblock %}

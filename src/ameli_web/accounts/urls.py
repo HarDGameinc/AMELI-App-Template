@@ -9,6 +9,8 @@ urlpatterns = [
     path("login", views.TemplateLoginView.as_view()),
     path("login/verify-mfa/", views.verify_mfa_view, name="verify-mfa"),
     path("login/verify-mfa", views.verify_mfa_view),
+    path("login/verify-mfa/resend/", views.verify_mfa_resend_view, name="verify-mfa-resend"),
+    path("login/verify-mfa/resend", views.verify_mfa_resend_view),
     path("login/forgot/", views.forgot_password_view, name="forgot-password"),
     path("login/forgot", views.forgot_password_view),
     path("login/reset/<str:uidb64>/<str:token>/", views.reset_password_view, name="reset-password"),
