@@ -610,6 +610,29 @@ def _build_reset_url(uidb64: str, token: str, base_url: str) -> str:
     return path
 
 
+class _PasswordResetEmail(EmailMessage):
+    """EmailMessage variant that forces a 7bit body so the long reset URL
+    is never soft-wrapped with ``=\\n`` by Python's quoted-printable encoder.
+
+    Setting ``EmailMessage.encoding = 'us-ascii'`` is not enough: depending
+    on the Python / Django version the body still ends up encoded as
+    quoted-printable when any individual line exceeds 76 characters, which
+    breaks the reset URL when a developer copies it out of journalctl. By
+    rewriting the MIME payload with no charset/encoding and stamping the
+    Content-Transfer-Encoding header back to ``7bit`` we guarantee a
+    passthrough body, regardless of line length.
+    """
+
+    def message(self):  # type: ignore[override]
+        msg = super().message()
+        if "Content-Transfer-Encoding" in msg:
+            del msg["Content-Transfer-Encoding"]
+        msg["Content-Transfer-Encoding"] = "7bit"
+        msg.set_payload(self.body, charset=None)
+        msg.set_param("charset", "us-ascii")
+        return msg
+
+
 def _send_password_reset_email(user, reset_url: str) -> None:
     context = {
         "app_name": django_settings.CFG.app_name,
@@ -621,25 +644,23 @@ def _send_password_reset_email(user, reset_url: str) -> None:
     }
     body = render_to_string("accounts/password_reset_email.txt", context)
     subject = f"[{django_settings.CFG.app_name}] Restablecer tu contrasena"
-    # If the rendered body is plain ASCII, force us-ascii so the message is
-    # transmitted as 7bit and Python's email package does not soft-wrap the
-    # long reset URL with quoted-printable encoding (which would inject
-    # "=\n" inside the token). Falls back to the default (utf-8 with
-    # quoted-printable) when the body contains non-ASCII text.
+    # If the body is plain ASCII (the bundled template is), use the
+    # 7bit variant so the URL stays on a single line. Fall back to a
+    # regular EmailMessage when the body contains non-ASCII text;
+    # real email clients decode the resulting quoted-printable.
+    message_class = EmailMessage
     try:
         body.encode("us-ascii")
         subject.encode("us-ascii")
-        encoding = "us-ascii"
+        message_class = _PasswordResetEmail
     except UnicodeEncodeError:
-        encoding = None
-    email = EmailMessage(
+        pass
+    email = message_class(
         subject=subject,
         body=body,
         from_email=django_settings.DEFAULT_FROM_EMAIL,
         to=[user.email],
     )
-    if encoding:
-        email.encoding = encoding
     email.send(fail_silently=False)
 
 
