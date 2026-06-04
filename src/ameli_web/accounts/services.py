@@ -621,12 +621,25 @@ def _send_password_reset_email(user, reset_url: str) -> None:
     }
     body = render_to_string("accounts/password_reset_email.txt", context)
     subject = f"[{django_settings.CFG.app_name}] Restablecer tu contrasena"
+    # If the rendered body is plain ASCII, force us-ascii so the message is
+    # transmitted as 7bit and Python's email package does not soft-wrap the
+    # long reset URL with quoted-printable encoding (which would inject
+    # "=\n" inside the token). Falls back to the default (utf-8 with
+    # quoted-printable) when the body contains non-ASCII text.
+    try:
+        body.encode("us-ascii")
+        subject.encode("us-ascii")
+        encoding = "us-ascii"
+    except UnicodeEncodeError:
+        encoding = None
     email = EmailMessage(
         subject=subject,
         body=body,
         from_email=django_settings.DEFAULT_FROM_EMAIL,
         to=[user.email],
     )
+    if encoding:
+        email.encoding = encoding
     email.send(fail_silently=False)
 
 
