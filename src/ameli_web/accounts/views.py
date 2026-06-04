@@ -4,6 +4,7 @@ import json
 
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
@@ -22,14 +23,17 @@ from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm
 from .models import UserSession
 from .services import (
     change_password_for_user,
+    complete_password_reset,
     confirm_mfa_enrollment,
     consume_recovery_code,
     delete_avatar,
     disable_mfa_for_self,
+    get_user_for_reset_token,
     list_user_sessions,
     record_audit,
     regenerate_recovery_codes,
     replace_avatar,
+    request_password_reset,
     revoke_other_sessions,
     revoke_session_record,
     serialize_mfa_status,
@@ -439,3 +443,73 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         payload={"auth_mode": auth_mode},
     )
     return redirect(next_url)
+
+
+def _build_public_base_url(request: HttpRequest) -> str:
+    configured = getattr(getattr(settings, "CFG", None), "public_url_base", "")
+    if configured:
+        return configured.rstrip("/")
+    absolute = request.build_absolute_uri("/")
+    return absolute.rstrip("/")
+
+
+@require_http_methods(["GET", "POST"])
+def forgot_password_view(request: HttpRequest) -> HttpResponse:
+    if request.user.is_authenticated:
+        return redirect("/profile/")
+
+    context = {
+        "version": __version__,
+        "submitted": False,
+    }
+
+    if request.method == "POST":
+        identifier = str(request.POST.get("identifier") or "").strip()
+        if not identifier:
+            context["form_error"] = "Tipea tu usuario o tu email para pedir el reset."
+            return render(request, "accounts/forgot_password.html", context, status=400)
+        try:
+            request_password_reset(identifier, base_url=_build_public_base_url(request))
+        except Exception:  # noqa: BLE001 - never leak sending errors to the form
+            pass
+        context["submitted"] = True
+        context["identifier_echo"] = identifier
+        return render(request, "accounts/forgot_password.html", context)
+
+    return render(request, "accounts/forgot_password.html", context)
+
+
+@require_http_methods(["GET", "POST"])
+def reset_password_view(request: HttpRequest, uidb64: str, token: str) -> HttpResponse:
+    if request.user.is_authenticated:
+        return redirect("/profile/")
+
+    user = get_user_for_reset_token(uidb64, token)
+    context = {
+        "version": __version__,
+        "uidb64": uidb64,
+        "token": token,
+        "token_valid": user is not None,
+        "target_username": user.username if user else "",
+    }
+
+    if user is None:
+        return render(request, "accounts/reset_password.html", context, status=400)
+
+    if request.method == "GET":
+        return render(request, "accounts/reset_password.html", context)
+
+    new_password = str(request.POST.get("new_password") or "")
+    confirm_password = str(request.POST.get("confirm_password") or "")
+    if not new_password or new_password != confirm_password:
+        context["form_error"] = "La confirmacion no coincide con la nueva contrasena."
+        return render(request, "accounts/reset_password.html", context, status=400)
+
+    try:
+        complete_password_reset(uidb64, token, new_password)
+    except ValueError as exc:
+        context["form_error"] = str(exc)
+        return render(request, "accounts/reset_password.html", context, status=400)
+
+    messages.success(request, "Contrasena actualizada. Ya podes ingresar con la nueva clave.")
+    return redirect("accounts:login")

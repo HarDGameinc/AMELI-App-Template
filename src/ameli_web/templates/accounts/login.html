@@ -29,6 +29,9 @@
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <button class="primary login-form-submit" type="submit">Ingresar</button>
     </form>
+    <p class="muted modal-copy" style="margin-top:14px;">
+      <a href="{% url 'accounts:forgot-password' %}" style="color:var(--accent); font-weight:600;">¿Olvidaste tu contrasena?</a>
+    </p>
   </article>
 
   <aside class="panel">
