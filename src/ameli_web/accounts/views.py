@@ -20,11 +20,13 @@ from ameli_web.utils import format_timestamp_ui
 
 from . import mfa as mfa_lib
 from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm, TemplateAuthenticationForm
-from .models import UserSession
+from .models import MFAEmailChallenge, UserSession
 from .services import (
     change_password_for_user,
     complete_password_reset,
+    confirm_mfa_email_enrollment,
     confirm_mfa_enrollment,
+    consume_email_mfa_code,
     consume_recovery_code,
     delete_avatar,
     disable_mfa_for_self,
@@ -36,8 +38,10 @@ from .services import (
     request_password_reset,
     revoke_other_sessions,
     revoke_session_record,
+    send_mfa_email_login_code,
     serialize_mfa_status,
     serialize_user,
+    start_mfa_email_enrollment,
     start_mfa_enrollment,
 )
 
@@ -360,6 +364,37 @@ def mfa_regenerate_view(request: HttpRequest) -> JsonResponse:
     try:
         result = regenerate_recovery_codes(request.user.username)
     except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_email_start_view(request: HttpRequest) -> JsonResponse:
+    try:
+        result = start_mfa_email_enrollment(request.user.username)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_email_confirm_view(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    code = str(payload.get("code") or "").strip()
+    try:
+        result = confirm_mfa_email_enrollment(request.user.username, code)
+    except ValueError as exc:
+        record_audit(
+            "mfa_email_enrollment_failed",
+            actor=request.user,
+            target_username=request.user.username,
+            payload={"reason": str(exc)},
+        )
         return _json_error(str(exc))
     return JsonResponse(result)
 

@@ -37,5 +37,9 @@ urlpatterns = [
     path("profile/mfa/disable", views.mfa_disable_view),
     path("profile/mfa/regenerate-codes/", views.mfa_regenerate_view, name="profile-mfa-regenerate"),
     path("profile/mfa/regenerate-codes", views.mfa_regenerate_view),
+    path("profile/mfa/email/start/", views.mfa_email_start_view, name="profile-mfa-email-start"),
+    path("profile/mfa/email/start", views.mfa_email_start_view),
+    path("profile/mfa/email/confirm/", views.mfa_email_confirm_view, name="profile-mfa-email-confirm"),
+    path("profile/mfa/email/confirm", views.mfa_email_confirm_view),
     path("api/admin/session", views.admin_session_json, name="admin-session-json"),
 ]

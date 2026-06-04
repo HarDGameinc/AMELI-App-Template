@@ -235,13 +235,52 @@
         </div>
         {% endif %}
       </div>
-      <div class="modal-actions-row">
-        <button class="primary" id="profile-mfa-activate" type="button">
-          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
-          <span>Activar 2FA</span>
-        </button>
+      <p class="muted panel-copy" style="margin-top:12px;">Elegi el metodo de verificacion en el segundo paso del ingreso. Cada cuenta puede activar un solo metodo a la vez.</p>
+      <div class="form-grid-split" style="margin-top:8px;">
+        <article class="form-card">
+          <div class="form-card-head">
+            <h3 class="form-card-title">App de autenticacion</h3>
+            <p class="muted panel-copy">Google Authenticator, Authy, 1Password u otra. Codigo de 6 digitos que se renueva cada 30 segundos.</p>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary" id="profile-mfa-activate" type="button">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">smartphone</span>
+              <span>Activar con app</span>
+            </button>
+          </div>
+        </article>
+        <article class="form-card">
+          <div class="form-card-head">
+            <h3 class="form-card-title">Email</h3>
+            <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ current_user.username }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary" id="profile-mfa-email-activate" type="button"{% if not mfa_status.has_email %} disabled{% endif %}>
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
+              <span>Activar con email</span>
+            </button>
+          </div>
+          {% if not mfa_status.has_email %}
+          <p class="muted warn-text" style="margin-top:8px;">Sin email registrado en tu cuenta. Pedile al administrador que te asigne uno antes de activar este metodo.</p>
+          {% endif %}
+        </article>
       </div>
       <p class="muted" id="profile-mfa-activate-feedback"></p>
+    </div>
+
+    <div id="profile-mfa-email-pending" class="form-card" hidden>
+      <p class="muted panel-copy">Te enviamos un codigo de 6 digitos a tu email. Tipealo abajo para confirmar la activacion. El codigo expira en 10 minutos.</p>
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="profile-mfa-email-code">Codigo recibido por email</label>
+        <input id="profile-mfa-email-code" class="modal-input" type="text" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="7" placeholder="123 456">
+        <div class="modal-form-help">Tipea solo los 6 digitos. Si no llega, esperá un minuto y pedi otro desde Cancelar.</div>
+      </div>
+      <div class="modal-actions-row">
+        <button type="button" class="icon-action" id="profile-mfa-email-cancel">Cancelar</button>
+        <button class="primary" type="button" id="profile-mfa-email-verify">Verificar y activar</button>
+      </div>
+      <p class="muted" id="profile-mfa-email-verify-feedback"></p>
     </div>
 
     <div id="profile-mfa-pending" class="form-card" hidden>
@@ -289,6 +328,12 @@
         <div class="profile-row">
           <span class="metric-label">Estado actual</span>
           <span class="profile-note">Activo</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Metodo</span>
+          <span class="profile-note">
+            {% if mfa_status.method == "email" %}Email{% else %}App de autenticacion (TOTP){% endif %}
+          </span>
         </div>
         <div class="profile-row">
           <span class="metric-label">Códigos de recuperacion disponibles</span>
@@ -443,6 +488,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const mfaSections = {
     disabled: document.getElementById("profile-mfa-disabled"),
     pending: document.getElementById("profile-mfa-pending"),
+    emailPending: document.getElementById("profile-mfa-email-pending"),
     recovery: document.getElementById("profile-mfa-recovery"),
     enabled: document.getElementById("profile-mfa-enabled"),
   };
@@ -484,6 +530,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const disablePassword = document.getElementById("profile-mfa-disable-password");
   const disableFeedback = document.getElementById("profile-mfa-disable-feedback");
   const regenerateBtn = document.getElementById("profile-mfa-regenerate");
+  const emailActivateBtn = document.getElementById("profile-mfa-email-activate");
+  const emailVerifyBtn = document.getElementById("profile-mfa-email-verify");
+  const emailCancelBtn = document.getElementById("profile-mfa-email-cancel");
+  const emailCodeInput = document.getElementById("profile-mfa-email-code");
+  const emailVerifyFeedback = document.getElementById("profile-mfa-email-verify-feedback");
 
   activateBtn?.addEventListener("click", async () => {
     activateBtn.disabled = true;
@@ -558,6 +609,53 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       if (disableFeedback) disableFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       disableBtn.disabled = false;
+    }
+  });
+
+  emailActivateBtn?.addEventListener("click", async () => {
+    emailActivateBtn.disabled = true;
+    if (activateFeedback) activateFeedback.textContent = "Enviando codigo...";
+    try {
+      await postJson("{% url 'accounts:profile-mfa-email-start' %}");
+      if (emailCodeInput) emailCodeInput.value = "";
+      if (emailVerifyFeedback) emailVerifyFeedback.textContent = "";
+      if (activateFeedback) activateFeedback.textContent = "";
+      showMfaSection("emailPending");
+      emailCodeInput?.focus();
+    } catch (error) {
+      if (activateFeedback) activateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      emailActivateBtn.disabled = false;
+    }
+  });
+
+  emailCancelBtn?.addEventListener("click", () => {
+    window.location.reload();
+  });
+
+  emailVerifyBtn?.addEventListener("click", async () => {
+    const code = String(emailCodeInput?.value || "").trim();
+    if (!code) {
+      if (emailVerifyFeedback) emailVerifyFeedback.textContent = "Tipea el codigo recibido por email.";
+      return;
+    }
+    emailVerifyBtn.disabled = true;
+    if (emailVerifyFeedback) emailVerifyFeedback.textContent = "Verificando...";
+    try {
+      const data = await postJson("{% url 'accounts:profile-mfa-email-confirm' %}", { code });
+      if (recoveryList && Array.isArray(data.recovery_codes)) {
+        recoveryList.innerHTML = "";
+        data.recovery_codes.forEach((codeValue) => {
+          const li = document.createElement("li");
+          li.textContent = codeValue;
+          recoveryList.appendChild(li);
+        });
+      }
+      showMfaSection("recovery");
+    } catch (error) {
+      if (emailVerifyFeedback) emailVerifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      emailVerifyBtn.disabled = false;
     }
   });
 
