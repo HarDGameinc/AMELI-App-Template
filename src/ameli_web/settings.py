@@ -135,3 +135,26 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
+
+# --- Email / password reset --------------------------------------------------
+_EMAIL_BACKEND_MAP = {
+    "console": "django.core.mail.backends.console.EmailBackend",
+    "smtp": "django.core.mail.backends.smtp.EmailBackend",
+    "file": "django.core.mail.backends.filebased.EmailBackend",
+    "locmem": "django.core.mail.backends.locmem.EmailBackend",
+    "dummy": "django.core.mail.backends.dummy.EmailBackend",
+}
+EMAIL_BACKEND = _EMAIL_BACKEND_MAP.get(
+    CFG.email_backend, "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = CFG.email_host or ""
+EMAIL_PORT = CFG.email_port or 587
+EMAIL_HOST_USER = CFG.email_username or ""
+EMAIL_HOST_PASSWORD = CFG.email_password or ""
+EMAIL_USE_TLS = bool(CFG.email_use_tls)
+EMAIL_USE_SSL = bool(CFG.email_use_ssl)
+DEFAULT_FROM_EMAIL = CFG.email_from_address or "noreply@ameli-template.local"
+if EMAIL_BACKEND == "django.core.mail.backends.filebased.EmailBackend":
+    EMAIL_FILE_PATH = str((CFG.data_dir / "outbox").resolve())
+
+PASSWORD_RESET_TIMEOUT = max(60, int(CFG.password_reset_timeout_seconds or 3600))

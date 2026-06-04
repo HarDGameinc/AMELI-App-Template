@@ -52,3 +52,18 @@ features:
   admin: true
   audit_log: true
   maintenance: true
+
+email:
+  # Outgoing email for transactional flows (password reset, etc).
+  # Backend: "console" prints to stdout/journalctl (great for dev),
+  # "smtp" delivers via a real server, "file" writes .eml files to data_dir.
+  backend: "console"
+  host: ""
+  port: 587
+  use_tls: true
+  use_ssl: false
+  username_env: "AMELI_APP_EMAIL_USERNAME"
+  password_env: "AMELI_APP_EMAIL_PASSWORD"
+  from_address: "noreply@ameli-template.local"
+  password_reset_timeout_seconds: 3600
+  url_base_env: "AMELI_APP_URL_BASE"

@@ -79,6 +79,16 @@ class Settings:
     django_secret_key: str
     django_debug: bool
     profile_uploads_dir: Path
+    email_backend: str
+    email_host: str
+    email_port: int
+    email_use_tls: bool
+    email_use_ssl: bool
+    email_username: str
+    email_password: str
+    email_from_address: str
+    password_reset_timeout_seconds: int
+    public_url_base: str
     features: dict[str, Any] = field(default_factory=dict)
     worker: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -107,6 +117,7 @@ def load_settings(
     database = raw.get("database", {})
     auth = raw.get("auth", {})
     docs = raw.get("docs", {})
+    email = raw.get("email", {})
 
     environment = os.getenv("APP_ENV") or str(app.get("environment", "dev"))
     token_env = str(api.get("token_env", "AMELI_APP_API_TOKEN"))
@@ -163,6 +174,35 @@ def load_settings(
         profile_uploads_dir=path_from_value(
             str(auth.get("profile_uploads_dir", f"data/uploads/{environment}"))
         ),
+        email_backend=os.getenv(
+            "AMELI_APP_EMAIL_BACKEND", str(email.get("backend", "console") or "console")
+        ).strip().lower(),
+        email_host=os.getenv("AMELI_APP_EMAIL_HOST", str(email.get("host", "") or "")),
+        email_port=_as_int(os.getenv("AMELI_APP_EMAIL_PORT", email.get("port")), 587),
+        email_use_tls=_as_bool(
+            os.getenv("AMELI_APP_EMAIL_USE_TLS", email.get("use_tls")),
+            default=True,
+        ),
+        email_use_ssl=_as_bool(
+            os.getenv("AMELI_APP_EMAIL_USE_SSL", email.get("use_ssl")),
+            default=False,
+        ),
+        email_username=os.getenv(str(email.get("username_env", "AMELI_APP_EMAIL_USERNAME")), ""),
+        email_password=os.getenv(str(email.get("password_env", "AMELI_APP_EMAIL_PASSWORD")), ""),
+        email_from_address=os.getenv(
+            "AMELI_APP_EMAIL_FROM",
+            str(email.get("from_address", "noreply@ameli-template.local")),
+        ),
+        password_reset_timeout_seconds=_as_int(
+            os.getenv(
+                "AMELI_APP_PASSWORD_RESET_TIMEOUT_SECONDS",
+                email.get("password_reset_timeout_seconds"),
+            ),
+            3600,
+        ),
+        public_url_base=os.getenv(
+            str(email.get("url_base_env", "AMELI_APP_URL_BASE")), ""
+        ).rstrip("/"),
         features=dict(raw.get("features", {})),
         worker=dict(raw.get("worker", {})),
         raw=raw,
@@ -186,4 +226,8 @@ def settings_summary(settings: Settings) -> dict[str, Any]:
         "admin_enabled": settings.admin_enabled,
         "session_cookie_name": settings.session_cookie_name,
         "config_path": str(settings.config_path),
+        "email_backend": settings.email_backend,
+        "email_from_address": settings.email_from_address,
+        "password_reset_timeout_seconds": settings.password_reset_timeout_seconds,
+        "public_url_base_configured": bool(settings.public_url_base),
     }
