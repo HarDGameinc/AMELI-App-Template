@@ -1,0 +1,12 @@
+Hola @{{ username }},
+
+Tu codigo de verificacion 2FA para {{ app_name }} es:
+
+{{ code }}
+
+El codigo expira en {{ ttl_minutes }} minutos y solo sirve una vez.
+
+Si vos no pediste este codigo, ignora este mensaje y considera cambiar tu contrasena por las dudas.
+
+Saludos,
+{{ app_name }}

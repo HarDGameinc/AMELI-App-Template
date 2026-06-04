@@ -87,6 +87,29 @@ def recovery_codes_match(stored_hash: str, candidate: str) -> bool:
     return hmac.compare_digest(stored_hash, hash_recovery_code(candidate))
 
 
+EMAIL_CODE_LENGTH = 6
+EMAIL_CODE_TTL_SECONDS = 600  # 10 minutes
+EMAIL_CODE_RESEND_INTERVAL_SECONDS = 60
+EMAIL_CODE_HOURLY_LIMIT = 5
+
+
+def generate_email_code() -> str:
+    """Return a fresh 6-digit numeric code as a zero-padded string."""
+    value = secrets.randbelow(10 ** EMAIL_CODE_LENGTH)
+    return f"{value:0{EMAIL_CODE_LENGTH}d}"
+
+
+def hash_email_code(code: str) -> str:
+    """SHA-256 hex digest of the candidate email code (digits only)."""
+    candidate = "".join(ch for ch in code if ch.isdigit())
+    return hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+
+
+def email_codes_match(stored_hash: str, candidate: str) -> bool:
+    """Constant-time check between a stored email-code hash and a candidate."""
+    return hmac.compare_digest(stored_hash, hash_email_code(candidate))
+
+
 def render_qr_svg(uri: str) -> str:
     """Render an otpauth:// URI as an inline SVG QR code.
 

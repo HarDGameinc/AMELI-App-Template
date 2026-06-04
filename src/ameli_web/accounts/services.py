@@ -21,8 +21,10 @@ from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
 
+from datetime import timedelta
+
 from . import mfa
-from .models import MFARecoveryCode, UserSession
+from .models import MFAEmailChallenge, MFARecoveryCode, UserSession
 
 User = get_user_model()
 ROLE_GROUPS = {
@@ -416,17 +418,24 @@ def change_password_for_user(username: str, current_password: str, new_password:
 
 def serialize_mfa_status(user) -> dict[str, Any]:
     """Return the MFA snapshot used to render the profile and admin views."""
-    pending = bool(user.mfa_secret) and not user.mfa_enabled
+    pending_totp = bool(user.mfa_secret) and not user.mfa_enabled
+    has_pending_email_challenge = MFAEmailChallenge.objects.filter(
+        user=user, used_at__isnull=True, expires_at__gt=timezone.now()
+    ).exists()
+    pending = pending_totp or (not user.mfa_enabled and has_pending_email_challenge)
     remaining = (
         MFARecoveryCode.objects.filter(user=user, used_at__isnull=True).count()
         if user.mfa_enabled
         else 0
     )
+    method = user.mfa_method or ("totp" if user.mfa_enabled else "")
     return {
         "enabled": bool(user.mfa_enabled),
         "pending_enrollment": pending,
         "required_by_admin": bool(user.mfa_required),
         "recovery_codes_remaining": remaining,
+        "method": method,
+        "has_email": bool(getattr(user, "email", "")),
     }
 
 
@@ -446,6 +455,7 @@ def start_mfa_enrollment(actor_username: str) -> dict[str, Any]:
     user.mfa_enabled = False
     user.save(update_fields=["mfa_secret", "mfa_enabled", "updated_at"])
     MFARecoveryCode.objects.filter(user=user).delete()
+    MFAEmailChallenge.objects.filter(user=user).delete()
     issuer = django_settings.CFG.app_name
     uri = mfa.provisioning_uri(secret, username=user.username, issuer=issuer)
     record_audit("mfa_enrollment_started", actor=user, target_username=user.username, payload={})
@@ -476,7 +486,9 @@ def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
         raise ValueError("invalid verification code")
     user.mfa_enabled = True
     user.mfa_required = False
-    user.save(update_fields=["mfa_enabled", "mfa_required", "updated_at"])
+    user.mfa_method = User.MFA_METHOD_TOTP
+    user.save(update_fields=["mfa_enabled", "mfa_required", "mfa_method", "updated_at"])
+    MFAEmailChallenge.objects.filter(user=user).delete()
     codes = mfa.generate_recovery_codes()
     MFARecoveryCode.objects.bulk_create(
         [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
@@ -499,14 +511,16 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
-    if not user.mfa_enabled and not user.mfa_secret:
+    if not user.mfa_enabled and not user.mfa_secret and not user.mfa_method:
         return {"ok": True, "status": "already-disabled"}
     if not current_password or not user.check_password(current_password):
         raise ValueError("current password is invalid")
     user.mfa_enabled = False
     user.mfa_secret = ""
-    user.save(update_fields=["mfa_enabled", "mfa_secret", "updated_at"])
+    user.mfa_method = ""
+    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_method", "updated_at"])
     MFARecoveryCode.objects.filter(user=user).delete()
+    MFAEmailChallenge.objects.filter(user=user).delete()
     record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={})
     return {"ok": True, "status": "disabled"}
 
@@ -528,8 +542,10 @@ def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, 
     user.mfa_enabled = False
     user.mfa_secret = ""
     user.mfa_required = False
-    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_required", "updated_at"])
+    user.mfa_method = ""
+    user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_required", "mfa_method", "updated_at"])
     MFARecoveryCode.objects.filter(user=user).delete()
+    MFAEmailChallenge.objects.filter(user=user).delete()
     actor = User.objects.filter(username__iexact=actor_username).first()
     record_audit(
         "mfa_disabled_by_admin",
@@ -538,6 +554,170 @@ def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, 
         payload={},
     )
     return {"ok": True, "status": "disabled"}
+
+
+def _check_email_mfa_rate_limit(user) -> None:
+    """Raise ValueError if the user requested too many codes recently."""
+    now = timezone.now()
+    latest = MFAEmailChallenge.objects.filter(user=user).order_by("-created_at").first()
+    if latest is not None:
+        gap = (now - latest.created_at).total_seconds()
+        if gap < mfa.EMAIL_CODE_RESEND_INTERVAL_SECONDS:
+            wait = int(mfa.EMAIL_CODE_RESEND_INTERVAL_SECONDS - gap)
+            raise ValueError(f"too many requests; wait {wait} seconds before asking for a new code")
+    hour_count = MFAEmailChallenge.objects.filter(
+        user=user,
+        created_at__gte=now - timedelta(hours=1),
+    ).count()
+    if hour_count >= mfa.EMAIL_CODE_HOURLY_LIMIT:
+        raise ValueError("too many requests in the last hour; try again later")
+
+
+def _send_mfa_email_code(user, code: str) -> None:
+    """Render and deliver the MFA code email (reuses the 7bit-safe class)."""
+    context = {
+        "app_name": django_settings.CFG.app_name,
+        "username": user.username,
+        "code": code,
+        "ttl_minutes": mfa.EMAIL_CODE_TTL_SECONDS // 60,
+    }
+    body = render_to_string("accounts/mfa_email_code.txt", context)
+    subject = f"[{django_settings.CFG.app_name}] Tu codigo de verificacion"
+    message_class = EmailMessage
+    try:
+        body.encode("us-ascii")
+        subject.encode("us-ascii")
+        message_class = _PasswordResetEmail
+    except UnicodeEncodeError:
+        pass
+    email = message_class(
+        subject=subject,
+        body=body,
+        from_email=django_settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+    )
+    email.send(fail_silently=False)
+
+
+def _create_and_send_email_challenge(user) -> dict[str, Any]:
+    """Invalidate previous unused challenges, generate and deliver a new one."""
+    if not user.email:
+        raise ValueError("no email on file for this account")
+    _check_email_mfa_rate_limit(user)
+    # Burn any earlier pending codes so only the last one is valid.
+    MFAEmailChallenge.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
+    plaintext = mfa.generate_email_code()
+    challenge = MFAEmailChallenge.objects.create(
+        user=user,
+        code_hash=mfa.hash_email_code(plaintext),
+        expires_at=timezone.now() + timedelta(seconds=mfa.EMAIL_CODE_TTL_SECONDS),
+    )
+    _send_mfa_email_code(user, plaintext)
+    return {
+        "ok": True,
+        "status": "sent",
+        "email": user.email,
+        "ttl_seconds": mfa.EMAIL_CODE_TTL_SECONDS,
+        "challenge_id": challenge.pk,
+    }
+
+
+def consume_email_mfa_code(user, candidate: str) -> bool:
+    """Burn the most recent matching unused, unexpired challenge.
+
+    Returns True when a code matched, False otherwise. Constant-time
+    comparison via mfa.email_codes_match guards against timing attacks.
+    """
+    if not candidate:
+        return False
+    candidate = candidate.strip().replace(" ", "")
+    if not candidate.isdigit() or len(candidate) != mfa.EMAIL_CODE_LENGTH:
+        return False
+    code_hash = mfa.hash_email_code(candidate)
+    now = timezone.now()
+    challenge = MFAEmailChallenge.objects.filter(
+        user=user,
+        code_hash=code_hash,
+        used_at__isnull=True,
+        expires_at__gt=now,
+    ).order_by("-created_at").first()
+    if challenge is None:
+        return False
+    challenge.used_at = now
+    challenge.save(update_fields=["used_at"])
+    return True
+
+
+def start_mfa_email_enrollment(actor_username: str) -> dict[str, Any]:
+    """Begin the email-based MFA enrollment for the calling user."""
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if user.mfa_enabled:
+        raise ValueError("mfa is already enabled; disable it before re-enrolling")
+    if not user.email:
+        raise ValueError("set an email on your account before enrolling email mfa")
+    # Wipe any pending TOTP secret so the two methods cannot race.
+    if user.mfa_secret:
+        user.mfa_secret = ""
+        user.save(update_fields=["mfa_secret", "updated_at"])
+    MFARecoveryCode.objects.filter(user=user).delete()
+    result = _create_and_send_email_challenge(user)
+    record_audit(
+        "mfa_email_enrollment_started",
+        actor=user,
+        target_username=user.username,
+        payload={"email": user.email},
+    )
+    return result
+
+
+def confirm_mfa_email_enrollment(actor_username: str, code: str) -> dict[str, Any]:
+    """Verify the enrollment code and finalize email-based MFA."""
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if user.mfa_enabled:
+        raise ValueError("mfa is already enabled")
+    if not consume_email_mfa_code(user, code):
+        raise ValueError("invalid or expired verification code")
+    user.mfa_enabled = True
+    user.mfa_required = False
+    user.mfa_method = User.MFA_METHOD_EMAIL
+    user.mfa_secret = ""
+    user.save(update_fields=["mfa_enabled", "mfa_required", "mfa_method", "mfa_secret", "updated_at"])
+    codes = mfa.generate_recovery_codes()
+    MFARecoveryCode.objects.bulk_create(
+        [MFARecoveryCode(user=user, code_hash=mfa.hash_recovery_code(code_value)) for code_value in codes]
+    )
+    record_audit(
+        "mfa_email_enrollment_completed",
+        actor=user,
+        target_username=user.username,
+        payload={"recovery_codes_count": len(codes)},
+    )
+    return {
+        "ok": True,
+        "status": "enabled",
+        "method": User.MFA_METHOD_EMAIL,
+        "recovery_codes": codes,
+    }
+
+
+def send_mfa_email_login_code(user) -> dict[str, Any]:
+    """Generate and deliver an MFA code as part of an in-progress login."""
+    if not user.mfa_enabled or user.mfa_method != User.MFA_METHOD_EMAIL:
+        raise ValueError("email mfa is not enrolled for this user")
+    if not user.email:
+        raise ValueError("no email on file for this account")
+    result = _create_and_send_email_challenge(user)
+    record_audit(
+        "mfa_email_login_code_sent",
+        actor=user,
+        target_username=user.username,
+        payload={},
+    )
+    return result
 
 
 def regenerate_recovery_codes(actor_username: str) -> dict[str, Any]:
