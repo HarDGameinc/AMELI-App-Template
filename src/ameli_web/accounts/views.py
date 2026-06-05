@@ -149,6 +149,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
             page_param="sessions_page",
             anchor="profile-tab-sessions",
         ),
+        "user_sessions": sessions_page.items,
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
@@ -156,6 +157,9 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "display_last_login_at": format_timestamp_ui(request.user.last_login),
         "csrf_token": get_token(request),
     }
+    partial = (request.GET.get("partial") or "").strip()
+    if partial == "sessions":
+        return render(request, "accounts/_sessions_panel.html", context)
     return render(request, "accounts/profile.html", context)
 
 

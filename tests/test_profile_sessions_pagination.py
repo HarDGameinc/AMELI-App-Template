@@ -161,6 +161,35 @@ def test_profile_pagination_links_include_tab_anchor(client, public_user):
 
 
 @pytest.mark.django_db
+def test_profile_partial_returns_only_sessions_panel(client, public_user):
+    _make_sessions(public_user, 15)
+    client.force_login(public_user)
+
+    response = client.get("/profile/?partial=sessions")
+    body = _body(response)
+
+    assert response.status_code == 200
+    # Partial includes the panel header and the events list
+    assert "Sesiones registradas" in body
+    # ...but NOT the outer profile shell (no breadcrumbs, no top profile card)
+    assert "Editar perfil" not in body
+    assert "Cambiar contrasena" not in body
+
+
+@pytest.mark.django_db
+def test_profile_partial_supports_pagination_param(client, public_user):
+    _make_sessions(public_user, 25)
+    client.force_login(public_user)
+
+    response = client.get("/profile/?sessions_page=2&partial=sessions")
+    body = _body(response)
+
+    assert response.status_code == 200
+    assert "Pagina 2 de 2" in body
+    assert "Anterior" in body
+
+
+@pytest.mark.django_db
 def test_profile_invalid_page_param_falls_back_to_first(client, public_user):
     _make_sessions(public_user, 25)
     client.force_login(public_user)

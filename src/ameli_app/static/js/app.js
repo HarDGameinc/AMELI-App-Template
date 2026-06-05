@@ -226,3 +226,48 @@ window.AmeliPassword = {
   evaluate: ameliEvaluatePasswordStrength,
   setupForm: setupPasswordForm,
 };
+
+
+// ---- Pagination AJAX swap ----
+//
+// Any pagination footer link inside a node tagged with
+// ``data-pagination-panel="<id>"`` is intercepted: instead of triggering a
+// full reload we fetch the same URL with ``?partial=<id>`` appended and
+// replace the panel's innerHTML with the response. ``history.pushState``
+// keeps the URL bookmarkeable. If the fetch fails (offline, server error,
+// no JS) the link falls back to its native navigation.
+function setupPaginationSwap() {
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest(".pagination-footer a");
+    if (!link) return;
+    const panel = link.closest("[data-pagination-panel]");
+    if (!panel) return;
+
+    const panelKey = panel.dataset.paginationPanel;
+    const url = new URL(link.href, window.location.origin);
+    const fetchUrl = new URL(url);
+    fetchUrl.searchParams.set("partial", panelKey);
+
+    event.preventDefault();
+    panel.setAttribute("aria-busy", "true");
+
+    try {
+      const response = await fetch(fetchUrl, {
+        headers: { "X-Requested-With": "fetch" },
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      panel.innerHTML = html;
+      const newUrl = url.pathname + url.search + url.hash;
+      window.history.pushState({ panel: panelKey }, "", newUrl);
+    } catch (error) {
+      // Fall back to a real navigation if the swap fails.
+      window.location.href = link.href;
+    } finally {
+      panel.removeAttribute("aria-busy");
+    }
+  });
+}
+
+setupPaginationSwap();

@@ -1,0 +1,50 @@
+{% comment %}
+Inner content of the profile Sessions panel. Rendered standalone when the
+view is requested with ``?partial=sessions`` so the client-side pagination
+helper can swap just this fragment without reloading the whole profile.
+{% endcomment %}
+<div class="panel-header">
+  <div>
+    <div class="metric-label">Sesiones registradas</div>
+    <p class="muted panel-copy">Puedes revocar sesiones antiguas y cerrar el resto si detectas actividad sospechosa.</p>
+  </div>
+  <form method="post" action="{% url 'accounts:profile-revoke-others' %}">
+    {% csrf_token %}
+    <button class="icon-action danger" type="submit">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">logout</span>
+      <span>Cerrar otras sesiones</span>
+    </button>
+  </form>
+</div>
+
+<div class="events">
+  {% for session in user_sessions %}
+  <div class="event ev-{% if session.revoked %}DEGRADADO{% else %}OPERATIVO{% endif %}{% if session.is_current %} event-current{% endif %}">
+    <div class="ev-top">
+      <span class="ev-dot"></span>
+      <span class="ev-state">{% if session.is_current %}Sesion actual{% elif session.revoked %}Sesion revocada{% else %}Sesion activa{% endif %}</span>
+      <span class="session-state-badge {% if session.is_current %}current{% elif session.revoked %}revoked{% else %}active{% endif %}">
+        {% if session.is_current %}En uso{% elif session.revoked %}Revocada{% else %}Disponible{% endif %}
+      </span>
+    </div>
+    <div class="session-meta-line">
+      <span class="session-meta-item">Ultima actividad: {{ session.last_seen_at }}</span>
+      {% if session.ip_address %}<span class="session-meta-item">IP: {{ session.ip_address }}</span>{% endif %}
+      {% if session.user_agent %}<span class="session-meta-item">{{ session.user_agent|truncatechars:72 }}</span>{% endif %}
+    </div>
+    {% if not session.is_current and not session.revoked %}
+    <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}" style="margin-top:10px;">
+      {% csrf_token %}
+      <button class="icon-action danger" type="submit">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">block</span>
+        <span>Revocar sesion</span>
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% empty %}
+  <p class="muted">No hay sesiones registradas.</p>
+  {% endfor %}
+</div>
+
+{% include "_pagination_footer.html" with pagination=session_pagination %}
