@@ -428,6 +428,14 @@
     .form-card .modal-actions-row { margin-top:2px; justify-content:flex-start; }
     .form-card { align-content:start; }
     .form-card button { display:inline-flex; align-items:center; gap:8px; }
+    .pagination-footer { display:flex; justify-content:space-between; align-items:center;
+             gap:12px; flex-wrap:wrap; margin-top:14px; padding-top:12px;
+             border-top:1px solid var(--line); }
+    .pagination-counter { font-size:13px; }
+    .pagination-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .pagination-controls .icon-action { padding:6px 12px; }
+    .pagination-controls .icon-action.disabled { opacity:.45; pointer-events:none; }
+    .pagination-page-label { font-size:13px; }
     .admin-user-list { display:grid; gap:8px; }
     .admin-user-list .event { padding:12px 14px; }
     .admin-user-list .event .ev-top { align-items:flex-start; flex-wrap:wrap; }

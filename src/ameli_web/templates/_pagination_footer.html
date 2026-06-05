@@ -1,0 +1,49 @@
+{% comment %}
+Reusable pagination footer.
+
+Usage:
+    {% include "_pagination_footer.html" with pagination=session_pagination %}
+
+Expects ``pagination`` to be a dict produced by ``Page.as_context()``
+(items, page, per_page, total, total_pages, has_prev, has_next,
+prev_page, next_page, start_index, end_index, page_param). The footer
+preserves any other query-string parameters so filters and sibling
+pagination keys (admin can show users + audit side by side) survive
+navigation.
+{% endcomment %}
+<div class="pagination-footer">
+  <div class="pagination-counter muted">
+    {% if pagination.total %}
+      Mostrando {{ pagination.start_index }}–{{ pagination.end_index }} de {{ pagination.total }}
+    {% else %}
+      Sin resultados
+    {% endif %}
+  </div>
+  {% if pagination.total_pages > 1 %}
+  <div class="pagination-controls">
+    {% if pagination.has_prev %}
+      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.prev_page }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_left</span>
+        <span>Anterior</span>
+      </a>
+    {% else %}
+      <span class="icon-action disabled" aria-disabled="true">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_left</span>
+        <span>Anterior</span>
+      </span>
+    {% endif %}
+    <span class="pagination-page-label muted">Pagina {{ pagination.page }} de {{ pagination.total_pages }}</span>
+    {% if pagination.has_next %}
+      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.next_page }}">
+        <span>Siguiente</span>
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_right</span>
+      </a>
+    {% else %}
+      <span class="icon-action disabled" aria-disabled="true">
+        <span>Siguiente</span>
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_right</span>
+      </span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
