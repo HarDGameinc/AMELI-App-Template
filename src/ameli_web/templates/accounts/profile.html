@@ -451,6 +451,8 @@
       <p class="muted">No hay sesiones registradas.</p>
       {% endfor %}
     </div>
+
+    {% include "_pagination_footer.html" with pagination=session_pagination %}
   </div>
 </section>
 

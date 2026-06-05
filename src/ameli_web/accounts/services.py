@@ -177,6 +177,37 @@ def list_user_sessions(user, *, current_session_key: str | None = None) -> list[
     return [serialize_session(item, current_session_key=current_session_key) for item in user.web_sessions.all()]
 
 
+def paginate_user_sessions(
+    user,
+    *,
+    page: int = 1,
+    per_page: int = 20,
+    current_session_key: str | None = None,
+):
+    """Return a paginated, already-serialised slice of the user's sessions.
+
+    Order follows ``UserSession.Meta.ordering`` (``-last_seen_at``), which
+    naturally places the actively used session near the top.
+    """
+    from ameli_web.pagination import Page, paginate_queryset
+
+    body = paginate_queryset(user.web_sessions.all(), page=page, per_page=per_page)
+    items = [
+        serialize_session(item, current_session_key=current_session_key) for item in body.items
+    ]
+    return Page(
+        items=items,
+        page=body.page,
+        per_page=body.per_page,
+        total=body.total,
+        total_pages=body.total_pages,
+        has_prev=body.has_prev,
+        has_next=body.has_next,
+        start_index=body.start_index,
+        end_index=body.end_index,
+    )
+
+
 def list_recent_sessions(*, limit: int = 20, current_session_key: str | None = None) -> list[dict[str, Any]]:
     queryset = UserSession.objects.select_related("user").order_by("-last_seen_at")[: max(1, limit)]
     return [serialize_session(item, current_session_key=current_session_key) for item in queryset]

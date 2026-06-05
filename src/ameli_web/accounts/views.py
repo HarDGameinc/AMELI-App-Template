@@ -38,6 +38,7 @@ from .services import (
     disable_mfa_totp_for_self,
     get_user_for_reset_token,
     list_user_sessions,
+    paginate_user_sessions,
     record_audit,
     regenerate_recovery_codes,
     replace_avatar,
@@ -124,18 +125,27 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def profile_view(request: HttpRequest) -> HttpResponse:
+    from ameli_web.pagination import coerce_page
+
     current_session_key = str(request.session.session_key or "")
     user_payload = serialize_user(request.user)
-    user_sessions = list_user_sessions(request.user, current_session_key=current_session_key)
+    sessions_page = paginate_user_sessions(
+        request.user,
+        page=coerce_page(request.GET.get("sessions_page")),
+        per_page=20,
+        current_session_key=current_session_key,
+    )
+    current_session = next(
+        (item for item in sessions_page.items if item.get("session_key") == current_session_key),
+        {"session_id": current_session_key, "session_key": current_session_key},
+    )
     context = {
         "version": __version__,
         "current_user": user_payload,
         "can_access_admin": request.user.is_staff,
-        "current_session": next(
-            (item for item in user_sessions if item.get("session_key") == current_session_key),
-            {"session_id": current_session_key, "session_key": current_session_key},
-        ),
-        "user_sessions": user_sessions,
+        "current_session": current_session,
+        "user_sessions": sessions_page.items,
+        "session_pagination": sessions_page.as_context(page_param="sessions_page"),
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
