@@ -972,8 +972,11 @@ class _PasswordResetEmail(EmailMessage):
     passthrough body, regardless of line length.
     """
 
-    def message(self):  # type: ignore[override]
-        msg = super().message()
+    def message(self, *args, **kwargs):  # type: ignore[override]
+        # Python 3.13 introduced a ``policy`` keyword on
+        # ``EmailMessage.message()``; older versions had no extra args.
+        # Forwarding ``*args``/``**kwargs`` keeps both signatures happy.
+        msg = super().message(*args, **kwargs)
         if "Content-Transfer-Encoding" in msg:
             del msg["Content-Transfer-Encoding"]
         msg["Content-Transfer-Encoding"] = "7bit"
