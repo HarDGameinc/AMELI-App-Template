@@ -29,6 +29,7 @@ from .services import (
     consume_email_mfa_code,
     consume_recovery_code,
     delete_avatar,
+    change_email_for_self,
     disable_mfa_email_for_self,
     disable_mfa_for_self,
     disable_mfa_totp_for_self,
@@ -41,6 +42,7 @@ from .services import (
     revoke_other_sessions,
     revoke_session_record,
     send_mfa_email_login_code,
+    send_profile_test_email,
     serialize_mfa_status,
     serialize_user,
     start_mfa_email_enrollment,
@@ -165,17 +167,49 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
 
     form = ProfilePreferencesForm(request.POST, instance=request.user)
     if form.is_valid():
-        form.save()
+        new_email = form.cleaned_data.get("email", "")
+        # Persist display_name and theme via form, then route email through
+        # the service so the email-MFA invariants (disable + cleanup) hold.
+        request.user.display_name = form.cleaned_data["display_name"]
+        request.user.theme_preference = form.cleaned_data["theme_preference"]
+        request.user.save(update_fields=["display_name", "theme_preference", "updated_at"])
+        email_result = change_email_for_self(request.user.username, new_email)
         record_audit(
             "update_my_preferences",
             actor=request.user,
             target_username=request.user.username,
             payload={"theme_preference": request.user.theme_preference},
         )
+        if email_result.get("mfa_email_disabled"):
+            messages.warning(
+                request,
+                "Cambiaste tu email, asi que el 2FA por email se desactivo. Si lo queres usar de nuevo, activalo desde Seguridad.",
+            )
         messages.success(request, "Perfil actualizado.")
     else:
         messages.error(request, "No se pudo guardar el perfil.")
     return redirect("accounts:profile")
+
+
+PROFILE_TEST_EMAIL_SESSION_KEY = "profile_test_email_last_sent"
+
+
+@login_required
+@require_POST
+def send_profile_test_email_view(request: HttpRequest) -> JsonResponse:
+    raw = request.session.get(PROFILE_TEST_EMAIL_SESSION_KEY)
+    last_sent_at = None
+    if raw:
+        try:
+            last_sent_at = datetime.fromisoformat(str(raw))
+        except ValueError:
+            last_sent_at = None
+    try:
+        result = send_profile_test_email(request.user, last_sent_at=last_sent_at)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    request.session[PROFILE_TEST_EMAIL_SESSION_KEY] = result["sent_at"]
+    return JsonResponse(result)
 
 
 @login_required

@@ -21,6 +21,8 @@ urlpatterns = [
     path("profile", views.profile_view),
     path("profile/preferences/", views.update_preferences, name="profile-preferences"),
     path("profile/preferences", views.update_preferences),
+    path("profile/email/test/", views.send_profile_test_email_view, name="profile-email-test"),
+    path("profile/email/test", views.send_profile_test_email_view),
     path("profile/avatar/", views.update_avatar, name="profile-avatar"),
     path("profile/avatar", views.update_avatar),
     path("profile/avatar/delete/", views.delete_avatar_view, name="profile-avatar-delete"),

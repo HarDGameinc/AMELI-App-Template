@@ -89,6 +89,23 @@
           <div class="modal-form-help">Si lo dejas vacio, seguira mostrandose el nombre de usuario.</div>
         </div>
         <div class="modal-form-row">
+          <label class="modal-form-label" for="{{ preferences_form.email.id_for_label }}">Email</label>
+          {{ preferences_form.email }}
+          <div class="modal-form-help">
+            Sirve para recibir el codigo de 2FA por email y para restablecer tu contrasena si la olvidas.
+            {% if mfa_status.email_enabled %}<br><strong class="warn-text">Si cambias el email, el 2FA por email se desactivara y vas a tener que reenrolar.</strong>{% endif %}
+          </div>
+        </div>
+        {% if current_user.email %}
+        <div class="modal-actions-row" style="margin-bottom:6px;">
+          <button class="icon-action" type="button" id="profile-email-test">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">outgoing_mail</span>
+            <span>Enviar correo de prueba</span>
+          </button>
+        </div>
+        <p class="muted" id="profile-email-test-feedback"></p>
+        {% endif %}
+        <div class="modal-form-row">
           <label class="modal-form-label" for="{{ preferences_form.theme_preference.id_for_label }}">Tema preferido</label>
           {{ preferences_form.theme_preference }}
         </div>
@@ -111,6 +128,10 @@
         <div class="profile-row">
           <span class="metric-label">Alias</span>
           <span class="profile-note">{{ current_user.display_alias_value }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="metric-label">Email</span>
+          <span class="profile-note {% if not current_user.email %}warn-text{% endif %}">{% if current_user.email %}{{ current_user.email }}{% else %}Sin email{% endif %}</span>
         </div>
         <div class="profile-row">
           <span class="metric-label">Tema</span>
@@ -500,6 +521,33 @@ document.addEventListener("DOMContentLoaded", () => {
       if (passwordFeedback) {
         passwordFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       }
+    }
+  });
+
+  // ---- Test email ----
+  const testEmailBtn = document.getElementById("profile-email-test");
+  const testEmailFeedback = document.getElementById("profile-email-test-feedback");
+  testEmailBtn?.addEventListener("click", async () => {
+    testEmailBtn.disabled = true;
+    if (testEmailFeedback) testEmailFeedback.textContent = "Enviando...";
+    try {
+      const response = await fetch("{% url 'accounts:profile-email-test' %}", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "",
+        },
+      });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "No se pudo enviar el correo de prueba.");
+      }
+      if (testEmailFeedback) testEmailFeedback.textContent = `Correo de prueba enviado a ${data.email}. Reviza tu bandeja (puede tardar unos segundos).`;
+    } catch (error) {
+      if (testEmailFeedback) testEmailFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+    } finally {
+      testEmailBtn.disabled = false;
     }
   });
 

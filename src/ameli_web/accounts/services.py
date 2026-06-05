@@ -21,7 +21,7 @@ from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from . import mfa
 from .models import MFAEmailChallenge, MFARecoveryCode, UserSession
@@ -144,6 +144,7 @@ def serialize_user(user) -> dict[str, Any]:
         "mfa_required": bool(user.mfa_required),
         "mfa_totp_enabled": bool(user.mfa_totp_enabled),
         "mfa_email_enabled": bool(user.mfa_email_enabled),
+        "email": user.email or "",
         "created_at": user.created_at.isoformat() if getattr(user, "created_at", None) else None,
         "updated_at": user.updated_at.isoformat() if getattr(user, "updated_at", None) else None,
         "display_created_at": format_timestamp_ui(getattr(user, "created_at", None)),
@@ -584,6 +585,97 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
     MFAEmailChallenge.objects.filter(user=user).delete()
     record_audit("mfa_disabled_by_self", actor=user, target_username=user.username, payload={"method": "all"})
     return {"ok": True, "status": "disabled"}
+
+
+def change_email_for_self(actor_username: str, new_email: str) -> dict[str, Any]:
+    """Update the calling user's email.
+
+    If the user had email-based MFA enabled, the new address would not be
+    able to receive the next challenge (which is still hashed against the
+    old user record but addressed to the new mailbox) so we proactively
+    disable the email factor and delete pending challenges. The user keeps
+    TOTP and recovery codes if they had any.
+    """
+    user = User.objects.filter(username__iexact=actor_username).first()
+    if user is None:
+        raise ValueError("user not found")
+    normalized = (new_email or "").strip().lower()
+    if normalized == (user.email or "").strip().lower():
+        return {"ok": True, "status": "unchanged", "email": user.email, "mfa_email_disabled": False}
+    user.email = normalized
+    mfa_email_disabled = False
+    update_fields = ["email", "updated_at"]
+    if user.mfa_email_enabled:
+        user.mfa_email_enabled = False
+        user.mfa_enabled = bool(user.mfa_totp_enabled)
+        update_fields.extend(["mfa_email_enabled", "mfa_enabled"])
+        mfa_email_disabled = True
+    user.save(update_fields=update_fields)
+    if mfa_email_disabled:
+        MFAEmailChallenge.objects.filter(user=user).delete()
+        if not user.mfa_enabled:
+            MFARecoveryCode.objects.filter(user=user).delete()
+    record_audit(
+        "update_my_email",
+        actor=user,
+        target_username=user.username,
+        payload={"mfa_email_disabled": mfa_email_disabled},
+    )
+    return {
+        "ok": True,
+        "status": "updated",
+        "email": user.email,
+        "mfa_email_disabled": mfa_email_disabled,
+    }
+
+
+_PROFILE_TEST_EMAIL_COOLDOWN_SECONDS = 30
+
+
+def send_profile_test_email(user, *, last_sent_at: datetime | None = None) -> dict[str, Any]:
+    """Send a plain-text confirmation email to the user's address.
+
+    ``last_sent_at`` is supplied by the view (typically from the user's
+    session) so we can enforce a small cooldown without persisting state.
+    """
+    if not user.email:
+        raise ValueError("no email on file for this account")
+    if last_sent_at is not None:
+        elapsed = (timezone.now() - last_sent_at).total_seconds()
+        if elapsed < _PROFILE_TEST_EMAIL_COOLDOWN_SECONDS:
+            wait = int(_PROFILE_TEST_EMAIL_COOLDOWN_SECONDS - elapsed) or 1
+            raise ValueError(f"esperá {wait} segundos antes de pedir otro envio")
+    app_name = django_settings.CFG.app_name
+    body = (
+        f"Hola @{user.username},\n\n"
+        f"Este es un correo de prueba enviado desde {app_name}.\n"
+        f"Si lo recibiste, tu direccion {user.email} esta funcionando "
+        f"y vas a poder usar 2FA por email cuando lo actives.\n\n"
+        f"Si vos no pediste este correo, ignoralo.\n\n"
+        f"Saludos,\n{app_name}\n"
+    )
+    subject = f"[{app_name}] Prueba de correo"
+    message_class = EmailMessage
+    try:
+        body.encode("us-ascii")
+        subject.encode("us-ascii")
+        message_class = _PasswordResetEmail
+    except UnicodeEncodeError:
+        pass
+    email = message_class(
+        subject=subject,
+        body=body,
+        from_email=django_settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+    )
+    email.send(fail_silently=False)
+    record_audit(
+        "profile_test_email_sent",
+        actor=user,
+        target_username=user.username,
+        payload={"email": user.email},
+    )
+    return {"ok": True, "email": user.email, "sent_at": timezone.now().isoformat()}
 
 
 def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, Any]:
