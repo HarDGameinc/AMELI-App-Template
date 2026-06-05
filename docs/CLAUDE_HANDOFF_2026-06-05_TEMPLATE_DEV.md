@@ -4,9 +4,9 @@ Fecha: `2026-06-05`
 
 Continuacion de [`CLAUDE_HANDOFF_2026-06-04_EMAIL_MFA_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-06-04_EMAIL_MFA_TEMPLATE_DEV.md).
 
-Cierra el refactor stacked de MFA: profile UI con metodos independientes,
-selector en login cuando hay dos metodos activos, badge granular en admin
-y tests E2E completos. Promueve todo a `main`.
+Cierra el refactor stacked de MFA, agrega self-service de email en el
+profile, valida SMTP real contra Office 365 y arregla incompatibilidad
+con Python 3.13. Promueve todo a `main`.
 
 ### Estado general al cierre
 
@@ -14,10 +14,13 @@ y tests E2E completos. Promueve todo a `main`.
 - Rama estable: `main` (post-promocion del dia)
 - Rama de trabajo: `dev` (sincronizada con `main`)
 - Servidor Debian: `/opt/ameli-app-template-dev`, puerto `18080`
-- **183 tests pasando** (`pytest -v`)
+- **197 tests pasando** (`pytest -v`)
 - **0 regresiones**
 - Verificado end-to-end visual: profile stacked, login selector, swap
-  method, admin badge granular, stacking sin recovery screen vacia
+  method, admin badge granular, stacking sin recovery screen vacia,
+  edicion de email + correo de prueba + auto-disable de 2FA email
+- Verificado contra **Office 365 SMTP real**: test email, activacion
+  2FA email (codigo de 6 digitos), forgot password (link en linea unica)
 
 ### Contexto: que estaba pendiente al arrancar
 
@@ -198,6 +201,89 @@ screenshots: stacking, selector, swap, login completo + admin badge).
 Esto es lo que cazo los dos UX bugs (`c21724d`, `93ad309`) que la
 suite de 165 tests no marcaba.
 
+### Bloque tarde: self-service de email + SMTP real
+
+Cerrado el refactor stacked, surgio un gap UX: el usuario no tenia donde
+ingresar/cambiar su email (solo el admin podia desde el panel), asi que
+quien no tuviera email no podia activar 2FA email. Ademas queriamos
+validar SMTP real (no solo console backend) contra una casilla.
+
+4 commits adicionales:
+
+| Commit | Resumen |
+|---|---|
+| `a0f95ad` | let users edit their email and send a test email from profile |
+| `99842b5` | surface smtp errors as 502 json instead of opaque 500 |
+| `4ad592f` | forward args to email message override for python 3.13 policy kwarg |
+| (handoff) | actualizacion de este doc |
+
+#### Email editable + correo de prueba (`a0f95ad`)
+
+- `ProfilePreferencesForm` ahora incluye `email` con validacion EmailField
+  y normalizacion lowercase + strip
+- Nuevo service `change_email_for_self(actor_username, new_email)`:
+  - normaliza, detecta cambio real (no-op si es el mismo)
+  - si el user tenia 2FA email activo → lo desactiva + borra challenges +
+    recomputa `mfa_enabled`; si era el unico metodo activo, borra los
+    recovery codes
+  - audita `update_my_email` con `mfa_email_disabled: bool`
+- Nuevo service `send_profile_test_email(user, last_sent_at)`:
+  - cooldown de 30s via `PROFILE_TEST_EMAIL_SESSION_KEY` (sin DB)
+  - mismo `_PasswordResetEmail` 7bit para evitar QP wrapping
+  - audita `profile_test_email_sent`
+- Nueva view + URL `/profile/email/test/`
+- UI nueva en el tab "Editar perfil":
+  - input email editable con help text
+  - warning rojo si `mfa_email_enabled` y el user va a cambiar el email
+  - boton "Enviar correo de prueba" visible solo si tiene email guardado
+- `serialize_user` ahora expone `email`
+- Side panel "Identidad y preferencias" muestra el email guardado o
+  "Sin email" en warning
+
+#### Surface SMTP errors (`99842b5`)
+
+`mfa_email_start_view`, `verify_mfa_resend_view` y
+`send_profile_test_email_view` ahora atrapan `Exception` ademas de
+`ValueError` para devolver el error real del SMTP como JSON 502 en lugar
+de un 500 mudo. Esto permite diagnosticar problemas de credenciales /
+tenant / firewall directamente desde el navegador.
+
+#### Python 3.13 compat (`4ad592f`)
+
+Python 3.13 agrego un `policy` kwarg a `EmailMessage.message()`. Nuestra
+subclase `_PasswordResetEmail` (la que fuerza 7bit para que el reset URL
+no se rompa con QP soft-wrap) overrideaba el metodo con la signatura
+vieja, asi que en 3.13 fallaba con `TypeError: got an unexpected keyword
+argument 'policy'` cada vez que el codigo intentaba enviar un email real.
+
+Fix: aceptar `*args, **kwargs` y reenviarlos al super. Funciona en 3.11
+(tests CI) y en 3.13 (servidor).
+
+Tests locales corrian Python 3.11 y no cazaron el bug. Lo cazo el
+smoke test contra O365 real.
+
+### Lecciones de SMTP / Office 365
+
+- `5.7.139 Authentication unsuccessful` con un App Password recien
+  generado puede significar dos cosas:
+  - **Password mal creada**: la pantalla muestra los 16 chars pero la
+    generacion falla a nivel directorio (paso real del dia). Verificar
+    comparando contra una password que ya funciono en otra app del mismo
+    tenant.
+  - **SMTP AUTH bloqueado** a nivel buzon o tenant: revisar
+    `Get-CASMailbox -Identity X | fl SmtpClientAuthenticationDisabled` y
+    M365 Admin Center → Settings → Org Settings → Modern Authentication
+    → "Authenticated SMTP" tildado
+- Las apps `ameli-notifier` y `ameli-app-template-dev` pueden compartir
+  la misma App Password de `ameli@agnov.cl` si estan en la misma
+  organizacion. Mejor mantener una sola "fuente de la verdad" en
+  `/etc/ameli-notifier/secrets/email_default.password` (no expuesta en
+  env files).
+- Office 365 funciona contra `smtp.office365.com:587` con `STARTTLS`
+  (TLS=true, SSL=false). Gmail funciona contra `smtp.gmail.com:587`
+  bajo el mismo patron.
+- `EMAIL_FROM` debe ser igual a `EMAIL_USERNAME` en O365 (y en Gmail).
+
 ### Proximos bloques abiertos
 
 #### Pulir Sesiones tab del profile (chico)
@@ -217,6 +303,13 @@ sobre que app concreta.
 Hoy hereda el estilo grande `.primary` y queda visualmente desbalanceado
 contra el del card de email. Decidir si reducimos a `.primary` compacto
 o mantenemos el tamaño actual.
+
+#### Mover la password del email a un archivo separado (mejora)
+
+Hoy `AMELI_APP_EMAIL_PASSWORD` vive en `app.env`. Otras apps AMELI
+(notifier) usan `smtp_password_file: /etc/ameli-X/secrets/...`. Si la
+politica de la organizacion lo pide, agregar soporte en `config.py`
+para leer la password desde un archivo en lugar del env. Cambio chico.
 
 ### Orden recomendado para retomar
 
