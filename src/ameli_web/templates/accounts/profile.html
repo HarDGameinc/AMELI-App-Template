@@ -415,7 +415,10 @@
       </div>
       <form method="post" action="{% url 'accounts:profile-revoke-others' %}">
         {% csrf_token %}
-        <button type="submit">Cerrar otras sesiones</button>
+        <button class="icon-action danger" type="submit">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">logout</span>
+          <span>Cerrar otras sesiones</span>
+        </button>
       </form>
     </div>
 
@@ -437,7 +440,10 @@
         {% if not session.is_current and not session.revoked %}
         <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}" style="margin-top:10px;">
           {% csrf_token %}
-          <button type="submit" class="danger">Revocar sesion</button>
+          <button class="icon-action danger" type="submit">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">block</span>
+            <span>Revocar sesion</span>
+          </button>
         </form>
         {% endif %}
       </div>

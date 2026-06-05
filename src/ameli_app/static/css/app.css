@@ -426,6 +426,8 @@
     .form-card-head { display:grid; gap:6px; }
     .form-card-title { margin:0; font-size:20px; line-height:1.15; }
     .form-card .modal-actions-row { margin-top:2px; justify-content:flex-start; }
+    .form-card { align-content:start; }
+    .form-card button { display:inline-flex; align-items:center; gap:8px; }
     .admin-user-list { display:grid; gap:8px; }
     .admin-user-list .event { padding:12px 14px; }
     .admin-user-list .event .ev-top { align-items:flex-start; flex-wrap:wrap; }
