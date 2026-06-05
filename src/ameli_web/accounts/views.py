@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from datetime import datetime, timedelta
 
@@ -17,6 +18,8 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from ameli_app import __version__
 from ameli_web.utils import format_timestamp_ui
+
+logger = logging.getLogger(__name__)
 
 from . import mfa as mfa_lib
 from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm, TemplateAuthenticationForm
@@ -208,6 +211,11 @@ def send_profile_test_email_view(request: HttpRequest) -> JsonResponse:
         result = send_profile_test_email(request.user, last_sent_at=last_sent_at)
     except ValueError as exc:
         return _json_error(str(exc))
+    except Exception as exc:
+        # SMTP/socket/auth errors land here. Surface them so the operator
+        # can debug the email backend without having to dig into the journal.
+        logger.exception("test email delivery failed for %s", request.user.username)
+        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
     request.session[PROFILE_TEST_EMAIL_SESSION_KEY] = result["sent_at"]
     return JsonResponse(result)
 
@@ -442,6 +450,9 @@ def mfa_email_start_view(request: HttpRequest) -> JsonResponse:
         result = start_mfa_email_enrollment(request.user.username)
     except ValueError as exc:
         return _json_error(str(exc))
+    except Exception as exc:
+        logger.exception("email mfa enrollment delivery failed for %s", request.user.username)
+        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
     return JsonResponse(result)
 
 
@@ -615,6 +626,9 @@ def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
         result = send_mfa_email_login_code(user)
     except ValueError as exc:
         return _json_error(str(exc), status=429)
+    except Exception as exc:
+        logger.exception("login mfa resend delivery failed for %s", user.username)
+        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
     return JsonResponse(result)
 
 
