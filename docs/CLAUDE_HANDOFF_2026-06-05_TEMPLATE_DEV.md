@@ -14,13 +14,19 @@ con Python 3.13. Promueve todo a `main`.
 - Rama estable: `main` (post-promocion del dia)
 - Rama de trabajo: `dev` (sincronizada con `main`)
 - Servidor Debian: `/opt/ameli-app-template-dev`, puerto `18080`
-- **197 tests pasando** (`pytest -v`)
+- **211 tests pasando** (`pytest -v`)
 - **0 regresiones**
 - Verificado end-to-end visual: profile stacked, login selector, swap
   method, admin badge granular, stacking sin recovery screen vacia,
-  edicion de email + correo de prueba + auto-disable de 2FA email
+  edicion de email + correo de prueba + auto-disable de 2FA email,
+  tab Sesiones con botones metro, cards 2FA alineados
 - Verificado contra **Office 365 SMTP real**: test email, activacion
-  2FA email (codigo de 6 digitos), forgot password (link en linea unica)
+  2FA email (codigo de 6 digitos), forgot password (link en linea unica),
+  smoke test con `password_file` cargando el secret de
+  `/etc/<app>/secrets/`
+- Verificado CLI auto-detect: `ameli-app config-check` y `db-status`
+  leen `/etc/<app>/app.yaml` y `app.env` directamente, sin necesidad
+  de pasar flags
 
 ### Contexto: que estaba pendiente al arrancar
 
@@ -284,39 +290,127 @@ smoke test contra O365 real.
   bajo el mismo patron.
 - `EMAIL_FROM` debe ser igual a `EMAIL_USERNAME` en O365 (y en Gmail).
 
+### Bloque cierre tarde: backlog tactico
+
+Despues de validar end-to-end con O365, cerramos los 4 items tacticos
+abiertos del backlog en 3 commits:
+
+| Commit | Items |
+|---|---|
+| `7920810` | #1 Sesiones tab + #2 botones MFA balanceados |
+| `fc1611d` | #3 `smtp_password_file` + #4 CLI auto-detect del env file |
+| `ba24379` | Fix: `sys.executable` raw (no `.resolve()`) para que el autodetect funcione con venv en Debian |
+
+#### #1 Pulir Sesiones tab (`7920810`)
+
+Los botones planos "Cerrar otras sesiones" y "Revocar sesion" pasaron al
+patron metro `icon-action danger` con iconos (`logout`, `block`),
+consistentes con el resto del profile. Validado visualmente.
+
+#### #2 Botones MFA balanceados (`7920810`)
+
+Dos reglas CSS chicas en `app.css`:
+- `.form-card { align-content: start; }` — los cards del split
+  no estiran su contenido cuando uno tiene mas altura que el otro
+- `.form-card button { display: inline-flex; align-items: center; gap: 8px; }`
+  — icono + texto en linea, antes se apilaban verticalmente cuando el
+  card era estrecho
+
+Visual: cards de TOTP / Email ahora alineados al top, sin botones
+estirados.
+
+#### #3 SMTP password file (`fc1611d`)
+
+Nueva opcion `email.password_file` en YAML (o
+`AMELI_APP_EMAIL_PASSWORD_FILE` env). Precedencia:
+
+1. `AMELI_APP_EMAIL_PASSWORD` env explicito (override CI)
+2. `email.password_file` path (recomendado prod, secret en
+   `/etc/<app>/secrets/...` con permisos restrictivos)
+3. `email.password_env` legacy (compatibilidad hacia atras)
+
+Helper `_read_secret_file()` strippea whitespace y raisea RuntimeError
+claro si el archivo no existe. 7 tests nuevos.
+
+Validado end-to-end en server:
+```
+mkdir -p /etc/ameli-app-template-dev/secrets
+chown root:ameli-app-template-dev /etc/ameli-app-template-dev/secrets
+chmod 0750 /etc/ameli-app-template-dev/secrets
+printf '%s' '<password>' > /etc/ameli-app-template-dev/secrets/email_default.password
+chown root:ameli-app-template-dev /etc/ameli-app-template-dev/secrets/email_default.password
+chmod 0640 /etc/ameli-app-template-dev/secrets/email_default.password
+```
+Mas comentar `AMELI_APP_EMAIL_PASSWORD` en `app.env` y agregar
+`password_file: /etc/ameli-app-template-dev/secrets/email_default.password`
+en la seccion `email:` de `app.yaml`. Smoke test post-cambio: SMTP real
+funciona, password ya no esta en env vars.
+
+#### #4 CLI auto-detect (`fc1611d` + `ba24379`)
+
+`ameli-app` ahora detecta automaticamente el env file standard cuando
+corre desde `/opt/<slug>-<env>/.venv/bin/`:
+
+```python
+venv_python = Path(sys.executable)             # NO .resolve() en Debian
+install_dir = venv_python.parent.parent.parent  # /opt/<slug>-<env>
+if install_dir.parent.name == "opt":
+    candidate = Path(etc_root) / install_dir.name / "app.env"
+```
+
+Bug subtle: `.resolve()` seguia el symlink del Python del venv a
+`/usr/bin/python3.13`, perdiendo el path `/opt/<slug>`. El test pasaba
+porque monkey-patcheabamos `sys.executable` a un archivo real (no
+symlink). Lo cazo el smoke test del server. Removimos el `.resolve()`.
+
+Precedencia: `--env-file` flag > `AMELI_APP_ENV_FILE` env > autodetect.
+
+Resultado practico:
+```bash
+.venv/bin/ameli-app config-check
+# Antes: leia config/app.yaml.example (backend=console, db not configured)
+# Ahora: lee /etc/<slug>-<env>/app.yaml (backend=smtp, db reachable)
+```
+
+7 tests nuevos.
+
+### Estado final al cierre del dia
+
+- `main` y `dev` en (hash post-promocion)
+- **211 tests pasando** (165 al inicio del dia → 197 mediodia → 211 cierre)
+- 17 commits en main desde el cierre del 04
+- SMTP real validado contra O365 con `password_file` en `/etc/`
+- Server: CLI lee config real, secrets en filesystem
+
 ### Proximos bloques abiertos
 
-#### Pulir Sesiones tab del profile (chico)
-
-Mismo punto que el handoff anterior: los botones "Revocar sesion" y
-"Cerrar otras sesiones" en `/profile/` → Sesiones siguen siendo planos.
-Bajo esfuerzo (~1-2 commits), bajo riesgo.
-
-#### Empezar primera app heredada del Template (estrategico)
+#### Estrategico: primera app heredada del Template
 
 Validar el flujo real de copiar/renombrar el Template a una app
 concreta (AMELI Algo). Mayor scope, requiere conversacion previa
-sobre que app concreta.
+sobre que app concreta y que extensiones especificas necesita.
 
-#### Refinar estilo del boton "Activar con app" en profile (cosmetico)
+#### Ideas tacticas para revisar (propuestas usuario 2026-06-05)
 
-Hoy hereda el estilo grande `.primary` y queda visualmente desbalanceado
-contra el del card de email. Decidir si reducimos a `.primary` compacto
-o mantenemos el tamaño actual.
-
-#### Mover la password del email a un archivo separado (mejora)
-
-Hoy `AMELI_APP_EMAIL_PASSWORD` vive en `app.env`. Otras apps AMELI
-(notifier) usan `smtp_password_file: /etc/ameli-X/secrets/...`. Si la
-politica de la organizacion lo pide, agregar soporte en `config.py`
-para leer la password desde un archivo en lugar del env. Cambio chico.
+- **Paginacion de listados**: hoy los paneles de sesiones (profile),
+  usuarios (admin) y eventos de auditoria (admin) renderizan todo en
+  una sola vista. Para usuarios con muchas sesiones / muchas filas
+  esto degrada el render y la UX. Implementar paginacion server-side
+  (limit/offset o cursor) con el mismo patron metro.
+- **Boton "volver arriba"**: util en listados largos (admin, profile
+  sesiones). Patron tipico: floating button bottom-right que aparece
+  cuando `scrollY > 400px`.
+- (Mas ideas a medida que aparecen.)
 
 ### Orden recomendado para retomar
 
 1. **Resync local + servidor** al hash de `main` post-promocion del dia.
-2. **Pulir Sesiones tab del profile** — bloque chico, cierra consistencia
-   visual.
-3. **Primera app real heredada** — estrategico, mayor scope.
+2. **Paginacion de listados** — alta utilidad operativa, scope medio.
+   Empezar con sesiones (mas chico) y replicar el patron a admin
+   usuarios y eventos.
+3. **Boton volver arriba** — chico, complementa la paginacion.
+4. **Primera app real heredada** — estrategico, requiere conversacion
+   previa con el equipo.
 
 ### Comandos utiles de continuidad
 
