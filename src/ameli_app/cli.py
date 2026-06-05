@@ -32,8 +32,11 @@ def _autodetect_env_file(etc_root: str | Path = "/etc") -> str | None:
     ``etc_root`` is parameterised mostly to make the helper testable; production
     callers always use the default ``/etc``.
     """
+    # Use sys.executable as-is. ``.resolve()`` would follow the venv python
+    # symlink to ``/usr/bin/python3.x`` on Debian and lose the ``/opt/<slug>``
+    # layout we need to detect.
     try:
-        venv_python = Path(sys.executable).resolve()
+        venv_python = Path(sys.executable)
         install_dir = venv_python.parent.parent.parent
     except OSError:
         return None
