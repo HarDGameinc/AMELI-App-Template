@@ -465,20 +465,46 @@ document.addEventListener("DOMContentLoaded", () => {
     ? window.AmeliPassword.setupForm(passwordForm)
     : null;
 
+  function activateTabById(tabId, options = {}) {
+    const updateHash = options.updateHash !== false;
+    let activated = false;
+    document.querySelectorAll(".tab-nav").forEach((nav) => {
+      const btn = nav.querySelector(`button[data-tab="${tabId}"]`);
+      if (!btn) return;
+      nav.querySelectorAll("button[data-tab]").forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
+      btn.classList.add("active");
+      btn.setAttribute("aria-selected", "true");
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      const target = document.getElementById(tabId);
+      if (target) target.classList.add("active");
+      activated = true;
+    });
+    if (activated && updateHash) {
+      history.replaceState(null, "", `#${tabId}`);
+    }
+    return activated;
+  }
+
   document.querySelectorAll(".tab-nav").forEach((nav) => {
     nav.querySelectorAll("button[data-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        nav.querySelectorAll("button[data-tab]").forEach((b) => {
-          b.classList.remove("active");
-          b.setAttribute("aria-selected", "false");
-        });
-        btn.classList.add("active");
-        btn.setAttribute("aria-selected", "true");
-        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-        const target = document.getElementById(btn.dataset.tab);
-        if (target) target.classList.add("active");
+        activateTabById(btn.dataset.tab);
       });
     });
+  });
+
+  // Restore the active tab from the URL hash so Prev/Next links in
+  // paginated panels stay on the same tab they were navigated from.
+  const initialHash = (window.location.hash || "").replace(/^#/, "");
+  if (initialHash) {
+    activateTabById(initialHash, { updateHash: false });
+  }
+  window.addEventListener("hashchange", () => {
+    const hash = (window.location.hash || "").replace(/^#/, "");
+    if (hash) activateTabById(hash, { updateHash: false });
   });
 
   document.querySelectorAll("[data-tab-trigger]").forEach((button) => {

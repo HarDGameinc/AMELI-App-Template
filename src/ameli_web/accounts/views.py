@@ -145,7 +145,10 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "can_access_admin": request.user.is_staff,
         "current_session": current_session,
         "user_sessions": sessions_page.items,
-        "session_pagination": sessions_page.as_context(page_param="sessions_page"),
+        "session_pagination": sessions_page.as_context(
+            page_param="sessions_page",
+            anchor="profile-tab-sessions",
+        ),
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),

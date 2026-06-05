@@ -50,13 +50,18 @@ class Page:
     def next_page(self) -> int:
         return min(self.total_pages or 1, self.page + 1)
 
-    def as_context(self, *, page_param: str = "page") -> dict[str, Any]:
+    def as_context(self, *, page_param: str = "page", anchor: str = "") -> dict[str, Any]:
         """Return the dict shape used by ``pagination_footer.html``.
 
         ``page_param`` is the query-string key the footer should append to
         the current URL (``users_page``, ``audit_page``, ...). Storing it
         in the context lets one template render multiple paginated panels
         on the same page without colliding.
+
+        ``anchor`` is the HTML id of the tab/section the listing lives in.
+        When passed, the footer appends ``#<anchor>`` to navigation links
+        so refreshing or following a Prev/Next link stays on the same tab
+        instead of falling back to the first one.
         """
         return {
             "items": self.items,
@@ -71,6 +76,7 @@ class Page:
             "start_index": self.start_index,
             "end_index": self.end_index,
             "page_param": page_param,
+            "anchor": anchor,
         }
 
 

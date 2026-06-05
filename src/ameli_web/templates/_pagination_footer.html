@@ -22,7 +22,7 @@ navigation.
   {% if pagination.total_pages > 1 %}
   <div class="pagination-controls">
     {% if pagination.has_prev %}
-      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.prev_page }}">
+      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.prev_page }}{% if pagination.anchor %}#{{ pagination.anchor }}{% endif %}">
         <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_left</span>
         <span>Anterior</span>
       </a>
@@ -34,7 +34,7 @@ navigation.
     {% endif %}
     <span class="pagination-page-label muted">Pagina {{ pagination.page }} de {{ pagination.total_pages }}</span>
     {% if pagination.has_next %}
-      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.next_page }}">
+      <a class="icon-action" href="?{% for key, value in request.GET.items %}{% if key != pagination.page_param %}{{ key }}={{ value }}&{% endif %}{% endfor %}{{ pagination.page_param }}={{ pagination.next_page }}{% if pagination.anchor %}#{{ pagination.anchor }}{% endif %}">
         <span>Siguiente</span>
         <span class="material-symbols-rounded icon-glyph" aria-hidden="true">chevron_right</span>
       </a>

@@ -149,6 +149,18 @@ def test_profile_does_not_render_pagination_controls_with_few_sessions(client, p
 
 
 @pytest.mark.django_db
+def test_profile_pagination_links_include_tab_anchor(client, public_user):
+    _make_sessions(public_user, 30)
+    client.force_login(public_user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    # The anchor keeps the Sessions tab active after Prev/Next reloads.
+    assert "sessions_page=2#profile-tab-sessions" in body
+
+
+@pytest.mark.django_db
 def test_profile_invalid_page_param_falls_back_to_first(client, public_user):
     _make_sessions(public_user, 25)
     client.force_login(public_user)
