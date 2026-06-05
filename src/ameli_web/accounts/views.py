@@ -50,6 +50,7 @@ from .services import (
 PENDING_MFA_SESSION_KEY = "pending_mfa_user_id"
 PENDING_MFA_STARTED_KEY = "pending_mfa_started_at"
 PENDING_MFA_NEXT_KEY = "pending_mfa_next"
+PENDING_MFA_METHOD_KEY = "pending_mfa_method"
 PENDING_MFA_TTL = timedelta(minutes=10)
 
 User = get_user_model()
@@ -432,7 +433,7 @@ def mfa_email_confirm_view(request: HttpRequest) -> JsonResponse:
 
 
 def _clear_pending_mfa(request: HttpRequest) -> None:
-    for key in (PENDING_MFA_SESSION_KEY, PENDING_MFA_STARTED_KEY, PENDING_MFA_NEXT_KEY):
+    for key in (PENDING_MFA_SESSION_KEY, PENDING_MFA_STARTED_KEY, PENDING_MFA_NEXT_KEY, PENDING_MFA_METHOD_KEY):
         request.session.pop(key, None)
 
 
@@ -466,21 +467,51 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         return redirect("accounts:login")
 
     next_url = request.session.get(PENDING_MFA_NEXT_KEY) or "/profile/"
-    # Commit 4 of the stacked refactor will let the user pick between
-    # available methods. For now, prefer TOTP when present (industry
-    # primary) and fall back to email.
+    available_methods = []
     if user.mfa_totp_enabled:
-        method = "totp"
-    elif user.mfa_email_enabled:
-        method = "email"
-    else:
-        method = "totp"
+        available_methods.append("totp")
+    if user.mfa_email_enabled:
+        available_methods.append("email")
+
+    chosen = request.session.get(PENDING_MFA_METHOD_KEY)
+    if chosen not in available_methods:
+        chosen = None
+
+    if request.method == "POST" and (request.POST.get("choose_method") or "") in available_methods:
+        chosen = request.POST["choose_method"]
+        request.session[PENDING_MFA_METHOD_KEY] = chosen
+        if chosen == "email":
+            try:
+                send_mfa_email_login_code(user)
+            except ValueError:
+                pass
+        return redirect("accounts:verify-mfa")
+
+    if chosen is None and len(available_methods) >= 2:
+        return render(
+            request,
+            "accounts/verify_mfa.html",
+            {
+                "version": __version__,
+                "next_url": next_url,
+                "pending_username": user.username,
+                "available_methods": available_methods,
+                "email_hint": user.email,
+                "show_selector": True,
+            },
+        )
+
+    if chosen is None:
+        chosen = available_methods[0] if available_methods else "totp"
+    method = chosen
     context = {
         "version": __version__,
         "next_url": next_url,
         "pending_username": user.username,
         "method": method,
         "email_hint": user.email if method == "email" else "",
+        "available_methods": available_methods,
+        "show_selector": False,
     }
 
     if request.method == "GET":

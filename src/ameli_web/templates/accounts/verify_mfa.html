@@ -8,6 +8,42 @@
 <section class="login-shell">
   <article class="panel login-panel">
     <div class="metric-label">Verificacion 2FA</div>
+    {% if show_selector %}
+    <h2 class="modal-title">Como queres verificarte?</h2>
+    <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Tenes dos metodos activos. Elegi cual usar ahora.</p>
+    <form method="post" action="">
+      {% csrf_token %}
+      <div class="form-grid-split" style="margin-top:12px;">
+        <article class="form-card">
+          <div class="form-card-head">
+            <h3 class="form-card-title">App de autenticacion</h3>
+            <p class="muted panel-copy">Codigo de 6 digitos que muestra Google Authenticator, Authy u otra app TOTP. Se renueva cada 30 segundos.</p>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary" type="submit" name="choose_method" value="totp">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">smartphone</span>
+              <span>Usar app</span>
+            </button>
+          </div>
+        </article>
+        <article class="form-card">
+          <div class="form-card-head">
+            <h3 class="form-card-title">Email</h3>
+            <p class="muted panel-copy">Te enviamos un codigo de 6 digitos a <strong>{{ email_hint }}</strong>. Expira en 10 minutos y solo sirve una vez.</p>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary" type="submit" name="choose_method" value="email">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
+              <span>Recibir codigo por email</span>
+            </button>
+          </div>
+        </article>
+      </div>
+    </form>
+    <p class="muted modal-copy" style="margin-top:14px;">
+      <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
+    </p>
+    {% else %}
     <h2 class="modal-title">Tu codigo de 6 digitos</h2>
     {% if method == "email" %}
     <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Te enviamos un codigo de 6 digitos a <strong>{{ email_hint }}</strong>. Tipealo abajo. Si no llega, esperá un minuto y usá Reenviar codigo. Tambien podes usar un codigo de recuperacion XXXX-XXXX-XXXX si perdiste acceso al email.</p>
@@ -39,11 +75,23 @@
     </div>
     <p class="muted" id="verify-mfa-resend-feedback"></p>
     {% endif %}
+    {% if available_methods|length >= 2 %}
+    <form method="post" action="" style="margin-top:14px;">
+      {% csrf_token %}
+      <input type="hidden" name="choose_method" value="{% if method == 'totp' %}email{% else %}totp{% endif %}">
+      <button class="icon-action" type="submit">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">swap_horiz</span>
+        <span>Usar {% if method == 'totp' %}email{% else %}app de autenticacion{% endif %} en su lugar</span>
+      </button>
+    </form>
+    {% endif %}
     <p class="muted modal-copy" style="margin-top:14px;">
       <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
     </p>
+    {% endif %}
   </article>
 
+  {% if not show_selector %}
   <aside class="panel">
     <div class="login-meta-grid">
       <div>
@@ -88,9 +136,10 @@
       </div>
     </div>
   </aside>
+  {% endif %}
 </section>
 
-{% if method == "email" %}
+{% if not show_selector and method == "email" %}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const resendBtn = document.getElementById("verify-mfa-resend");
