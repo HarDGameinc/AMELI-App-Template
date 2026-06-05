@@ -288,6 +288,58 @@ def list_users() -> list[dict[str, Any]]:
     return [serialize_user(user) for user in User.objects.all().order_by("username")]
 
 
+def paginate_users_for_admin(
+    *,
+    page: int = 1,
+    per_page: int = 25,
+    search: str = "",
+    role: str = "",
+    status: str = "",
+):
+    """Return a paginated, filtered slice of users for the admin panel.
+
+    ``search`` matches against ``username`` and ``display_name`` (icontains).
+    ``role`` accepts the literal role values (``superadmin``/``public``);
+    other values are ignored. ``status`` accepts ``enabled``/``disabled``
+    and maps onto ``is_active``.
+    """
+    from django.db.models import Q
+
+    from ameli_web.pagination import Page, paginate_queryset
+
+    queryset = User.objects.all().order_by("username")
+
+    term = (search or "").strip()
+    if term:
+        queryset = queryset.filter(
+            Q(username__icontains=term) | Q(display_name__icontains=term)
+        )
+
+    role_value = (role or "").strip().lower()
+    if role_value in {User.ROLE_SUPERADMIN, User.ROLE_PUBLIC}:
+        queryset = queryset.filter(role=role_value)
+
+    status_value = (status or "").strip().lower()
+    if status_value == "enabled":
+        queryset = queryset.filter(is_active=True)
+    elif status_value == "disabled":
+        queryset = queryset.filter(is_active=False)
+
+    body = paginate_queryset(queryset, page=page, per_page=per_page)
+    items = [serialize_user(user) for user in body.items]
+    return Page(
+        items=items,
+        page=body.page,
+        per_page=body.per_page,
+        total=body.total,
+        total_pages=body.total_pages,
+        has_prev=body.has_prev,
+        has_next=body.has_next,
+        start_index=body.start_index,
+        end_index=body.end_index,
+    )
+
+
 def bootstrap_superadmin(username: str, password: str, *, must_change_password: bool = False) -> dict[str, Any]:
     existing = User.objects.filter(role=User.ROLE_SUPERADMIN).order_by("username").first()
     if existing:

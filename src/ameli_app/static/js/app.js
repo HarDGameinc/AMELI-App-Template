@@ -236,37 +236,112 @@ window.AmeliPassword = {
 // replace the panel's innerHTML with the response. ``history.pushState``
 // keeps the URL bookmarkeable. If the fetch fails (offline, server error,
 // no JS) the link falls back to its native navigation.
+//
+// The same panel can also host a filter ``<form data-filter-form>``: as the
+// user types or changes a select, we debounce/snapshot the form and reissue
+// the request through the same swap path so filter and pagination stay
+// consistent without the page ever reloading.
+
+async function swapPanelTo(panel, targetUrl) {
+  const panelKey = panel.dataset.paginationPanel;
+  const url = new URL(targetUrl, window.location.origin);
+  const fetchUrl = new URL(url);
+  fetchUrl.searchParams.set("partial", panelKey);
+
+  panel.setAttribute("aria-busy", "true");
+  try {
+    const response = await fetch(fetchUrl, {
+      headers: { "X-Requested-With": "fetch" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const html = await response.text();
+    panel.innerHTML = html;
+    const newUrl = url.pathname + url.search + url.hash;
+    window.history.pushState({ panel: panelKey }, "", newUrl);
+    return true;
+  } catch (error) {
+    window.location.href = targetUrl;
+    return false;
+  } finally {
+    panel.removeAttribute("aria-busy");
+  }
+}
+
+function buildFilterFormUrl(form, panel) {
+  const params = new URLSearchParams();
+  const current = new URLSearchParams(window.location.search);
+  const formData = new FormData(form);
+  const formKeys = new Set(Array.from(formData.keys()));
+  for (const [key, value] of current.entries()) {
+    if (!formKeys.has(key) && key !== "partial") params.set(key, value);
+  }
+  for (const [key, value] of formData.entries()) {
+    if (value === "" || value === null || value === undefined) continue;
+    params.set(key, value);
+  }
+  // Reset the panel's own page when filters change.
+  const pageParam = `${panel.dataset.paginationPanel}_page`;
+  params.delete(pageParam);
+  const action = form.getAttribute("action") || window.location.pathname;
+  const query = params.toString();
+  const anchor = window.location.hash || (panel.id ? `#${panel.id}` : "");
+  return query ? `${action}?${query}${anchor}` : `${action}${anchor}`;
+}
+
+function debounce(fn, delay) {
+  let timer;
+  return (...args) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), delay);
+  };
+}
+
 function setupPaginationSwap() {
   document.addEventListener("click", async (event) => {
     const link = event.target.closest(".pagination-footer a");
     if (!link) return;
     const panel = link.closest("[data-pagination-panel]");
     if (!panel) return;
-
-    const panelKey = panel.dataset.paginationPanel;
-    const url = new URL(link.href, window.location.origin);
-    const fetchUrl = new URL(url);
-    fetchUrl.searchParams.set("partial", panelKey);
-
     event.preventDefault();
-    panel.setAttribute("aria-busy", "true");
+    swapPanelTo(panel, link.href);
+  });
 
-    try {
-      const response = await fetch(fetchUrl, {
-        headers: { "X-Requested-With": "fetch" },
-        credentials: "same-origin",
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const html = await response.text();
-      panel.innerHTML = html;
-      const newUrl = url.pathname + url.search + url.hash;
-      window.history.pushState({ panel: panelKey }, "", newUrl);
-    } catch (error) {
-      // Fall back to a real navigation if the swap fails.
-      window.location.href = link.href;
-    } finally {
-      panel.removeAttribute("aria-busy");
+  const debouncedSwap = debounce((panel, url) => swapPanelTo(panel, url), 250);
+
+  function maybeSwapFromForm(form, { immediate }) {
+    const panel = form.closest("[data-pagination-panel]");
+    if (!panel) return;
+    const url = buildFilterFormUrl(form, panel);
+    if (immediate) {
+      swapPanelTo(panel, url);
+    } else {
+      debouncedSwap(panel, url);
     }
+  }
+
+  document.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const form = input.closest("form[data-filter-form]");
+    if (!form) return;
+    maybeSwapFromForm(form, { immediate: false });
+  });
+
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const form = target.closest("form[data-filter-form]");
+    if (!form) return;
+    maybeSwapFromForm(form, { immediate: true });
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.matches("form[data-filter-form]")) return;
+    event.preventDefault();
+    maybeSwapFromForm(form, { immediate: true });
   });
 }
 

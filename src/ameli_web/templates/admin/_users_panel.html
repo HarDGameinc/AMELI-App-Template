@@ -1,0 +1,113 @@
+{% comment %}
+Inner content of the admin Users panel. Rendered standalone when the view
+is requested with ``?partial=users`` so the client-side pagination/filter
+helper can swap just this fragment without reloading the whole admin page.
+{% endcomment %}
+<div class="panel-header">
+  <div>
+    <div class="metric-label">Usuarios configurados</div>
+    <p class="muted panel-copy">Vista operativa para revisar estado, rol y necesidad de rotacion de clave.</p>
+  </div>
+</div>
+
+<form class="users-toolbar" method="get" action="" data-filter-form>
+  <input type="search" name="users_search" class="users-toolbar-input"
+         placeholder="Buscar por usuario o alias..." autocomplete="off"
+         value="{{ users_filters.search }}">
+  <select name="users_role" class="users-toolbar-input">
+    <option value="">Todos los roles</option>
+    <option value="superadmin" {% if users_filters.role == "superadmin" %}selected{% endif %}>superadmin</option>
+    <option value="public" {% if users_filters.role == "public" %}selected{% endif %}>public</option>
+  </select>
+  <select name="users_status" class="users-toolbar-input">
+    <option value="">Todos los estados</option>
+    <option value="enabled" {% if users_filters.status == "enabled" %}selected{% endif %}>Activos</option>
+    <option value="disabled" {% if users_filters.status == "disabled" %}selected{% endif %}>Deshabilitados</option>
+  </select>
+  <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
+</form>
+
+<div class="admin-user-list" id="users-list">
+  {% for user_item in users %}
+  <article class="event ev-{% if user_item.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}"
+           data-username="{{ user_item.username|lower }}"
+           data-username-raw="{{ user_item.username }}"
+           data-display-name="{{ user_item.display_name|default:''|lower }}"
+           data-role="{{ user_item.role }}"
+           data-enabled="{% if user_item.enabled %}enabled{% else %}disabled{% endif %}"
+           data-must-change="{% if user_item.must_change_password %}yes{% else %}no{% endif %}"
+           data-mfa-enabled="{% if user_item.mfa_enabled %}1{% else %}0{% endif %}"
+           data-mfa-required="{% if user_item.mfa_required %}1{% else %}0{% endif %}">
+    <div class="ev-top">
+      <span class="ev-dot"></span>
+      <div class="admin-user-title">
+        <strong>{{ user_item.display_identity_name }}</strong>
+        <span class="admin-user-subline">@{{ user_item.username }} · {{ user_item.role }}</span>
+      </div>
+      <span class="session-state-badge {% if user_item.enabled %}active{% else %}revoked{% endif %}">
+        {% if user_item.enabled %}Activo{% else %}Deshabilitado{% endif %}
+      </span>
+      {% if user_item.must_change_password %}
+      <span class="session-state-badge warning">Cambio pendiente</span>
+      {% endif %}
+      {% if user_item.mfa_enabled %}
+        {% if user_item.mfa_totp_enabled and user_item.mfa_email_enabled %}
+        <span class="session-state-badge active">2FA TOTP+Email</span>
+        {% elif user_item.mfa_email_enabled %}
+        <span class="session-state-badge active">2FA Email</span>
+        {% else %}
+        <span class="session-state-badge active">2FA TOTP</span>
+        {% endif %}
+      {% elif user_item.mfa_required %}
+      <span class="session-state-badge warning">2FA requerido</span>
+      {% else %}
+      <span class="session-state-badge neutral">2FA off</span>
+      {% endif %}
+    </div>
+    <div class="admin-user-summary">
+      <span class="session-meta-item">Creado: {{ user_item.display_created_at }}</span>
+      <span class="session-meta-item">Actualizado: {{ user_item.display_updated_at }}</span>
+      <span class="session-meta-item">Ultimo acceso: {{ user_item.display_last_login_at }}</span>
+      <span class="session-meta-item">Tema: {{ user_item.display_theme_label }}</span>
+    </div>
+    {% if user_item.username != current_user.username %}
+    <div class="admin-user-actions">
+      <button class="icon-action" type="button" data-user-action="reset-password" data-username="{{ user_item.username }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">lock_reset</span>
+        <span>Restablecer contrasena</span>
+      </button>
+      <button class="icon-action" type="button" data-user-action="toggle-enabled" data-username="{{ user_item.username }}" data-enabled="{% if user_item.enabled %}1{% else %}0{% endif %}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">{% if user_item.enabled %}block{% else %}check_circle{% endif %}</span>
+        <span>{% if user_item.enabled %}Deshabilitar{% else %}Habilitar{% endif %}</span>
+      </button>
+      <button class="icon-action" type="button" data-user-action="change-role" data-username="{{ user_item.username }}" data-role="{{ user_item.role }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_person</span>
+        <span>Cambiar rol</span>
+      </button>
+      <button class="icon-action" type="button" data-user-action="toggle-force-change" data-username="{{ user_item.username }}" data-must-change="{% if user_item.must_change_password %}1{% else %}0{% endif %}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">password</span>
+        <span>{% if user_item.must_change_password %}Quitar cambio obligatorio{% else %}Forzar cambio{% endif %}</span>
+      </button>
+      <button class="icon-action" type="button" data-user-action="toggle-mfa-required" data-username="{{ user_item.username }}" data-mfa-required="{% if user_item.mfa_required %}1{% else %}0{% endif %}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+        <span>{% if user_item.mfa_required %}Quitar requerimiento 2FA{% else %}Requerir 2FA{% endif %}</span>
+      </button>
+      {% if user_item.mfa_enabled %}
+      <button class="icon-action" type="button" data-user-action="disable-mfa" data-username="{{ user_item.username }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+        <span>Desactivar 2FA del usuario</span>
+      </button>
+      {% endif %}
+      <button class="icon-action danger" type="button" data-user-action="delete" data-username="{{ user_item.username }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">delete</span>
+        <span>Eliminar</span>
+      </button>
+    </div>
+    {% endif %}
+  </article>
+  {% empty %}
+  <div class="empty-state">No hay usuarios que coincidan con los filtros aplicados.</div>
+  {% endfor %}
+</div>
+
+{% include "_pagination_footer.html" with pagination=users_pagination %}

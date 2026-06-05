@@ -19,6 +19,7 @@ from ameli_web.accounts.services import (
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
+    paginate_users_for_admin,
     reset_user_password,
     revoke_session_record,
     serialize_user,
@@ -70,10 +71,27 @@ def superadmin_required(view_func):
 @require_GET
 @superadmin_required
 def admin_panel(request: HttpRequest) -> HttpResponse:
+    from ameli_web.pagination import coerce_page
+
     current_session_key = str(request.session.session_key or "")
+    users_filters = {
+        "search": (request.GET.get("users_search") or "").strip(),
+        "role": (request.GET.get("users_role") or "").strip(),
+        "status": (request.GET.get("users_status") or "").strip(),
+    }
+    users_page = paginate_users_for_admin(
+        page=coerce_page(request.GET.get("users_page")),
+        per_page=25,
+        **users_filters,
+    )
     context = {
         "version": __version__,
-        "users": list_users(),
+        "users": users_page.items,
+        "users_pagination": users_page.as_context(
+            page_param="users_page",
+            anchor="admin-users-panel",
+        ),
+        "users_filters": users_filters,
         "current_user": serialize_user(request.user),
         "user_summary": summarize_users(),
         "audit_entries": list_recent_audit_entries(limit=20),
@@ -81,6 +99,9 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "native_admin_url": "/django-admin/",
         "csrf_token": get_token(request),
     }
+    partial = (request.GET.get("partial") or "").strip()
+    if partial == "users":
+        return render(request, "admin/_users_panel.html", context)
     return render(request, "admin/panel.html", context)
 
 
