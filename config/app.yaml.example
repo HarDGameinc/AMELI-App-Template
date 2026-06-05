@@ -63,7 +63,12 @@ email:
   use_tls: true
   use_ssl: false
   username_env: "AMELI_APP_EMAIL_USERNAME"
+  # Password resolution precedence: AMELI_APP_EMAIL_PASSWORD env, then
+  # password_file (or AMELI_APP_EMAIL_PASSWORD_FILE env), then the env var
+  # named by password_env. Use password_file for prod to keep the secret out
+  # of the env file and the systemd unit logs.
   password_env: "AMELI_APP_EMAIL_PASSWORD"
+  # password_file: "/etc/ameli-app/secrets/email_default.password"
   from_address: "noreply@ameli-template.local"
   password_reset_timeout_seconds: 3600
   url_base_env: "AMELI_APP_URL_BASE"

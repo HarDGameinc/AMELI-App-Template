@@ -20,8 +20,39 @@ def _json(data: object) -> None:
     print(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False))
 
 
+def _autodetect_env_file(etc_root: str | Path = "/etc") -> str | None:
+    """Guess the system env file when launched from a packaged install.
+
+    The install script puts each environment at ``/opt/<slug>-<env>/`` with
+    its venv binary at ``.venv/bin/ameli-app``. The matching env file lives at
+    ``<etc_root>/<slug>-<env>/app.env``. If we can resolve that layout, fall
+    back to that env file so ``ameli-app config-check`` and ``db-status`` see
+    the real configuration without the operator passing ``--env-file``.
+
+    ``etc_root`` is parameterised mostly to make the helper testable; production
+    callers always use the default ``/etc``.
+    """
+    try:
+        venv_python = Path(sys.executable).resolve()
+        install_dir = venv_python.parent.parent.parent
+    except OSError:
+        return None
+    if install_dir.parent.name != "opt":
+        return None
+    candidate = Path(etc_root) / install_dir.name / "app.env"
+    return str(candidate) if candidate.is_file() else None
+
+
+def _effective_env_file(args) -> str | None:
+    if args.env_file:
+        return args.env_file
+    if os.getenv("AMELI_APP_ENV_FILE"):
+        return None  # load_settings will pick it up itself
+    return _autodetect_env_file()
+
+
 def _bootstrap_django(args):
-    settings = load_settings(config_path=args.config, env_file=args.env_file)
+    settings = load_settings(config_path=args.config, env_file=_effective_env_file(args))
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ameli_web.settings")
     project_root = Path(__file__).resolve().parents[2]
     src_dir = project_root / "src"
@@ -107,7 +138,7 @@ def _handle_list_users(args) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    settings = load_settings(config_path=args.config, env_file=args.env_file)
+    settings = load_settings(config_path=args.config, env_file=_effective_env_file(args))
     configure_logging(settings.log_level)
 
     if args.command == "version":

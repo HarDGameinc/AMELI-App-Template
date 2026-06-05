@@ -26,6 +26,47 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _read_secret_file(path: str | Path) -> str:
+    """Read a single-line secret from disk.
+
+    The trailing newline that editors usually leave is stripped so the value
+    can be fed straight into SMTP/AUTH layers. Permissions are not enforced
+    here (deployments handle that via ``/etc/<app>/secrets/`` ownership), but
+    a missing or unreadable file raises ``RuntimeError`` so the operator sees
+    the misconfiguration at startup instead of as a silent auth failure.
+    """
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        raise RuntimeError(f"email password file not found: {candidate}")
+    try:
+        with candidate.open("r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError as exc:
+        raise RuntimeError(f"could not read email password file {candidate}: {exc}") from exc
+
+
+def _resolve_email_password(email_cfg: dict[str, Any]) -> str:
+    """Pick the SMTP password from env, password file, or legacy env-by-key.
+
+    Precedence (highest first):
+      1. ``AMELI_APP_EMAIL_PASSWORD`` env (explicit override, useful for CI)
+      2. ``email.password_file`` YAML key or ``AMELI_APP_EMAIL_PASSWORD_FILE``
+         env (recommended for prod, lets ``/etc/<app>/secrets/...`` hold the
+         secret with restricted permissions)
+      3. ``email.password_env`` YAML key resolved against the environment
+         (legacy path, default ``AMELI_APP_EMAIL_PASSWORD`` — same as 1, kept
+         so existing configs keep working)
+    """
+    direct = os.getenv("AMELI_APP_EMAIL_PASSWORD")
+    if direct:
+        return direct
+    password_file = os.getenv("AMELI_APP_EMAIL_PASSWORD_FILE") or email_cfg.get("password_file")
+    if password_file:
+        return _read_secret_file(str(password_file))
+    legacy_env_key = str(email_cfg.get("password_env", "AMELI_APP_EMAIL_PASSWORD"))
+    return os.getenv(legacy_env_key, "")
+
+
 def load_env_file(path: str | Path | None) -> None:
     if not path:
         return
@@ -188,7 +229,7 @@ def load_settings(
             default=False,
         ),
         email_username=os.getenv(str(email.get("username_env", "AMELI_APP_EMAIL_USERNAME")), ""),
-        email_password=os.getenv(str(email.get("password_env", "AMELI_APP_EMAIL_PASSWORD")), ""),
+        email_password=_resolve_email_password(email),
         email_from_address=os.getenv(
             "AMELI_APP_EMAIL_FROM",
             str(email.get("from_address", "noreply@ameli-template.local")),
