@@ -587,6 +587,22 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.reload();
   });
 
+  function showRecoveryOrReload(codes) {
+    if (!Array.isArray(codes) || codes.length === 0) {
+      window.location.reload();
+      return;
+    }
+    if (recoveryList) {
+      recoveryList.innerHTML = "";
+      codes.forEach((codeValue) => {
+        const li = document.createElement("li");
+        li.textContent = codeValue;
+        recoveryList.appendChild(li);
+      });
+    }
+    showMfaSection("recovery");
+  }
+
   verifyBtn?.addEventListener("click", async () => {
     const code = String(codeInput?.value || "").trim();
     if (!code) {
@@ -597,15 +613,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (verifyFeedback) verifyFeedback.textContent = "Verificando...";
     try {
       const data = await postJson("{% url 'accounts:profile-mfa-confirm' %}", { code });
-      if (recoveryList && Array.isArray(data.recovery_codes)) {
-        recoveryList.innerHTML = "";
-        data.recovery_codes.forEach((codeValue) => {
-          const li = document.createElement("li");
-          li.textContent = codeValue;
-          recoveryList.appendChild(li);
-        });
-      }
-      showMfaSection("recovery");
+      showRecoveryOrReload(data.recovery_codes);
     } catch (error) {
       if (verifyFeedback) verifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
     } finally {
@@ -673,15 +681,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (emailVerifyFeedback) emailVerifyFeedback.textContent = "Verificando...";
     try {
       const data = await postJson("{% url 'accounts:profile-mfa-email-confirm' %}", { code });
-      if (recoveryList && Array.isArray(data.recovery_codes)) {
-        recoveryList.innerHTML = "";
-        data.recovery_codes.forEach((codeValue) => {
-          const li = document.createElement("li");
-          li.textContent = codeValue;
-          recoveryList.appendChild(li);
-        });
-      }
-      showMfaSection("recovery");
+      showRecoveryOrReload(data.recovery_codes);
     } catch (error) {
       if (emailVerifyFeedback) emailVerifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
     } finally {
