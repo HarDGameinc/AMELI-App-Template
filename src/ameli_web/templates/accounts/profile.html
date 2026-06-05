@@ -250,10 +250,7 @@
       <div class="form-grid-split" style="margin-top:12px;">
         <article class="form-card" data-mfa-method="totp" data-mfa-active="{% if mfa_status.totp_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
-            <h3 class="form-card-title">App de autenticacion</h3>
-            <span class="session-state-badge {% if mfa_status.totp_enabled %}active{% else %}neutral{% endif %}">
-              {% if mfa_status.totp_enabled %}Activo{% else %}Inactivo{% endif %}
-            </span>
+            <h3 class="form-card-title">App de autenticacion <span class="session-state-badge {% if mfa_status.totp_enabled %}active{% else %}neutral{% endif %}" style="margin-left:8px;">{% if mfa_status.totp_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
             <p class="muted panel-copy">Google Authenticator, Authy, 1Password u otra. Codigo de 6 digitos que se renueva cada 30 segundos.</p>
           </div>
           {% if mfa_status.totp_enabled %}
@@ -285,11 +282,8 @@
 
         <article class="form-card" data-mfa-method="email" data-mfa-active="{% if mfa_status.email_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
-            <h3 class="form-card-title">Email</h3>
-            <span class="session-state-badge {% if mfa_status.email_enabled %}active{% else %}neutral{% endif %}">
-              {% if mfa_status.email_enabled %}Activo{% else %}Inactivo{% endif %}
-            </span>
-            <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ current_user.email }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
+            <h3 class="form-card-title">Email <span class="session-state-badge {% if mfa_status.email_enabled %}active{% else %}neutral{% endif %}" style="margin-left:8px;">{% if mfa_status.email_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
+            <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ request.user.email }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
           </div>
           {% if mfa_status.email_enabled %}
           <div class="modal-form-row" style="margin-top:8px;">
