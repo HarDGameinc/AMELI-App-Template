@@ -29,7 +29,9 @@ from .services import (
     consume_email_mfa_code,
     consume_recovery_code,
     delete_avatar,
+    disable_mfa_email_for_self,
     disable_mfa_for_self,
+    disable_mfa_totp_for_self,
     get_user_for_reset_token,
     list_user_sessions,
     record_audit,
@@ -353,6 +355,36 @@ def mfa_disable_view(request: HttpRequest) -> JsonResponse:
     current_password = str(payload.get("current_password") or "").strip()
     try:
         result = disable_mfa_for_self(request.user.username, current_password=current_password)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_totp_disable_view(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = disable_mfa_totp_for_self(request.user.username, current_password=current_password)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def mfa_email_disable_view(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = disable_mfa_email_for_self(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
     return JsonResponse(result)

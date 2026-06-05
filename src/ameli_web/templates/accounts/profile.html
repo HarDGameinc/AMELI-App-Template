@@ -219,41 +219,96 @@
   <div class="panel" id="profile-mfa-panel" data-mfa-state="{% if mfa_status.enabled %}enabled{% else %}disabled{% endif %}">
     <div class="form-card-head">
       <div class="metric-label">Autenticacion de dos factores (2FA)</div>
-      <p class="muted panel-copy">Sumale una capa extra a tu cuenta con una app de autenticacion como Google Authenticator, Authy o 1Password. Cuando este activa, ademas de tu contrasena vas a tener que tipear un codigo de 6 digitos en cada ingreso.</p>
+      <p class="muted panel-copy">Sumale una capa extra a tu cuenta. Podes activar los dos metodos a la vez (app de autenticacion + email) y elegir cual usar en cada ingreso. Los codigos de recuperacion son un fallback comun.</p>
     </div>
 
-    <div id="profile-mfa-disabled" class="form-card"{% if mfa_status.enabled %} hidden{% endif %}>
+    <div id="profile-mfa-stacked" class="form-card">
       <div class="profile-card">
         <div class="profile-row">
           <span class="metric-label">Estado actual</span>
-          <span class="profile-note warn-text">Inactivo</span>
+          <span class="profile-note {% if not mfa_status.enabled %}warn-text{% endif %}">
+            {% if mfa_status.totp_enabled and mfa_status.email_enabled %}Activo (App + Email)
+            {% elif mfa_status.totp_enabled %}Activo (App de autenticacion)
+            {% elif mfa_status.email_enabled %}Activo (Email)
+            {% else %}Inactivo{% endif %}
+          </span>
         </div>
         {% if mfa_status.required_by_admin %}
         <div class="profile-row">
-          <span class="metric-label">Política</span>
-          <span class="profile-note warn-text">Requerido por el administrador</span>
+          <span class="metric-label">Politica</span>
+          <span class="profile-note {% if not mfa_status.enabled %}warn-text{% endif %}">Requerido por el administrador</span>
+        </div>
+        {% endif %}
+        {% if mfa_status.enabled %}
+        <div class="profile-row">
+          <span class="metric-label">Codigos de recuperacion disponibles</span>
+          <span class="profile-note {% if mfa_status.recovery_codes_remaining == 0 %}warn-text{% endif %}">{{ mfa_status.recovery_codes_remaining }}</span>
         </div>
         {% endif %}
       </div>
-      <p class="muted panel-copy" style="margin-top:12px;">Elegi el metodo de verificacion en el segundo paso del ingreso. Cada cuenta puede activar un solo metodo a la vez.</p>
-      <div class="form-grid-split" style="margin-top:8px;">
-        <article class="form-card">
+
+      <div class="form-grid-split" style="margin-top:12px;">
+        <article class="form-card" data-mfa-method="totp" data-mfa-active="{% if mfa_status.totp_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
             <h3 class="form-card-title">App de autenticacion</h3>
+            <span class="session-state-badge {% if mfa_status.totp_enabled %}active{% else %}neutral{% endif %}">
+              {% if mfa_status.totp_enabled %}Activo{% else %}Inactivo{% endif %}
+            </span>
             <p class="muted panel-copy">Google Authenticator, Authy, 1Password u otra. Codigo de 6 digitos que se renueva cada 30 segundos.</p>
           </div>
+          {% if mfa_status.totp_enabled %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-totp-disable-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-totp-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-totp-disable-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary danger" type="button" id="profile-mfa-totp-disable">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+              <span>Desactivar app</span>
+            </button>
+          </div>
+          <p class="muted" id="profile-mfa-totp-disable-feedback"></p>
+          {% else %}
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-activate" type="button">
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">smartphone</span>
               <span>Activar con app</span>
             </button>
           </div>
+          {% endif %}
         </article>
-        <article class="form-card">
+
+        <article class="form-card" data-mfa-method="email" data-mfa-active="{% if mfa_status.email_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
             <h3 class="form-card-title">Email</h3>
-            <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ current_user.username }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
+            <span class="session-state-badge {% if mfa_status.email_enabled %}active{% else %}neutral{% endif %}">
+              {% if mfa_status.email_enabled %}Activo{% else %}Inactivo{% endif %}
+            </span>
+            <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ current_user.email }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
           </div>
+          {% if mfa_status.email_enabled %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-email-disable-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-email-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-email-disable-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
+          <div class="modal-actions-row">
+            <button class="primary danger" type="button" id="profile-mfa-email-disable">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
+              <span>Desactivar email</span>
+            </button>
+          </div>
+          <p class="muted" id="profile-mfa-email-disable-feedback"></p>
+          {% else %}
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-email-activate" type="button"{% if not mfa_status.has_email %} disabled{% endif %}>
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
@@ -263,9 +318,19 @@
           {% if not mfa_status.has_email %}
           <p class="muted warn-text" style="margin-top:8px;">Sin email registrado en tu cuenta. Pedile al administrador que te asigne uno antes de activar este metodo.</p>
           {% endif %}
+          {% endif %}
         </article>
       </div>
       <p class="muted" id="profile-mfa-activate-feedback"></p>
+
+      {% if mfa_status.enabled %}
+      <div class="modal-actions-row" style="margin-top:14px;">
+        <button class="icon-action" type="button" id="profile-mfa-regenerate">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
+          <span>Regenerar codigos de recuperacion</span>
+        </button>
+      </div>
+      {% endif %}
     </div>
 
     <div id="profile-mfa-email-pending" class="form-card" hidden>
@@ -323,44 +388,6 @@
       </div>
     </div>
 
-    <div id="profile-mfa-enabled" class="form-card"{% if not mfa_status.enabled %} hidden{% endif %}>
-      <div class="profile-card">
-        <div class="profile-row">
-          <span class="metric-label">Estado actual</span>
-          <span class="profile-note">Activo</span>
-        </div>
-        <div class="profile-row">
-          <span class="metric-label">Metodo</span>
-          <span class="profile-note">
-            {% if mfa_status.method == "email" %}Email{% else %}App de autenticacion (TOTP){% endif %}
-          </span>
-        </div>
-        <div class="profile-row">
-          <span class="metric-label">Códigos de recuperacion disponibles</span>
-          <span class="profile-note {% if mfa_status.recovery_codes_remaining == 0 %}warn-text{% endif %}">{{ mfa_status.recovery_codes_remaining }}</span>
-        </div>
-      </div>
-      <div class="modal-form-row" style="margin-top:14px;">
-        <label class="modal-form-label" for="profile-mfa-disable-password">Contrasena actual</label>
-        <div class="modal-input-with-action">
-          <input id="profile-mfa-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
-          <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-disable-password" aria-label="Mostrar u ocultar contrasena">
-            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
-          </button>
-        </div>
-      </div>
-      <div class="modal-actions-row">
-        <button class="icon-action" type="button" id="profile-mfa-regenerate">
-          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
-          <span>Regenerar codigos de recuperacion</span>
-        </button>
-        <button class="primary danger" type="button" id="profile-mfa-disable">
-          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
-          <span>Desactivar 2FA</span>
-        </button>
-      </div>
-      <p class="muted" id="profile-mfa-disable-feedback"></p>
-    </div>
   </div>
 </section>
 
@@ -486,11 +513,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const csrfTokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
   const mfaPanel = document.getElementById("profile-mfa-panel");
   const mfaSections = {
-    disabled: document.getElementById("profile-mfa-disabled"),
+    stacked: document.getElementById("profile-mfa-stacked"),
     pending: document.getElementById("profile-mfa-pending"),
     emailPending: document.getElementById("profile-mfa-email-pending"),
     recovery: document.getElementById("profile-mfa-recovery"),
-    enabled: document.getElementById("profile-mfa-enabled"),
   };
 
   function showMfaSection(name) {
@@ -526,9 +552,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const secretText = document.getElementById("profile-mfa-secret-text");
   const recoveryAck = document.getElementById("profile-mfa-recovery-ack");
   const recoveryList = document.getElementById("profile-mfa-recovery-list");
-  const disableBtn = document.getElementById("profile-mfa-disable");
-  const disablePassword = document.getElementById("profile-mfa-disable-password");
-  const disableFeedback = document.getElementById("profile-mfa-disable-feedback");
+  const totpDisableBtn = document.getElementById("profile-mfa-totp-disable");
+  const totpDisablePassword = document.getElementById("profile-mfa-totp-disable-password");
+  const totpDisableFeedback = document.getElementById("profile-mfa-totp-disable-feedback");
+  const emailDisableBtn = document.getElementById("profile-mfa-email-disable");
+  const emailDisablePassword = document.getElementById("profile-mfa-email-disable-password");
+  const emailDisableFeedback = document.getElementById("profile-mfa-email-disable-feedback");
   const regenerateBtn = document.getElementById("profile-mfa-regenerate");
   const emailActivateBtn = document.getElementById("profile-mfa-email-activate");
   const emailVerifyBtn = document.getElementById("profile-mfa-email-verify");
@@ -594,23 +623,30 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.reload();
   });
 
-  disableBtn?.addEventListener("click", async () => {
-    const password = String(disablePassword?.value || "").trim();
-    if (!password) {
-      if (disableFeedback) disableFeedback.textContent = "Confirma tu contrasena para desactivar.";
-      return;
-    }
-    disableBtn.disabled = true;
-    if (disableFeedback) disableFeedback.textContent = "Desactivando...";
-    try {
-      await postJson("{% url 'accounts:profile-mfa-disable' %}", { current_password: password });
-      if (disableFeedback) disableFeedback.textContent = "2FA desactivado. Recargando...";
-      window.setTimeout(() => window.location.reload(), 400);
-    } catch (error) {
-      if (disableFeedback) disableFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-      disableBtn.disabled = false;
-    }
-  });
+  function wireDisableButton(btn, passwordInput, feedback, url, label) {
+    btn?.addEventListener("click", async () => {
+      const password = String(passwordInput?.value || "").trim();
+      if (!password) {
+        if (feedback) feedback.textContent = "Confirma tu contrasena para desactivar.";
+        return;
+      }
+      btn.disabled = true;
+      if (feedback) feedback.textContent = "Desactivando...";
+      try {
+        await postJson(url, { current_password: password });
+        if (feedback) feedback.textContent = label + " desactivado. Recargando...";
+        window.setTimeout(() => window.location.reload(), 400);
+      } catch (error) {
+        if (feedback) feedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
+        btn.disabled = false;
+      }
+    });
+  }
+
+  wireDisableButton(totpDisableBtn, totpDisablePassword, totpDisableFeedback,
+    "{% url 'accounts:profile-mfa-totp-disable' %}", "App de autenticacion");
+  wireDisableButton(emailDisableBtn, emailDisablePassword, emailDisableFeedback,
+    "{% url 'accounts:profile-mfa-email-disable' %}", "Email");
 
   emailActivateBtn?.addEventListener("click", async () => {
     emailActivateBtn.disabled = true;
