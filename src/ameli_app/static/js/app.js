@@ -346,3 +346,44 @@ function setupPaginationSwap() {
 }
 
 setupPaginationSwap();
+
+
+// ---- Back to top button ----
+//
+// Injects a single floating button bottom-right that appears once the
+// viewport scrolls past ``SCROLL_TRIGGER_PX``. Clicking it smoothly
+// returns the user to the top. Honors ``prefers-reduced-motion`` for the
+// scroll animation. Inserted via JS so individual templates don't have to
+// opt in — every page that loads ``app.js`` gets the helper.
+function setupBackToTop() {
+  const SCROLL_TRIGGER_PX = 400;
+  if (document.querySelector("[data-back-to-top]")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "back-to-top";
+  button.setAttribute("data-back-to-top", "");
+  button.setAttribute("aria-label", "Volver al inicio de la pagina");
+  button.hidden = true;
+  button.innerHTML =
+    '<span class="material-symbols-rounded icon-glyph" aria-hidden="true">keyboard_arrow_up</span>' +
+    '<span class="back-to-top-label">Arriba</span>';
+  document.body.appendChild(button);
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function updateVisibility() {
+    const shouldShow = window.scrollY > SCROLL_TRIGGER_PX;
+    if (shouldShow === !button.hidden) return;
+    button.hidden = !shouldShow;
+  }
+
+  window.addEventListener("scroll", updateVisibility, { passive: true });
+  window.addEventListener("resize", updateVisibility, { passive: true });
+  updateVisibility();
+
+  button.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+  });
+}
+
+setupBackToTop();

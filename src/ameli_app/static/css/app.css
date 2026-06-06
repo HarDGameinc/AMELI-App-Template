@@ -701,3 +701,17 @@
     @media (min-width:900px) { .tab-grid { grid-template-columns:1fr 1fr; } }
     .tab-grid.wide { grid-template-columns:1fr; }
     @media (min-width:900px) { .tab-grid.wide { grid-template-columns:2fr 1fr; } }
+    .back-to-top { position:fixed; bottom:24px; right:24px; z-index:60;
+             display:inline-flex; align-items:center; gap:6px;
+             padding:8px 14px; min-height:42px; border-radius:999px;
+             border:1px solid var(--accent); background:var(--accent); color:#fff;
+             font-weight:600; cursor:pointer;
+             box-shadow:0 8px 18px rgba(0,0,0,.28);
+             transition:transform .15s ease, opacity .15s ease; }
+    .back-to-top:hover { filter:brightness(1.05); transform:translateY(-2px); }
+    .back-to-top[hidden] { display:none; }
+    .back-to-top .icon-glyph { font-size:20px; }
+    @media (max-width:600px) {
+      .back-to-top { bottom:16px; right:16px; padding:8px 10px; }
+      .back-to-top-label { display:none; }
+    }
