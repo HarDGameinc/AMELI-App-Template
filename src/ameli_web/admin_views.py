@@ -19,6 +19,7 @@ from ameli_web.accounts.services import (
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
+    paginate_audit_for_admin,
     paginate_users_for_admin,
     reset_user_password,
     revoke_session_record,
@@ -84,6 +85,17 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         per_page=25,
         **users_filters,
     )
+    audit_filters = {
+        "actor": (request.GET.get("audit_actor") or "").strip(),
+        "target": (request.GET.get("audit_target") or "").strip(),
+        "action": (request.GET.get("audit_action") or "").strip(),
+        "outcome": (request.GET.get("audit_outcome") or "").strip(),
+    }
+    audit_page = paginate_audit_for_admin(
+        page=coerce_page(request.GET.get("audit_page")),
+        per_page=30,
+        **audit_filters,
+    )
     context = {
         "version": __version__,
         "users": users_page.items,
@@ -92,9 +104,14 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
             anchor="admin-users-panel",
         ),
         "users_filters": users_filters,
+        "audit_entries": audit_page.items,
+        "audit_pagination": audit_page.as_context(
+            page_param="audit_page",
+            anchor="admin-audit-panel",
+        ),
+        "audit_filters": audit_filters,
         "current_user": serialize_user(request.user),
         "user_summary": summarize_users(),
-        "audit_entries": list_recent_audit_entries(limit=20),
         "recent_sessions": list_recent_sessions(limit=20, current_session_key=current_session_key),
         "native_admin_url": "/django-admin/",
         "csrf_token": get_token(request),
@@ -102,6 +119,8 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
     partial = (request.GET.get("partial") or "").strip()
     if partial == "users":
         return render(request, "admin/_users_panel.html", context)
+    if partial == "audit":
+        return render(request, "admin/_audit_panel.html", context)
     return render(request, "admin/panel.html", context)
 
 

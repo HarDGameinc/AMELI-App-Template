@@ -45,7 +45,7 @@
     </div>
     <div class="hero-stat">
       <span class="hero-stat-label">Auditoria</span>
-      <span class="hero-stat-value">{{ audit_entries|length }} eventos</span>
+      <span class="hero-stat-value">{{ audit_pagination.total }} eventos</span>
     </div>
   </div>
   <div class="hero-actions">
@@ -236,42 +236,8 @@
       {% include "admin/_users_panel.html" %}
     </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <div>
-          <div class="metric-label">Auditoria reciente</div>
-          <p class="muted panel-copy">Registro liviano de login, bootstrap, cambios y otras acciones sensibles.</p>
-        </div>
-      </div>
-
-      <div class="events">
-        {% for item in audit_entries %}
-        <article class="event ev-{{ item.display_tone }}">
-          <div class="ev-top">
-            <span class="ev-dot"></span>
-            <span class="ev-state">{{ item.display_action }}</span>
-            <span class="session-state-badge {% if item.display_result_class == 'error' %}warning{% else %}active{% endif %}">
-              {{ item.display_result_label }}
-            </span>
-            <span class="ev-dur">{{ item.display_time }}</span>
-          </div>
-          <div class="audit-meta-grid">
-            <div class="audit-meta-line">
-              <span class="audit-chip">Actor: {{ item.display_actor }}</span>
-              <span class="audit-chip">Objetivo: {{ item.display_target }}</span>
-            </div>
-            {% if item.display_reason or item.display_path %}
-            <div class="audit-meta-line">
-              {% if item.display_reason %}<span class="audit-chip subtle">Motivo: {{ item.display_reason }}</span>{% endif %}
-              {% if item.display_path %}<span class="audit-chip subtle">Ruta: {{ item.display_path }}</span>{% endif %}
-            </div>
-            {% endif %}
-          </div>
-        </article>
-        {% empty %}
-        <div class="empty-state">Todavia no hay eventos de auditoria.</div>
-        {% endfor %}
-      </div>
+    <section class="panel" id="admin-audit-panel" data-pagination-panel="audit">
+      {% include "admin/_audit_panel.html" %}
     </section>
   </div>
 

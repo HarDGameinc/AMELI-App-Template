@@ -266,6 +266,59 @@ def list_recent_audit_entries(*, limit: int = 30, actor_username: str | None = N
     return [serialize_audit_event(item) for item in queryset[: max(1, limit)]]
 
 
+def paginate_audit_for_admin(
+    *,
+    page: int = 1,
+    per_page: int = 30,
+    actor: str = "",
+    target: str = "",
+    action: str = "",
+    outcome: str = "",
+):
+    """Return a paginated, filtered slice of audit events for the admin panel.
+
+    Filters are all icontains (``actor``, ``target``, ``action``) so the
+    operator can search by substring. ``outcome`` accepts ``ok``/``error``
+    and maps onto the ``_failed`` action suffix convention used by the rest
+    of the audit pipeline.
+    """
+    from ameli_web.pagination import Page, paginate_queryset
+
+    queryset = AuditEvent.objects.all().order_by("-created_at", "-id")
+
+    actor_term = (actor or "").strip()
+    if actor_term:
+        queryset = queryset.filter(actor_username__icontains=actor_term)
+
+    target_term = (target or "").strip()
+    if target_term:
+        queryset = queryset.filter(target_username__icontains=target_term)
+
+    action_term = (action or "").strip()
+    if action_term:
+        queryset = queryset.filter(action__icontains=action_term)
+
+    outcome_value = (outcome or "").strip().lower()
+    if outcome_value == "ok":
+        queryset = queryset.exclude(action__endswith="_failed")
+    elif outcome_value == "error":
+        queryset = queryset.filter(action__endswith="_failed")
+
+    body = paginate_queryset(queryset, page=page, per_page=per_page)
+    items = [serialize_audit_event(item) for item in body.items]
+    return Page(
+        items=items,
+        page=body.page,
+        per_page=body.per_page,
+        total=body.total,
+        total_pages=body.total_pages,
+        has_prev=body.has_prev,
+        has_next=body.has_next,
+        start_index=body.start_index,
+        end_index=body.end_index,
+    )
+
+
 def replace_avatar(user, uploaded_file) -> None:
     old_name = user.avatar.name if user.avatar else ""
     user.avatar.save(uploaded_file.name, uploaded_file, save=False)

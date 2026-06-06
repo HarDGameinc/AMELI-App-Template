@@ -1,0 +1,60 @@
+{% comment %}
+Inner content of the admin Audit panel. Rendered standalone when the view
+is requested with ``?partial=audit`` so the client-side pagination/filter
+helper can swap just this fragment without reloading the whole admin page.
+{% endcomment %}
+<div class="panel-header">
+  <div>
+    <div class="metric-label">Auditoria</div>
+    <p class="muted panel-copy">Registro liviano de login, bootstrap, cambios y otras acciones sensibles.</p>
+  </div>
+</div>
+
+<form class="users-toolbar" method="get" action="" data-filter-form>
+  <input type="search" name="audit_actor" class="users-toolbar-input"
+         placeholder="Actor (ej: admin)" autocomplete="off"
+         value="{{ audit_filters.actor }}">
+  <input type="search" name="audit_target" class="users-toolbar-input"
+         placeholder="Objetivo (ej: tester)" autocomplete="off"
+         value="{{ audit_filters.target }}">
+  <input type="search" name="audit_action" class="users-toolbar-input"
+         placeholder="Accion (ej: login)" autocomplete="off"
+         value="{{ audit_filters.action }}">
+  <select name="audit_outcome" class="users-toolbar-input">
+    <option value="">Todos los resultados</option>
+    <option value="ok" {% if audit_filters.outcome == "ok" %}selected{% endif %}>OK</option>
+    <option value="error" {% if audit_filters.outcome == "error" %}selected{% endif %}>Errores</option>
+  </select>
+  <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
+</form>
+
+<div class="events">
+  {% for item in audit_entries %}
+  <article class="event ev-{{ item.display_tone }}">
+    <div class="ev-top">
+      <span class="ev-dot"></span>
+      <span class="ev-state">{{ item.display_action }}</span>
+      <span class="session-state-badge {% if item.display_result_class == 'error' %}warning{% else %}active{% endif %}">
+        {{ item.display_result_label }}
+      </span>
+      <span class="ev-dur">{{ item.display_time }}</span>
+    </div>
+    <div class="audit-meta-grid">
+      <div class="audit-meta-line">
+        <span class="audit-chip">Actor: {{ item.display_actor }}</span>
+        <span class="audit-chip">Objetivo: {{ item.display_target }}</span>
+      </div>
+      {% if item.display_reason or item.display_path %}
+      <div class="audit-meta-line">
+        {% if item.display_reason %}<span class="audit-chip subtle">Motivo: {{ item.display_reason }}</span>{% endif %}
+        {% if item.display_path %}<span class="audit-chip subtle">Ruta: {{ item.display_path }}</span>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </article>
+  {% empty %}
+  <div class="empty-state">No hay eventos que coincidan con los filtros aplicados.</div>
+  {% endfor %}
+</div>
+
+{% include "_pagination_footer.html" with pagination=audit_pagination %}
