@@ -3,7 +3,16 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 
-from ameli_web.accounts.services import bootstrap_superadmin, paginate_audit_for_admin, record_audit
+from datetime import timedelta
+
+from django.utils import timezone
+
+from ameli_web.accounts.services import (
+    bootstrap_superadmin,
+    filtered_audit_queryset,
+    paginate_audit_for_admin,
+    record_audit,
+)
 from ameli_web.audit.models import AuditEvent
 
 User = get_user_model()
@@ -188,3 +197,72 @@ def test_admin_panel_audit_empty_filter_renders_no_results_message(client, admin
 
     assert response.status_code == 200
     assert "No hay eventos que coincidan" in body
+
+
+# ---- date range filters ----
+
+
+@pytest.mark.django_db
+def test_paginate_audit_filters_by_date_from(admin_user):
+    _seed_audit(3)
+    # Move one event into the past, keep others recent
+    old = AuditEvent.objects.first()
+    old.created_at = timezone.now() - timedelta(days=10)
+    old.save(update_fields=["created_at"])
+
+    today = timezone.now().date().isoformat()
+    page = paginate_audit_for_admin(date_from=today, per_page=30)
+
+    ids = {item["id"] for item in page.items}
+    assert old.id not in ids
+
+
+@pytest.mark.django_db
+def test_paginate_audit_filters_by_date_to(admin_user):
+    _seed_audit(3)
+    old = AuditEvent.objects.first()
+    old.created_at = timezone.now() - timedelta(days=10)
+    old.save(update_fields=["created_at"])
+
+    yesterday = (timezone.now() - timedelta(days=1)).date().isoformat()
+    page = paginate_audit_for_admin(date_to=yesterday, per_page=30)
+
+    ids = {item["id"] for item in page.items}
+    assert old.id in ids
+
+
+@pytest.mark.django_db
+def test_paginate_audit_invalid_date_is_ignored(admin_user):
+    _seed_audit(3)
+
+    page = paginate_audit_for_admin(date_from="not-a-date", per_page=30)
+
+    # Filter silently ignored: full set returned
+    assert page.total >= 3
+
+
+@pytest.mark.django_db
+def test_filtered_audit_queryset_respects_combined_filters(admin_user):
+    _seed_audit(3, action="login_success")
+    _seed_audit(2, action="login_failed")
+    older = AuditEvent.objects.filter(action="login_failed").first()
+    older.created_at = timezone.now() - timedelta(days=30)
+    older.save(update_fields=["created_at"])
+
+    yesterday = (timezone.now() - timedelta(days=1)).date().isoformat()
+    queryset = filtered_audit_queryset(action="login", date_to=yesterday)
+
+    rows = list(queryset)
+    assert len(rows) == 1
+    assert rows[0].id == older.id
+
+
+@pytest.mark.django_db
+def test_admin_panel_renders_date_inputs(client, admin_user):
+    client.force_login(admin_user)
+
+    response = client.get("/admin/")
+    body = _body(response)
+
+    assert 'name="audit_date_from"' in body
+    assert 'name="audit_date_to"' in body

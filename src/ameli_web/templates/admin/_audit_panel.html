@@ -25,6 +25,12 @@ helper can swap just this fragment without reloading the whole admin page.
     <option value="ok" {% if audit_filters.outcome == "ok" %}selected{% endif %}>OK</option>
     <option value="error" {% if audit_filters.outcome == "error" %}selected{% endif %}>Errores</option>
   </select>
+  <input type="date" name="audit_date_from" class="users-toolbar-input"
+         aria-label="Desde" title="Desde"
+         value="{{ audit_filters.date_from }}">
+  <input type="date" name="audit_date_to" class="users-toolbar-input"
+         aria-label="Hasta" title="Hasta"
+         value="{{ audit_filters.date_to }}">
   <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
 </form>
 

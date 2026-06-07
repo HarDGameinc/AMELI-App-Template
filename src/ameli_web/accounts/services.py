@@ -266,23 +266,23 @@ def list_recent_audit_entries(*, limit: int = 30, actor_username: str | None = N
     return [serialize_audit_event(item) for item in queryset[: max(1, limit)]]
 
 
-def paginate_audit_for_admin(
+def _audit_queryset_for_filters(
     *,
-    page: int = 1,
-    per_page: int = 30,
     actor: str = "",
     target: str = "",
     action: str = "",
     outcome: str = "",
+    date_from: str = "",
+    date_to: str = "",
 ):
-    """Return a paginated, filtered slice of audit events for the admin panel.
+    """Build the AuditEvent queryset for the admin panel filters.
 
-    Filters are all icontains (``actor``, ``target``, ``action``) so the
-    operator can search by substring. ``outcome`` accepts ``ok``/``error``
-    and maps onto the ``_failed`` action suffix convention used by the rest
-    of the audit pipeline.
+    Extracted so the pagination view and the CSV/JSON export endpoint can
+    share the exact same filter semantics. ``date_from``/``date_to`` accept
+    ISO ``YYYY-MM-DD`` strings; invalid values are silently ignored so the
+    operator does not get a 500 from a typo in a date input.
     """
-    from ameli_web.pagination import Page, paginate_queryset
+    from datetime import datetime, time
 
     queryset = AuditEvent.objects.all().order_by("-created_at", "-id")
 
@@ -304,6 +304,57 @@ def paginate_audit_for_admin(
     elif outcome_value == "error":
         queryset = queryset.filter(action__endswith="_failed")
 
+    raw_from = (date_from or "").strip()
+    if raw_from:
+        try:
+            dt_from = datetime.combine(datetime.strptime(raw_from, "%Y-%m-%d").date(), time.min)
+        except ValueError:
+            dt_from = None
+        if dt_from is not None:
+            queryset = queryset.filter(created_at__gte=timezone.make_aware(dt_from))
+
+    raw_to = (date_to or "").strip()
+    if raw_to:
+        try:
+            dt_to = datetime.combine(datetime.strptime(raw_to, "%Y-%m-%d").date(), time.max)
+        except ValueError:
+            dt_to = None
+        if dt_to is not None:
+            queryset = queryset.filter(created_at__lte=timezone.make_aware(dt_to))
+
+    return queryset
+
+
+def paginate_audit_for_admin(
+    *,
+    page: int = 1,
+    per_page: int = 30,
+    actor: str = "",
+    target: str = "",
+    action: str = "",
+    outcome: str = "",
+    date_from: str = "",
+    date_to: str = "",
+):
+    """Return a paginated, filtered slice of audit events for the admin panel.
+
+    Filters are all icontains (``actor``, ``target``, ``action``) so the
+    operator can search by substring. ``outcome`` accepts ``ok``/``error``
+    and maps onto the ``_failed`` action suffix convention used by the rest
+    of the audit pipeline. ``date_from``/``date_to`` accept ISO date
+    strings (``YYYY-MM-DD``) and bound ``created_at``.
+    """
+    from ameli_web.pagination import Page, paginate_queryset
+
+    queryset = _audit_queryset_for_filters(
+        actor=actor,
+        target=target,
+        action=action,
+        outcome=outcome,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
     body = paginate_queryset(queryset, page=page, per_page=per_page)
     items = [serialize_audit_event(item) for item in body.items]
     return Page(
@@ -316,6 +367,26 @@ def paginate_audit_for_admin(
         has_next=body.has_next,
         start_index=body.start_index,
         end_index=body.end_index,
+    )
+
+
+def filtered_audit_queryset(
+    *,
+    actor: str = "",
+    target: str = "",
+    action: str = "",
+    outcome: str = "",
+    date_from: str = "",
+    date_to: str = "",
+):
+    """Public alias for the filtered queryset, used by the export endpoint."""
+    return _audit_queryset_for_filters(
+        actor=actor,
+        target=target,
+        action=action,
+        outcome=outcome,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 

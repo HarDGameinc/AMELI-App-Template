@@ -90,6 +90,8 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "target": (request.GET.get("audit_target") or "").strip(),
         "action": (request.GET.get("audit_action") or "").strip(),
         "outcome": (request.GET.get("audit_outcome") or "").strip(),
+        "date_from": (request.GET.get("audit_date_from") or "").strip(),
+        "date_to": (request.GET.get("audit_date_to") or "").strip(),
     }
     audit_page = paginate_audit_for_admin(
         page=coerce_page(request.GET.get("audit_page")),
