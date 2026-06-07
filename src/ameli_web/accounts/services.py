@@ -274,15 +274,21 @@ def _audit_queryset_for_filters(
     outcome: str = "",
     date_from: str = "",
     date_to: str = "",
+    payload: str = "",
 ):
     """Build the AuditEvent queryset for the admin panel filters.
 
     Extracted so the pagination view and the CSV/JSON export endpoint can
     share the exact same filter semantics. ``date_from``/``date_to`` accept
     ISO ``YYYY-MM-DD`` strings; invalid values are silently ignored so the
-    operator does not get a 500 from a typo in a date input.
+    operator does not get a 500 from a typo in a date input. ``payload``
+    is a substring matched against the JSON-serialised payload text so it
+    works the same on Postgres and SQLite.
     """
     from datetime import datetime, time
+
+    from django.db.models import TextField
+    from django.db.models.functions import Cast
 
     queryset = AuditEvent.objects.all().order_by("-created_at", "-id")
 
@@ -322,6 +328,16 @@ def _audit_queryset_for_filters(
         if dt_to is not None:
             queryset = queryset.filter(created_at__lte=timezone.make_aware(dt_to))
 
+    payload_term = (payload or "").strip()
+    if payload_term:
+        # Cast the JSONField to text so the search is portable across
+        # Postgres and SQLite. Postgres benefits from a GIN index on the
+        # JSON column for high-volume installs, but the icontains path is
+        # the predictable baseline.
+        queryset = queryset.annotate(_payload_text=Cast("payload", TextField())).filter(
+            _payload_text__icontains=payload_term
+        )
+
     return queryset
 
 
@@ -335,6 +351,7 @@ def paginate_audit_for_admin(
     outcome: str = "",
     date_from: str = "",
     date_to: str = "",
+    payload: str = "",
 ):
     """Return a paginated, filtered slice of audit events for the admin panel.
 
@@ -353,6 +370,7 @@ def paginate_audit_for_admin(
         outcome=outcome,
         date_from=date_from,
         date_to=date_to,
+        payload=payload,
     )
 
     body = paginate_queryset(queryset, page=page, per_page=per_page)
@@ -378,6 +396,7 @@ def filtered_audit_queryset(
     outcome: str = "",
     date_from: str = "",
     date_to: str = "",
+    payload: str = "",
 ):
     """Public alias for the filtered queryset, used by the export endpoint."""
     return _audit_queryset_for_filters(
@@ -387,6 +406,7 @@ def filtered_audit_queryset(
         outcome=outcome,
         date_from=date_from,
         date_to=date_to,
+        payload=payload,
     )
 
 

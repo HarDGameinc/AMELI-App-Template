@@ -99,6 +99,7 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "outcome": (request.GET.get("audit_outcome") or "").strip(),
         "date_from": (request.GET.get("audit_date_from") or "").strip(),
         "date_to": (request.GET.get("audit_date_to") or "").strip(),
+        "payload": (request.GET.get("audit_payload") or "").strip(),
     }
     audit_per_page = resolve_per_page(request, AUDIT_PER_PAGE_COOKIE, default=30, query_param="audit_per_page")
     audit_page = paginate_audit_for_admin(
@@ -283,6 +284,7 @@ def _audit_export_filters(request: HttpRequest) -> dict[str, str]:
         "outcome": (request.GET.get("audit_outcome") or "").strip(),
         "date_from": (request.GET.get("audit_date_from") or "").strip(),
         "date_to": (request.GET.get("audit_date_to") or "").strip(),
+        "payload": (request.GET.get("audit_payload") or "").strip(),
     }
 
 

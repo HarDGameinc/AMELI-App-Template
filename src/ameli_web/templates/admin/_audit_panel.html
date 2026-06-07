@@ -25,6 +25,10 @@ helper can swap just this fragment without reloading the whole admin page.
     <option value="ok" {% if audit_filters.outcome == "ok" %}selected{% endif %}>OK</option>
     <option value="error" {% if audit_filters.outcome == "error" %}selected{% endif %}>Errores</option>
   </select>
+  <input type="search" name="audit_payload" class="users-toolbar-input"
+         placeholder="Payload contiene..." autocomplete="off"
+         title="Buscar texto en el payload JSON del evento"
+         value="{{ audit_filters.payload }}">
   <input type="date" name="audit_date_from" class="users-toolbar-input"
          data-audit-date-from
          aria-label="Desde" title="Desde"
@@ -40,9 +44,9 @@ helper can swap just this fragment without reloading the whole admin page.
     <button type="button" class="icon-action" data-audit-preset="30d">30 dias</button>
   </div>
   <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
-  {% if audit_filters.actor or audit_filters.target or audit_filters.action or audit_filters.outcome or audit_filters.date_from or audit_filters.date_to %}
+  {% if audit_filters.actor or audit_filters.target or audit_filters.action or audit_filters.outcome or audit_filters.date_from or audit_filters.date_to or audit_filters.payload %}
   <a class="icon-action" data-clear-filters
-     href="?{% for key, value in request.GET.items %}{% if key != 'audit_actor' and key != 'audit_target' and key != 'audit_action' and key != 'audit_outcome' and key != 'audit_date_from' and key != 'audit_date_to' and key != 'audit_page' and key != 'partial' %}{{ key }}={{ value }}&{% endif %}{% endfor %}#admin-audit-panel">
+     href="?{% for key, value in request.GET.items %}{% if key != 'audit_actor' and key != 'audit_target' and key != 'audit_action' and key != 'audit_outcome' and key != 'audit_date_from' and key != 'audit_date_to' and key != 'audit_payload' and key != 'audit_page' and key != 'partial' %}{{ key }}={{ value }}&{% endif %}{% endfor %}#admin-audit-panel">
     <span class="material-symbols-rounded icon-glyph" aria-hidden="true">filter_alt_off</span>
     <span>Limpiar filtros</span>
   </a>
