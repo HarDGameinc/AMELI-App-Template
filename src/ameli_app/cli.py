@@ -111,6 +111,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list-users", help="List managed user accounts.")
 
+    shell = sub.add_parser(
+        "shell",
+        help="Open a Django-ready Python shell or run a snippet/script.",
+    )
+    shell.add_argument(
+        "-c", "--snippet",
+        dest="shell_snippet",
+        help="Execute the given Python snippet instead of starting an interactive shell.",
+    )
+    shell.add_argument(
+        "script",
+        nargs="?",
+        help="Optional path to a Python file to execute.",
+    )
+
     return parser
 
 
@@ -135,6 +150,63 @@ def _handle_list_users(args) -> int:
     from ameli_web.accounts.services import list_users
 
     _json({"ok": True, "users": list_users()})
+    return 0
+
+
+def _shell_namespace() -> dict:
+    """Pre-populate the shell namespace with the things you usually reach for.
+
+    Imports are local so the cost is only paid when ``shell`` runs.
+    """
+    from django.contrib.auth import get_user_model
+    from django.conf import settings as django_settings
+    from django.db import connection
+
+    namespace = {
+        "User": get_user_model(),
+        "settings": django_settings,
+        "connection": connection,
+    }
+    try:
+        from ameli_web.accounts.models import MFAEmailChallenge, MFARecoveryCode, UserSession
+        from ameli_web.audit.models import AuditEvent
+
+        namespace.update({
+            "MFAEmailChallenge": MFAEmailChallenge,
+            "MFARecoveryCode": MFARecoveryCode,
+            "UserSession": UserSession,
+            "AuditEvent": AuditEvent,
+        })
+    except ImportError:
+        # Apps may evolve; keep the shell usable even if a model relocates.
+        pass
+    return namespace
+
+
+def _handle_shell(args) -> int:
+    _bootstrap_django(args)
+    namespace = _shell_namespace()
+
+    if args.shell_snippet:
+        exec(compile(args.shell_snippet, "<ameli-app shell -c>", "exec"), namespace)
+        return 0
+
+    if args.script:
+        script_path = Path(args.script)
+        if not script_path.is_file():
+            print(f"shell: script not found: {script_path}", file=sys.stderr)
+            return 2
+        source = script_path.read_text(encoding="utf-8")
+        exec(compile(source, str(script_path), "exec"), namespace)
+        return 0
+
+    import code
+
+    banner = (
+        "AMELI App Template shell. Django is set up.\n"
+        f"Available: {', '.join(sorted(k for k in namespace if not k.startswith('_')))}"
+    )
+    code.interact(banner=banner, local=namespace)
     return 0
 
 
@@ -178,6 +250,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_create_user(args)
     if args.command == "list-users":
         return _handle_list_users(args)
+    if args.command == "shell":
+        return _handle_shell(args)
 
     parser.error(f"Unknown command: {args.command}")
     return 2
