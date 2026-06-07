@@ -265,4 +265,73 @@ En orden:
 6. Commit 3 (date presets): botones + JS handler.
 7. Commit 4 (payload search): Cast cross-DB + actualizacion de todas
    las superficies que tocan filtros.
-8. Este handoff.
+8. Handoff promocionado a main en `dc9f615`.
+9. Usuario reporta bug visual via screenshot: refrescar `/admin/?partial=audit`
+   sirve el partial sin layout/css.
+10. Hotfix `a7aae09` (ver seccion siguiente).
+11. Este addendum.
+
+### Hotfix post-promocion: partial sin layout (`a7aae09`)
+
+**Bug**: cuando el usuario navegaba por Prev/Next y refrescaba (F5),
+la URL conservaba `partial=audit` y el server respondia con solo el
+partial template — sin `<html>`, sin css, sin Material Symbols. La
+pantalla quedaba como un dump de texto plano.
+
+**Raiz**: los links Prev/Next del footer iteran `request.GET.items`
+excluyendo solo `pagination.page_param`. Cuando el server renderiza
+un partial, `request.GET` contiene `partial=audit`, y los links del
+partial heredan ese param. El JS `swapPanelTo` extraia el href y
+hacia `history.pushState` con la URL contaminada. Refresh → server
+responde partial sin layout.
+
+**Fix doble** (cinturon + tiradores):
+
+1. **JS** (`src/ameli_app/static/js/app.js`): `swapPanelTo` ahora hace
+   `url.searchParams.delete("partial")` antes del `history.pushState`.
+   La URL en la barra del navegador queda limpia.
+2. **Server** (`admin_views.py`, `accounts/views.py`): nuevo helper
+   `_is_fetch_request(request)` que exige `X-Requested-With: fetch` o
+   `XMLHttpRequest`. Si la request no es un fetch real, se ignora
+   `?partial=` y se sirve el full page. Sharing/bookmarks/refresh →
+   layout completo siempre.
+
+**Impacto en tests previos**: 5 tests que llamaban
+`client.get("/admin/?partial=audit")` sin header empezaron a recibir
+full page (correctamente) en lugar de partial. Los actualice agregando
+`HTTP_X_REQUESTED_WITH="fetch"` a cada uno:
+
+- `tests/test_profile_sessions_pagination.py` (2 calls)
+- `tests/test_admin_audit_pagination.py` (4 calls via replace_all)
+- `tests/test_admin_users_pagination.py` (5 calls via script)
+- `tests/test_audit_payload_search.py` (1 call via script)
+
+**Tests nuevos**: 6 en `tests/test_partial_guards.py`:
+
+- admin: full page sin header / partial con header / partial users con
+  header / XMLHttpRequest tambien aceptado
+- profile: full page sin header / partial con header
+
+### Estado final del 2026-06-08 (post-hotfix)
+
+- `main` y `dev` en `a7aae09`
+- **327 tests pasando** (321 antes del hotfix + 6 nuevos)
+- 5 commits del dia promocionados (4 tacticos + 1 handoff + 1 hotfix)
+- 0 regresiones
+- Verificado E2E via screenshot: `/admin/?partial=audit` pegado en la
+  barra ahora carga el full page con layout y CSS
+
+### Archivos del hotfix
+
+- [`src/ameli_app/static/js/app.js`](../src/ameli_app/static/js/app.js) — `url.searchParams.delete("partial")` antes de pushState
+- [`src/ameli_web/admin_views.py`](../src/ameli_web/admin_views.py) — `_is_fetch_request` helper + check en `admin_panel`
+- [`src/ameli_web/accounts/views.py`](../src/ameli_web/accounts/views.py) — mismo check en `profile_view`
+- [`tests/test_partial_guards.py`](../tests/test_partial_guards.py) — 6 tests del guard
+
+### Server resync al hash final
+
+```bash
+cd /opt/ameli-app-template-dev
+git fetch origin && git reset --hard origin/dev
+systemctl restart ameli-app-template-dev-api.service
+```
