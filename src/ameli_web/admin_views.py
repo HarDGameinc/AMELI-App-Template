@@ -4,7 +4,7 @@ import json
 from functools import wraps
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
@@ -16,11 +16,13 @@ from ameli_web.accounts.services import (
     change_password_for_user,
     create_user_account,
     delete_user_account,
+    filtered_audit_queryset,
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
     paginate_audit_for_admin,
     paginate_users_for_admin,
+    serialize_audit_event,
     reset_user_password,
     revoke_session_record,
     serialize_user,
@@ -247,3 +249,98 @@ def admin_change_password(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return _json_error(str(exc))
     return JsonResponse(result)
+
+
+_AUDIT_EXPORT_COLUMNS = [
+    "id",
+    "created_at",
+    "actor_username",
+    "target_username",
+    "action",
+    "display_result_label",
+    "payload",
+]
+
+
+def _audit_export_filters(request: HttpRequest) -> dict[str, str]:
+    """Read the same audit filters used by the panel view."""
+    return {
+        "actor": (request.GET.get("audit_actor") or "").strip(),
+        "target": (request.GET.get("audit_target") or "").strip(),
+        "action": (request.GET.get("audit_action") or "").strip(),
+        "outcome": (request.GET.get("audit_outcome") or "").strip(),
+        "date_from": (request.GET.get("audit_date_from") or "").strip(),
+        "date_to": (request.GET.get("audit_date_to") or "").strip(),
+    }
+
+
+def _iter_audit_csv_rows(queryset):
+    """Stream the audit queryset row by row, encoding each row as a CSV line.
+
+    Yielding strings into :class:`StreamingHttpResponse` lets us export an
+    arbitrary number of events without holding everything in memory.
+    """
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    def _flush() -> str:
+        value = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        return value
+
+    writer.writerow(_AUDIT_EXPORT_COLUMNS)
+    yield _flush()
+
+    for event in queryset.iterator(chunk_size=200):
+        row = serialize_audit_event(event)
+        writer.writerow([
+            row.get("id"),
+            row.get("created_at"),
+            row.get("actor_username") or "",
+            row.get("target_username") or "",
+            row.get("action") or "",
+            row.get("display_result_label") or "",
+            json.dumps(row.get("payload") or {}, ensure_ascii=False, sort_keys=True),
+        ])
+        yield _flush()
+
+
+def _iter_audit_json_rows(queryset):
+    """Stream the audit queryset as a single JSON array."""
+    yield "["
+    first = True
+    for event in queryset.iterator(chunk_size=200):
+        row = serialize_audit_event(event)
+        payload = {
+            "id": row.get("id"),
+            "created_at": row.get("created_at"),
+            "actor_username": row.get("actor_username") or "",
+            "target_username": row.get("target_username") or "",
+            "action": row.get("action") or "",
+            "result": row.get("display_result_label") or "",
+            "payload": row.get("payload") or {},
+        }
+        yield ("" if first else ",") + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        first = False
+    yield "]"
+
+
+@require_GET
+@superadmin_required
+def admin_audit_export(request: HttpRequest) -> HttpResponse:
+    """Download the (filtered) audit log as CSV or JSON."""
+    fmt = (request.GET.get("format") or "csv").strip().lower()
+    queryset = filtered_audit_queryset(**_audit_export_filters(request))
+
+    if fmt == "json":
+        response = StreamingHttpResponse(_iter_audit_json_rows(queryset), content_type="application/json")
+        response["Content-Disposition"] = 'attachment; filename="audit.json"'
+        return response
+
+    response = StreamingHttpResponse(_iter_audit_csv_rows(queryset), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="audit.csv"'
+    return response

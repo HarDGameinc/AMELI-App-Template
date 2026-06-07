@@ -34,6 +34,23 @@ helper can swap just this fragment without reloading the whole admin page.
   <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
 </form>
 
+<div class="modal-actions-row" style="margin-bottom:8px;" data-audit-export-actions>
+  <a class="icon-action"
+     href="{% url 'admin-audit-export' %}?{% for key, value in request.GET.items %}{% if key != 'partial' and key != 'audit_page' and key != 'format' %}{{ key }}={{ value }}&{% endif %}{% endfor %}format=csv"
+     data-audit-export-csv
+     download>
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">download</span>
+    <span>Exportar CSV</span>
+  </a>
+  <a class="icon-action"
+     href="{% url 'admin-audit-export' %}?{% for key, value in request.GET.items %}{% if key != 'partial' and key != 'audit_page' and key != 'format' %}{{ key }}={{ value }}&{% endif %}{% endfor %}format=json"
+     data-audit-export-json
+     download>
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">data_object</span>
+    <span>Exportar JSON</span>
+  </a>
+</div>
+
 <div class="events">
   {% for item in audit_entries %}
   <article class="event ev-{{ item.display_tone }}">
