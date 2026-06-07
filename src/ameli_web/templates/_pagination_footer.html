@@ -19,6 +19,16 @@ navigation.
       Sin resultados
     {% endif %}
   </div>
+  {% if pagination.per_page_param %}
+  <label class="pagination-page-size muted">
+    Mostrar:
+    <select data-page-size data-per-page-param="{{ pagination.per_page_param }}" class="pagination-page-size-input">
+      {% for choice in pagination.per_page_choices %}
+      <option value="{{ choice }}" {% if pagination.per_page == choice %}selected{% endif %}>{{ choice }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
   {% if pagination.total_pages > 1 %}
   <div class="pagination-controls">
     {% if pagination.has_prev %}

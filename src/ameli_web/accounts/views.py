@@ -123,16 +123,20 @@ def logout_view(request: HttpRequest) -> HttpResponse:
     return redirect("dashboard-home")
 
 
+_SESSIONS_PER_PAGE_COOKIE = "ps_sessions_per_page"
+
+
 @login_required
 def profile_view(request: HttpRequest) -> HttpResponse:
-    from ameli_web.pagination import coerce_page
+    from ameli_web.pagination import coerce_page, persist_per_page_cookie, resolve_per_page
 
     current_session_key = str(request.session.session_key or "")
     user_payload = serialize_user(request.user)
+    per_page = resolve_per_page(request, _SESSIONS_PER_PAGE_COOKIE, default=20, query_param="sessions_per_page")
     sessions_page = paginate_user_sessions(
         request.user,
         page=coerce_page(request.GET.get("sessions_page")),
-        per_page=20,
+        per_page=per_page,
         current_session_key=current_session_key,
     )
     current_session = next(
@@ -148,8 +152,8 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "session_pagination": sessions_page.as_context(
             page_param="sessions_page",
             anchor="profile-tab-sessions",
+            per_page_param="sessions_per_page",
         ),
-        "user_sessions": sessions_page.items,
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
@@ -159,8 +163,11 @@ def profile_view(request: HttpRequest) -> HttpResponse:
     }
     partial = (request.GET.get("partial") or "").strip()
     if partial == "sessions":
-        return render(request, "accounts/_sessions_panel.html", context)
-    return render(request, "accounts/profile.html", context)
+        response = render(request, "accounts/_sessions_panel.html", context)
+    else:
+        response = render(request, "accounts/profile.html", context)
+    persist_per_page_cookie(response, request, _SESSIONS_PER_PAGE_COOKIE, query_param="sessions_per_page")
+    return response
 
 
 @login_required

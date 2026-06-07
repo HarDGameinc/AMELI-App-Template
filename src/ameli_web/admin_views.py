@@ -71,10 +71,14 @@ def superadmin_required(view_func):
     return _wrapped
 
 
+USERS_PER_PAGE_COOKIE = "ps_users_per_page"
+AUDIT_PER_PAGE_COOKIE = "ps_audit_per_page"
+
+
 @require_GET
 @superadmin_required
 def admin_panel(request: HttpRequest) -> HttpResponse:
-    from ameli_web.pagination import coerce_page
+    from ameli_web.pagination import coerce_page, persist_per_page_cookie, resolve_per_page
 
     current_session_key = str(request.session.session_key or "")
     users_filters = {
@@ -82,9 +86,10 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "role": (request.GET.get("users_role") or "").strip(),
         "status": (request.GET.get("users_status") or "").strip(),
     }
+    users_per_page = resolve_per_page(request, USERS_PER_PAGE_COOKIE, default=25, query_param="users_per_page")
     users_page = paginate_users_for_admin(
         page=coerce_page(request.GET.get("users_page")),
-        per_page=25,
+        per_page=users_per_page,
         **users_filters,
     )
     audit_filters = {
@@ -95,9 +100,10 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "date_from": (request.GET.get("audit_date_from") or "").strip(),
         "date_to": (request.GET.get("audit_date_to") or "").strip(),
     }
+    audit_per_page = resolve_per_page(request, AUDIT_PER_PAGE_COOKIE, default=30, query_param="audit_per_page")
     audit_page = paginate_audit_for_admin(
         page=coerce_page(request.GET.get("audit_page")),
-        per_page=30,
+        per_page=audit_per_page,
         **audit_filters,
     )
     context = {
@@ -106,12 +112,14 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "users_pagination": users_page.as_context(
             page_param="users_page",
             anchor="admin-users-panel",
+            per_page_param="users_per_page",
         ),
         "users_filters": users_filters,
         "audit_entries": audit_page.items,
         "audit_pagination": audit_page.as_context(
             page_param="audit_page",
             anchor="admin-audit-panel",
+            per_page_param="audit_per_page",
         ),
         "audit_filters": audit_filters,
         "current_user": serialize_user(request.user),
@@ -122,10 +130,14 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
     }
     partial = (request.GET.get("partial") or "").strip()
     if partial == "users":
-        return render(request, "admin/_users_panel.html", context)
-    if partial == "audit":
-        return render(request, "admin/_audit_panel.html", context)
-    return render(request, "admin/panel.html", context)
+        response = render(request, "admin/_users_panel.html", context)
+    elif partial == "audit":
+        response = render(request, "admin/_audit_panel.html", context)
+    else:
+        response = render(request, "admin/panel.html", context)
+    persist_per_page_cookie(response, request, USERS_PER_PAGE_COOKIE, query_param="users_per_page")
+    persist_per_page_cookie(response, request, AUDIT_PER_PAGE_COOKIE, query_param="audit_per_page")
+    return response
 
 
 @superadmin_required

@@ -297,6 +297,19 @@ function debounce(fn, delay) {
   };
 }
 
+function buildPageSizeUrl(select, panel) {
+  const param = select.dataset.perPageParam || "per_page";
+  const url = new URL(window.location.href);
+  url.searchParams.set(param, select.value);
+  // Reset the panel's own page when the size changes; otherwise a deep
+  // page can stop existing entirely with the new per_page.
+  const pageParam = `${panel.dataset.paginationPanel}_page`;
+  url.searchParams.delete(pageParam);
+  url.searchParams.delete("partial");
+  const anchor = url.hash || (panel.id ? `#${panel.id}` : "");
+  return `${url.pathname}?${url.searchParams.toString()}${anchor}`;
+}
+
 function setupPaginationSwap() {
   document.addEventListener("click", async (event) => {
     const link = event.target.closest(".pagination-footer a");
@@ -305,6 +318,15 @@ function setupPaginationSwap() {
     if (!panel) return;
     event.preventDefault();
     swapPanelTo(panel, link.href);
+  });
+
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (!target.matches("[data-page-size]")) return;
+    const panel = target.closest("[data-pagination-panel]");
+    if (!panel) return;
+    swapPanelTo(panel, buildPageSizeUrl(target, panel));
   });
 
   const debouncedSwap = debounce((panel, url) => swapPanelTo(panel, url), 250);

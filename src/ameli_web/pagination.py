@@ -20,6 +20,8 @@ from django.db.models import QuerySet
 
 DEFAULT_PER_PAGE = 20
 MAX_PER_PAGE = 200
+PAGE_SIZE_CHOICES = (10, 20, 50, 100)
+_PAGE_SIZE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365  # one year
 
 
 @dataclass(frozen=True)
@@ -50,7 +52,13 @@ class Page:
     def next_page(self) -> int:
         return min(self.total_pages or 1, self.page + 1)
 
-    def as_context(self, *, page_param: str = "page", anchor: str = "") -> dict[str, Any]:
+    def as_context(
+        self,
+        *,
+        page_param: str = "page",
+        anchor: str = "",
+        per_page_param: str = "",
+    ) -> dict[str, Any]:
         """Return the dict shape used by ``pagination_footer.html``.
 
         ``page_param`` is the query-string key the footer should append to
@@ -62,6 +70,10 @@ class Page:
         When passed, the footer appends ``#<anchor>`` to navigation links
         so refreshing or following a Prev/Next link stays on the same tab
         instead of falling back to the first one.
+
+        ``per_page_param`` enables the page-size selector in the footer.
+        When non-empty the footer renders a ``<select>`` whose change
+        triggers an AJAX swap to the same view with that param appended.
         """
         return {
             "items": self.items,
@@ -77,6 +89,8 @@ class Page:
             "end_index": self.end_index,
             "page_param": page_param,
             "anchor": anchor,
+            "per_page_param": per_page_param,
+            "per_page_choices": PAGE_SIZE_CHOICES,
         }
 
 
@@ -107,6 +121,43 @@ def coerce_per_page(raw: Any, *, default: int = DEFAULT_PER_PAGE, maximum: int =
     if value < 1:
         return default
     return min(value, maximum)
+
+
+def resolve_per_page(request, cookie_name: str, *, default: int, query_param: str = "per_page") -> int:
+    """Pick the effective ``per_page`` from query string, then cookie, then default.
+
+    Used so each paginated panel can remember the user's preferred page
+    size between requests without requiring a User model migration. The
+    cookie name is panel-specific (``ps_users_per_page``, ``ps_audit_per_page``,
+    ``ps_sessions_per_page``) so changing the size on one panel does not
+    accidentally affect the others.
+    """
+    raw_query = request.GET.get(query_param) if hasattr(request, "GET") else None
+    if raw_query is not None and str(raw_query).strip():
+        return coerce_per_page(raw_query, default=default)
+    raw_cookie = request.COOKIES.get(cookie_name) if hasattr(request, "COOKIES") else None
+    if raw_cookie:
+        return coerce_per_page(raw_cookie, default=default)
+    return coerce_per_page(default, default=default)
+
+
+def persist_per_page_cookie(response, request, cookie_name: str, *, query_param: str = "per_page") -> None:
+    """If the current request set ``?per_page=N`` explicitly, persist it.
+
+    Lets the next request without an explicit override fall back to the
+    user's last chosen size. Quiet no-op when the query parameter is absent
+    so revisiting via a bookmark or share link doesn't re-stamp the cookie.
+    """
+    raw_query = request.GET.get(query_param) if hasattr(request, "GET") else None
+    if not raw_query or not str(raw_query).strip():
+        return
+    value = coerce_per_page(raw_query, default=DEFAULT_PER_PAGE)
+    response.set_cookie(
+        cookie_name,
+        str(value),
+        max_age=_PAGE_SIZE_COOKIE_MAX_AGE,
+        samesite="Lax",
+    )
 
 
 def paginate_queryset(

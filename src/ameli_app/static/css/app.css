@@ -436,6 +436,10 @@
     .pagination-controls .icon-action { padding:6px 12px; }
     .pagination-controls .icon-action.disabled { opacity:.45; pointer-events:none; }
     .pagination-page-label { font-size:13px; }
+    .pagination-page-size { display:inline-flex; align-items:center; gap:6px; font-size:13px; }
+    .pagination-page-size-input { background:var(--surface); color:var(--ink);
+             border:1px solid var(--line); border-radius:6px; padding:4px 8px;
+             font-weight:600; cursor:pointer; }
     .admin-user-list { display:grid; gap:8px; }
     .admin-user-list .event { padding:12px 14px; }
     .admin-user-list .event .ev-top { align-items:flex-start; flex-wrap:wrap; }
