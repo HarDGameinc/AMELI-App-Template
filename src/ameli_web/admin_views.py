@@ -45,6 +45,17 @@ def _json_error(message: str, *, status: int = 400) -> JsonResponse:
     return JsonResponse({"ok": False, "error": message}, status=status)
 
 
+def _is_fetch_request(request: HttpRequest) -> bool:
+    """True when the request looks like an AJAX panel swap, not a navigation.
+
+    The frontend swap helper sets ``X-Requested-With: fetch`` (our marker)
+    on the partial fetches. A direct browser refresh, share link, or a
+    crawler will not carry that header, so they get the full page even if
+    ``?partial=`` is present in the URL.
+    """
+    return request.headers.get("X-Requested-With", "").lower() in {"fetch", "xmlhttprequest"}
+
+
 def _json_body(request: HttpRequest) -> dict[str, Any]:
     if not request.body:
         return {}
@@ -129,7 +140,10 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "native_admin_url": "/django-admin/",
         "csrf_token": get_token(request),
     }
-    partial = (request.GET.get("partial") or "").strip()
+    # Only honor ``?partial=`` for real fetch requests. If someone refreshes
+    # mid-swap or shares a deep link, ``partial=`` may linger in the URL —
+    # serve the full page so the layout/css renders.
+    partial = (request.GET.get("partial") or "").strip() if _is_fetch_request(request) else ""
     if partial == "users":
         response = render(request, "admin/_users_panel.html", context)
     elif partial == "audit":

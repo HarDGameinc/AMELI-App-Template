@@ -247,6 +247,10 @@ async function swapPanelTo(panel, targetUrl) {
   const url = new URL(targetUrl, window.location.origin);
   const fetchUrl = new URL(url);
   fetchUrl.searchParams.set("partial", panelKey);
+  // Strip ``partial`` from the URL we push to history — if the user
+  // refreshes after an AJAX swap, we want the full page back, not the
+  // partial template rendered without layout/css.
+  url.searchParams.delete("partial");
 
   panel.setAttribute("aria-busy", "true");
   try {

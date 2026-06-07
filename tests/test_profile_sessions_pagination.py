@@ -165,7 +165,7 @@ def test_profile_partial_returns_only_sessions_panel(client, public_user):
     _make_sessions(public_user, 15)
     client.force_login(public_user)
 
-    response = client.get("/profile/?partial=sessions")
+    response = client.get("/profile/?partial=sessions", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -181,7 +181,7 @@ def test_profile_partial_supports_pagination_param(client, public_user):
     _make_sessions(public_user, 25)
     client.force_login(public_user)
 
-    response = client.get("/profile/?sessions_page=2&partial=sessions")
+    response = client.get("/profile/?sessions_page=2&partial=sessions", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200

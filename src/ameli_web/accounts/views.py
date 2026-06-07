@@ -161,7 +161,12 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "display_last_login_at": format_timestamp_ui(request.user.last_login),
         "csrf_token": get_token(request),
     }
-    partial = (request.GET.get("partial") or "").strip()
+    # Only honor ``?partial=`` for real fetch requests; on a refresh the
+    # browser does not send our ``X-Requested-With`` marker, so we fall
+    # back to the full page and the user does not see the partial without
+    # layout or css.
+    is_fetch = request.headers.get("X-Requested-With", "").lower() in {"fetch", "xmlhttprequest"}
+    partial = (request.GET.get("partial") or "").strip() if is_fetch else ""
     if partial == "sessions":
         response = render(request, "accounts/_sessions_panel.html", context)
     else:

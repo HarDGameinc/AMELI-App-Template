@@ -139,7 +139,7 @@ def test_admin_panel_audit_partial_returns_only_audit(client, admin_user):
     _seed_audit(5)
     client.force_login(admin_user)
 
-    response = client.get("/admin/?partial=audit")
+    response = client.get("/admin/?partial=audit", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -154,7 +154,7 @@ def test_admin_panel_audit_filter_action_substring(client, admin_user):
     _seed_audit(3, action="profile_update")
     client.force_login(admin_user)
 
-    response = client.get("/admin/?audit_action=login&partial=audit")
+    response = client.get("/admin/?audit_action=login&partial=audit", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -168,7 +168,7 @@ def test_admin_panel_audit_filter_outcome_error(client, admin_user):
     _seed_audit(2, action="login_failed")
     client.force_login(admin_user)
 
-    response = client.get("/admin/?audit_outcome=error&partial=audit")
+    response = client.get("/admin/?audit_outcome=error&partial=audit", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -192,7 +192,7 @@ def test_admin_panel_audit_empty_filter_renders_no_results_message(client, admin
     _seed_audit(3)
     client.force_login(admin_user)
 
-    response = client.get("/admin/?audit_action=nonexistentaction&partial=audit")
+    response = client.get("/admin/?audit_action=nonexistentaction&partial=audit", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200

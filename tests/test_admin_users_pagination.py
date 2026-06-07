@@ -123,7 +123,7 @@ def test_admin_panel_users_partial_returns_only_users_panel(client, admin_user):
     _seed("admin", "user", 5)
     client.force_login(admin_user)
 
-    response = client.get("/admin/?partial=users")
+    response = client.get("/admin/?partial=users", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -137,7 +137,7 @@ def test_admin_panel_users_search_filter_applies_server_side(client, admin_user)
     _seed("admin", "editor", 5)
     client.force_login(admin_user)
 
-    response = client.get("/admin/?users_search=view&partial=users")
+    response = client.get("/admin/?users_search=view&partial=users", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -150,7 +150,7 @@ def test_admin_panel_users_role_filter_applies_server_side(client, admin_user):
     _seed("admin", "viewer", 3, role="public")
     client.force_login(admin_user)
 
-    response = client.get("/admin/?users_role=superadmin&partial=users")
+    response = client.get("/admin/?users_role=superadmin&partial=users", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -166,7 +166,7 @@ def test_admin_panel_users_status_filter_applies_server_side(client, admin_user)
     target.save(update_fields=["is_active"])
     client.force_login(admin_user)
 
-    response = client.get("/admin/?users_status=disabled&partial=users")
+    response = client.get("/admin/?users_status=disabled&partial=users", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -190,7 +190,7 @@ def test_admin_panel_users_pagination_links_preserve_search_filter(client, admin
 def test_admin_panel_users_empty_filter_renders_no_results_message(client, admin_user):
     client.force_login(admin_user)
 
-    response = client.get("/admin/?users_search=nonexistent&partial=users")
+    response = client.get("/admin/?users_search=nonexistent&partial=users", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200

@@ -105,7 +105,7 @@ def test_admin_panel_audit_filter_payload_applies_server_side(client, admin_user
     _seed_audit("event_b", {"key": "beta-value"})
     client.force_login(admin_user)
 
-    response = client.get("/admin/?audit_payload=alpha&partial=audit")
+    response = client.get("/admin/?audit_payload=alpha&partial=audit", HTTP_X_REQUESTED_WITH="fetch")
     body = response.content.decode("utf-8")
 
     assert response.status_code == 200
