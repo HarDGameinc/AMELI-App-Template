@@ -373,6 +373,63 @@ function setupPaginationSwap() {
 setupPaginationSwap();
 
 
+// ---- Audit date range presets ----
+//
+// Buttons inside ``[data-audit-date-presets]`` set the ``audit_date_from``
+// and ``audit_date_to`` inputs to a quick preset (Today / Yesterday /
+// 7 days / 30 days) and dispatch ``input`` events so the existing AJAX
+// swap helper picks the change up and reloads the panel without a full
+// page reload. ISO ``YYYY-MM-DD`` keeps the server-side parser happy.
+function isoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function setupAuditDatePresets() {
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-audit-preset]");
+    if (!button) return;
+    event.preventDefault();
+    const form = button.closest("form[data-filter-form]");
+    if (!form) return;
+    const fromInput = form.querySelector("[data-audit-date-from]");
+    const toInput = form.querySelector("[data-audit-date-to]");
+    if (!fromInput || !toInput) return;
+
+    const preset = button.dataset.auditPreset;
+    const today = new Date();
+    let from = today;
+    let to = today;
+    if (preset === "yesterday") {
+      const y = new Date(today);
+      y.setDate(today.getDate() - 1);
+      from = y;
+      to = y;
+    } else if (preset === "7d") {
+      from = new Date(today);
+      from.setDate(today.getDate() - 6);
+      to = today;
+    } else if (preset === "30d") {
+      from = new Date(today);
+      from.setDate(today.getDate() - 29);
+      to = today;
+    }
+
+    fromInput.value = isoDate(from);
+    toInput.value = isoDate(to);
+    // ``input`` events trigger the debounced filter-form swap registered
+    // in ``setupPaginationSwap``; fire on both so the second input cannot
+    // race ahead with stale state.
+    fromInput.dispatchEvent(new Event("input", { bubbles: true }));
+    toInput.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+setupAuditDatePresets();
+
+
 // ---- Back to top button ----
 //
 // Injects a single floating button bottom-right that appears once the

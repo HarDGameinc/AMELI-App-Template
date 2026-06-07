@@ -440,6 +440,8 @@
     .pagination-page-size-input { background:var(--surface); color:var(--ink);
              border:1px solid var(--line); border-radius:6px; padding:4px 8px;
              font-weight:600; cursor:pointer; }
+    .audit-date-presets { display:inline-flex; flex-wrap:wrap; gap:6px; }
+    .audit-date-presets .icon-action { padding:4px 10px; font-size:12px; min-height:32px; }
     .admin-user-list { display:grid; gap:8px; }
     .admin-user-list .event { padding:12px 14px; }
     .admin-user-list .event .ev-top { align-items:flex-start; flex-wrap:wrap; }
