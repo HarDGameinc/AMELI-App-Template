@@ -25,6 +25,13 @@ helper can swap just this fragment without reloading the whole admin page.
     <option value="disabled" {% if users_filters.status == "disabled" %}selected{% endif %}>Deshabilitados</option>
   </select>
   <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
+  {% if users_filters.search or users_filters.role or users_filters.status %}
+  <a class="icon-action" data-clear-filters
+     href="?{% for key, value in request.GET.items %}{% if key != 'users_search' and key != 'users_role' and key != 'users_status' and key != 'users_page' and key != 'partial' %}{{ key }}={{ value }}&{% endif %}{% endfor %}#admin-users-panel">
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">filter_alt_off</span>
+    <span>Limpiar filtros</span>
+  </a>
+  {% endif %}
 </form>
 
 <div class="admin-user-list" id="users-list">

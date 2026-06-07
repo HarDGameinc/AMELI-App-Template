@@ -312,7 +312,10 @@ function buildPageSizeUrl(select, panel) {
 
 function setupPaginationSwap() {
   document.addEventListener("click", async (event) => {
-    const link = event.target.closest(".pagination-footer a");
+    // Intercept any link that should swap a paginated panel in place: the
+    // Prev/Next links inside ``.pagination-footer`` and the ``Limpiar
+    // filtros`` link (``[data-clear-filters]``) on filter toolbars.
+    const link = event.target.closest(".pagination-footer a, [data-clear-filters]");
     if (!link) return;
     const panel = link.closest("[data-pagination-panel]");
     if (!panel) return;

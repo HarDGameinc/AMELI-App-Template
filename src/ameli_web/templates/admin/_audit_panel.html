@@ -32,6 +32,13 @@ helper can swap just this fragment without reloading the whole admin page.
          aria-label="Hasta" title="Hasta"
          value="{{ audit_filters.date_to }}">
   <noscript><button type="submit" class="icon-action">Aplicar filtros</button></noscript>
+  {% if audit_filters.actor or audit_filters.target or audit_filters.action or audit_filters.outcome or audit_filters.date_from or audit_filters.date_to %}
+  <a class="icon-action" data-clear-filters
+     href="?{% for key, value in request.GET.items %}{% if key != 'audit_actor' and key != 'audit_target' and key != 'audit_action' and key != 'audit_outcome' and key != 'audit_date_from' and key != 'audit_date_to' and key != 'audit_page' and key != 'partial' %}{{ key }}={{ value }}&{% endif %}{% endfor %}#admin-audit-panel">
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">filter_alt_off</span>
+    <span>Limpiar filtros</span>
+  </a>
+  {% endif %}
 </form>
 
 <div class="modal-actions-row" style="margin-bottom:8px;" data-audit-export-actions>
