@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "ameli_web.accounts",
     "ameli_web.audit",
+    "ameli_web.webhooks",
     "ameli_web.dashboard",
 ]
 
