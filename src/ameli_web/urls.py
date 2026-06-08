@@ -71,18 +71,14 @@ def _authenticated_media(request, path):
         raise
 
 
-if settings.DEBUG:
-    # ``django.views.static.serve`` is dev-only per Django's own docs.
-    # Outside dev, Caddy/nginx is expected to serve ``/static/`` and
-    # ``/media/`` directly from disk (and apply its own auth/quotas).
-    urlpatterns += [
-        re_path(r"^static/(?P<path>.*)$", serve, {"document_root": str(static_root)}),
-        re_path(r"^media/(?P<path>.*)$", _authenticated_media),
-    ]
-else:
-    # In non-dev we still wire ``/media/`` through the auth gate even
-    # though the reverse proxy should normally intercept it — defence in
-    # depth in case the proxy config drifts.
-    urlpatterns += [
-        re_path(r"^media/(?P<path>.*)$", _authenticated_media),
-    ]
+# ``django.views.static.serve`` is documented as dev-only by Django, but
+# AMELI deploys typically run on internal hosts without a reverse proxy
+# in front. Serving ``/static/`` ourselves keeps the UI working in that
+# common case; production deploys with Caddy/nginx in front will have
+# the proxy intercept ``/static/`` first and never hit this handler.
+# ``/media/`` always goes through the auth gate as defence in depth even
+# when a reverse proxy is present.
+urlpatterns += [
+    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": str(static_root)}),
+    re_path(r"^media/(?P<path>.*)$", _authenticated_media),
+]
