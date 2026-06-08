@@ -268,28 +268,7 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="metric-label">Sesiones recientes</div>
-      <div class="events">
-        {% for session in recent_sessions %}
-        <article class="event ev-{% if session.revoked %}DEGRADADO{% else %}OPERATIVO{% endif %}{% if session.is_current %} event-current{% endif %}">
-          <div class="ev-top">
-            <span class="ev-dot"></span>
-            <span class="ev-state">{{ session.username }}</span>
-            <span class="session-state-badge {% if session.is_current %}current{% elif session.revoked %}revoked{% else %}active{% endif %}">
-              {% if session.is_current %}Sesion actual{% elif session.revoked %}Revocada{% else %}Activa{% endif %}
-            </span>
-          </div>
-          <div class="admin-inline-meta">
-            <span class="session-meta-item">{{ session.display_last_seen_at }}</span>
-            {% if session.ip_address %}<span class="session-meta-item">{{ session.ip_address }}</span>{% endif %}
-          </div>
-        </article>
-        {% empty %}
-        <div class="empty-state">No hay sesiones recientes.</div>
-        {% endfor %}
-      </div>
-    </section>
+    {% include "admin/_sessions_panel.html" %}
 
     <section class="panel">
       <div class="metric-label">Accesos rapidos</div>

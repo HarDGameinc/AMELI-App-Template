@@ -213,6 +213,63 @@ def list_recent_sessions(*, limit: int = 20, current_session_key: str | None = N
     return [serialize_session(item, current_session_key=current_session_key) for item in queryset]
 
 
+def _admin_sessions_queryset_for_filters(*, search: str = "", status: str = "", ip: str = ""):
+    """Build the UserSession queryset for the admin panel filters.
+
+    ``search`` matches against ``user.username`` (icontains). ``status``
+    accepts ``active`` (revoked_at is null) or ``revoked``. ``ip`` matches
+    against ``ip_address`` (icontains, so ``192.168`` finds a whole subnet).
+    """
+    queryset = UserSession.objects.select_related("user").order_by("-last_seen_at")
+
+    term = (search or "").strip()
+    if term:
+        queryset = queryset.filter(user__username__icontains=term)
+
+    status_value = (status or "").strip().lower()
+    if status_value == "active":
+        queryset = queryset.filter(revoked_at__isnull=True)
+    elif status_value == "revoked":
+        queryset = queryset.filter(revoked_at__isnull=False)
+
+    ip_term = (ip or "").strip()
+    if ip_term:
+        queryset = queryset.filter(ip_address__icontains=ip_term)
+
+    return queryset
+
+
+def paginate_admin_sessions(
+    *,
+    page: int = 1,
+    per_page: int = 20,
+    search: str = "",
+    status: str = "",
+    ip: str = "",
+    current_session_key: str | None = None,
+):
+    """Return a paginated, filtered slice of all UserSessions for admins."""
+    from ameli_web.pagination import Page, paginate_queryset
+
+    queryset = _admin_sessions_queryset_for_filters(search=search, status=status, ip=ip)
+
+    body = paginate_queryset(queryset, page=page, per_page=per_page)
+    items = [
+        serialize_session(item, current_session_key=current_session_key) for item in body.items
+    ]
+    return Page(
+        items=items,
+        page=body.page,
+        per_page=body.per_page,
+        total=body.total,
+        total_pages=body.total_pages,
+        has_prev=body.has_prev,
+        has_next=body.has_next,
+        start_index=body.start_index,
+        end_index=body.end_index,
+    )
+
+
 def summarize_users() -> dict[str, int]:
     rows = User.objects.values("is_active").annotate(count=Count("id"))
     total = User.objects.count()

@@ -21,6 +21,7 @@ from ameli_web.accounts.services import (
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
+    paginate_admin_sessions,
     paginate_audit_for_admin,
     paginate_users_for_admin,
     serialize_audit_event,
@@ -85,6 +86,7 @@ def superadmin_required(view_func):
 
 USERS_PER_PAGE_COOKIE = "ps_users_per_page"
 AUDIT_PER_PAGE_COOKIE = "ps_audit_per_page"
+SESSIONS_PER_PAGE_COOKIE = "ps_admin_sessions_per_page"
 
 
 @require_GET
@@ -119,6 +121,20 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         per_page=audit_per_page,
         **audit_filters,
     )
+    sessions_filters = {
+        "search": (request.GET.get("admin_sessions_search") or "").strip(),
+        "status": (request.GET.get("admin_sessions_status") or "").strip(),
+        "ip": (request.GET.get("admin_sessions_ip") or "").strip(),
+    }
+    sessions_per_page = resolve_per_page(
+        request, SESSIONS_PER_PAGE_COOKIE, default=20, query_param="admin_sessions_per_page"
+    )
+    sessions_page = paginate_admin_sessions(
+        page=coerce_page(request.GET.get("admin_sessions_page")),
+        per_page=sessions_per_page,
+        current_session_key=current_session_key,
+        **sessions_filters,
+    )
     context = {
         "version": __version__,
         "users": users_page.items,
@@ -137,7 +153,13 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "audit_filters": audit_filters,
         "current_user": serialize_user(request.user),
         "user_summary": summarize_users(),
-        "recent_sessions": list_recent_sessions(limit=20, current_session_key=current_session_key),
+        "recent_sessions": sessions_page.items,
+        "sessions_pagination": sessions_page.as_context(
+            page_param="admin_sessions_page",
+            anchor="admin-sessions-panel",
+            per_page_param="admin_sessions_per_page",
+        ),
+        "sessions_filters": sessions_filters,
         "native_admin_url": "/django-admin/",
         "csrf_token": get_token(request),
     }
@@ -149,10 +171,13 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         response = render(request, "admin/_users_panel.html", context)
     elif partial == "audit":
         response = render(request, "admin/_audit_panel.html", context)
+    elif partial == "sessions":
+        response = render(request, "admin/_sessions_panel.html", context)
     else:
         response = render(request, "admin/panel.html", context)
     persist_per_page_cookie(response, request, USERS_PER_PAGE_COOKIE, query_param="users_per_page")
     persist_per_page_cookie(response, request, AUDIT_PER_PAGE_COOKIE, query_param="audit_per_page")
+    persist_per_page_cookie(response, request, SESSIONS_PER_PAGE_COOKIE, query_param="admin_sessions_per_page")
     return response
 
 
