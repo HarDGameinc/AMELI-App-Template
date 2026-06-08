@@ -398,9 +398,24 @@
       <h3 class="form-card-title">Guarda tus codigos de recuperacion</h3>
       <p class="muted panel-copy warn-text"><strong>Estos codigos se muestran una sola vez.</strong> Guardalos en un lugar seguro (gestor de contraseñas, papel impreso). Cada código sirve una sola vez si pierdes acceso a tu app de autenticacion.</p>
       <ul class="mfa-recovery-list" id="profile-mfa-recovery-list"></ul>
+      <div class="modal-actions-row" data-mfa-recovery-tools>
+        <button class="icon-action" type="button" id="profile-mfa-recovery-copy">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">content_copy</span>
+          <span>Copiar</span>
+        </button>
+        <button class="icon-action" type="button" id="profile-mfa-recovery-download">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">download</span>
+          <span>Descargar .txt</span>
+        </button>
+        <button class="icon-action" type="button" id="profile-mfa-recovery-print">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">print</span>
+          <span>Imprimir</span>
+        </button>
+      </div>
       <div class="modal-actions-row">
         <button class="primary" type="button" id="profile-mfa-recovery-ack">Listo, los guarde</button>
       </div>
+      <p class="muted panel-copy" id="profile-mfa-recovery-feedback" aria-live="polite"></p>
     </div>
 
   </div>
@@ -639,6 +654,61 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     showMfaSection("recovery");
+    setupRecoveryTools(codes);
+  }
+
+  function setupRecoveryTools(codes) {
+    const feedback = document.getElementById("profile-mfa-recovery-feedback");
+    const flash = (message) => {
+      if (!feedback) return;
+      feedback.textContent = message;
+      setTimeout(() => { if (feedback.textContent === message) feedback.textContent = ""; }, 3000);
+    };
+    const text = codes.join("\n") + "\n";
+
+    const copyBtn = document.getElementById("profile-mfa-recovery-copy");
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          flash("Copiados al portapapeles");
+        } catch (err) {
+          flash("No se pudo copiar — selecciona y copia manualmente");
+        }
+      };
+    }
+
+    const dlBtn = document.getElementById("profile-mfa-recovery-download");
+    if (dlBtn) {
+      dlBtn.onclick = () => {
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.download = `ameli-recovery-codes-${stamp}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+        flash("Archivo descargado");
+      };
+    }
+
+    const printBtn = document.getElementById("profile-mfa-recovery-print");
+    if (printBtn) {
+      printBtn.onclick = () => {
+        const w = window.open("", "_blank");
+        if (!w) { flash("Habilita popups para imprimir"); return; }
+        w.document.write("<html><head><title>Codigos de recuperacion AMELI</title>");
+        w.document.write("<style>body{font-family:monospace;font-size:14pt;padding:24pt;}li{margin:6pt 0;}</style>");
+        w.document.write("</head><body><h2>Codigos de recuperacion</h2><p><em>Guarda esta hoja en un lugar seguro.</em></p><ul>");
+        codes.forEach((c) => { w.document.write(`<li>${c}</li>`); });
+        w.document.write("</ul></body></html>");
+        w.document.close();
+        w.focus();
+        w.print();
+      };
+    }
   }
 
   verifyBtn?.addEventListener("click", async () => {
