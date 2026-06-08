@@ -1523,3 +1523,108 @@ def authenticate_api_token(plaintext: str):
     token.last_used_at = timezone.now()
     token.save(update_fields=["last_used_at"])
     return token.user
+
+
+# ============================ Login throttle ============================
+
+# Defaults tuned so an attacker brute-forcing a single username gets
+# stopped within a minute; a sloppy operator typing their own password
+# wrong still has 4-5 attempts in the lockout window.
+
+LOGIN_THROTTLE_IP_MAX_DEFAULT = 12
+LOGIN_THROTTLE_IP_WINDOW_DEFAULT = 60  # seconds
+LOGIN_LOCKOUT_USER_MAX_DEFAULT = 5
+LOGIN_LOCKOUT_USER_WINDOW_DEFAULT = 300  # seconds = 5 minutes
+
+
+def _throttle_settings():
+    """Resolve throttle thresholds from Django settings, falling back to
+    sane defaults. Letting deployments tune these via env vars lets ops
+    raise them for high-trust internal networks or lower them for
+    public-facing deploys without code changes.
+    """
+    from django.conf import settings as django_settings
+
+    return {
+        "ip_max": getattr(django_settings, "LOGIN_THROTTLE_IP_MAX", LOGIN_THROTTLE_IP_MAX_DEFAULT),
+        "ip_window": getattr(
+            django_settings, "LOGIN_THROTTLE_IP_WINDOW", LOGIN_THROTTLE_IP_WINDOW_DEFAULT
+        ),
+        "user_max": getattr(
+            django_settings, "LOGIN_LOCKOUT_USER_MAX", LOGIN_LOCKOUT_USER_MAX_DEFAULT
+        ),
+        "user_window": getattr(
+            django_settings, "LOGIN_LOCKOUT_USER_WINDOW", LOGIN_LOCKOUT_USER_WINDOW_DEFAULT
+        ),
+    }
+
+
+def _count_recent_login_failures(*, username: str = "", ip: str = "", seconds: int) -> int:
+    """Count audit ``login_failed`` events for the (username, ip) pair within
+    the last ``seconds``. Either filter can be empty to ignore that axis.
+    """
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=max(1, seconds))
+    queryset = AuditEvent.objects.filter(action__endswith="_failed", created_at__gte=cutoff)
+    if username:
+        queryset = queryset.filter(target_username__iexact=username)
+    if ip:
+        from django.db.models import Q, TextField
+        from django.db.models.functions import Cast
+
+        # The login_failed signal uses ``ip_address`` while our login_throttled
+        # event uses ``ip``; match either spelling so a mix in history still
+        # counts toward the throttle.
+        queryset = queryset.annotate(_payload_text=Cast("payload", TextField())).filter(
+            Q(_payload_text__icontains=f'"ip": "{ip}"')
+            | Q(_payload_text__icontains=f'"ip_address": "{ip}"')
+        )
+    return queryset.count()
+
+
+class LoginThrottled(Exception):
+    """Raised when the request must be refused (IP-level rate limit)."""
+
+    def __init__(self, message: str, *, retry_after: int = 0):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class AccountLocked(Exception):
+    """Raised when the user's account is temporarily locked due to too many
+    failed attempts."""
+
+    def __init__(self, message: str, *, retry_after: int = 0):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def check_login_throttle(*, username: str, ip: str) -> None:
+    """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should be
+    refused. Returns silently if the login may proceed.
+
+    The IP check runs first (it protects everyone), the user check second
+    (it protects the specific account). Both fail open if there are no
+    recent audit events.
+    """
+    cfg = _throttle_settings()
+
+    if ip:
+        ip_fails = _count_recent_login_failures(ip=ip, seconds=cfg["ip_window"])
+        if ip_fails >= cfg["ip_max"]:
+            raise LoginThrottled(
+                "Demasiados intentos desde esta direccion. Esperá unos segundos.",
+                retry_after=cfg["ip_window"],
+            )
+
+    if username:
+        user_fails = _count_recent_login_failures(
+            username=username, seconds=cfg["user_window"]
+        )
+        if user_fails >= cfg["user_max"]:
+            raise AccountLocked(
+                "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
+                "Esperá unos minutos o usa la recuperacion de clave.",
+                retry_after=cfg["user_window"],
+            )

@@ -98,6 +98,23 @@ class TemplateLoginView(LoginView):
     def get_success_url(self):
         return self.get_redirect_url() or "/profile/"
 
+    def post(self, request, *args, **kwargs):
+        from .services import AccountLocked, LoginThrottled, check_login_throttle, client_ip
+
+        username = (request.POST.get("username") or "").strip()
+        ip = client_ip(request)
+        try:
+            check_login_throttle(username=username, ip=ip)
+        except (LoginThrottled, AccountLocked) as exc:
+            record_audit(
+                "login_throttled" if isinstance(exc, LoginThrottled) else "login_locked_out",
+                target_username=username,
+                payload={"ip": ip, "retry_after": exc.retry_after},
+            )
+            messages.error(request, str(exc))
+            return self.render_to_response(self.get_context_data(form=self.get_form()))
+        return super().post(request, *args, **kwargs)
+
     def form_valid(self, form):
         user = form.get_user()
         if getattr(user, "mfa_enabled", False):
