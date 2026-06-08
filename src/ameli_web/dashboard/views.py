@@ -196,6 +196,66 @@ def api_health(request):
 
 
 @require_GET
+def metrics(request):
+    """Expose Prometheus-format metrics. No PII, only aggregate counters.
+
+    Format follows the text exposition spec:
+    https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md
+
+    Intentionally implemented without ``prometheus_client`` to keep the
+    Template dependency-free; if a deployment outgrows this approach,
+    swap in the library and migrate the body.
+    """
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    from ameli_web.accounts.models import User, UserSession
+    from ameli_web.audit.models import AuditEvent
+
+    now = timezone.now()
+    users_total = User.objects.count()
+    users_active = User.objects.filter(is_active=True).count()
+    users_pending_password = User.objects.filter(must_change_password=True).count()
+    sessions_total = UserSession.objects.count()
+    sessions_active = UserSession.objects.filter(revoked_at__isnull=True).count()
+    sessions_revoked = UserSession.objects.filter(revoked_at__isnull=False).count()
+    audit_total = AuditEvent.objects.count()
+    audit_failed = AuditEvent.objects.filter(action__endswith="_failed").count()
+
+    lines = [
+        f"# HELP ameli_app_users_total Total registered users.",
+        f"# TYPE ameli_app_users_total gauge",
+        f"ameli_app_users_total {users_total}",
+        f"# HELP ameli_app_users_active Currently enabled users.",
+        f"# TYPE ameli_app_users_active gauge",
+        f"ameli_app_users_active {users_active}",
+        f"# HELP ameli_app_users_pending_password Users that must rotate their password.",
+        f"# TYPE ameli_app_users_pending_password gauge",
+        f"ameli_app_users_pending_password {users_pending_password}",
+        f"# HELP ameli_app_sessions_total Total UserSession rows tracked.",
+        f"# TYPE ameli_app_sessions_total gauge",
+        f"ameli_app_sessions_total {sessions_total}",
+        f"# HELP ameli_app_sessions_active Sessions whose revoked_at is null.",
+        f"# TYPE ameli_app_sessions_active gauge",
+        f"ameli_app_sessions_active {sessions_active}",
+        f"# HELP ameli_app_sessions_revoked Sessions with a revoked_at timestamp.",
+        f"# TYPE ameli_app_sessions_revoked gauge",
+        f"ameli_app_sessions_revoked {sessions_revoked}",
+        f"# HELP ameli_app_audit_events_total Total audit events recorded.",
+        f"# TYPE ameli_app_audit_events_total counter",
+        f"ameli_app_audit_events_total {audit_total}",
+        f"# HELP ameli_app_audit_events_failed Audit events whose action ends with _failed.",
+        f"# TYPE ameli_app_audit_events_failed counter",
+        f"ameli_app_audit_events_failed {audit_failed}",
+        f"# HELP ameli_app_info Static info about this app build.",
+        f"# TYPE ameli_app_info gauge",
+        f'ameli_app_info{{version="{__version__}",environment="{settings.CFG.environment}"}} 1',
+        "",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+@require_GET
 def openapi_schema(request):
     return JsonResponse(_openapi_schema())
 
