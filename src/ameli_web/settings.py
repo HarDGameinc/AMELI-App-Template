@@ -129,6 +129,15 @@ LOGOUT_REDIRECT_URL = "/login/"
 SESSION_COOKIE_NAME = CFG.session_cookie_name or "ameli_app_session"
 SESSION_COOKIE_SECURE = bool(CFG.session_cookie_secure)
 SESSION_COOKIE_AGE = max(300, int(CFG.session_max_age_seconds or 43200))
+# When True, every authenticated request renews the session's expiry, so
+# ``SESSION_COOKIE_AGE`` works as an "inactivity timeout": the user only
+# gets logged out if they stop hitting the app for that many seconds.
+# When False, the cookie age is a hard maximum from creation regardless
+# of activity. Default: True (the friendlier behaviour for operators).
+SESSION_SAVE_EVERY_REQUEST = bool(CFG.session_idle_renewal)
+# Expire on browser close when set; defaults to False so refreshing a tab
+# doesn't lose the session (matches the rest of the Template's UX).
+SESSION_EXPIRE_AT_BROWSER_CLOSE = bool(CFG.session_expire_at_browser_close)
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 CSRF_HEADER_NAME = "HTTP_X_CSRF_TOKEN"
 SECURE_BROWSER_XSS_FILTER = True

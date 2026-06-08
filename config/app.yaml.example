@@ -15,6 +15,13 @@ auth:
   session_cookie_name: "ameli_app_session"
   session_cookie_secure: false
   session_max_age_seconds: 43200
+  # When true, every authenticated request renews the cookie expiry, so
+  # session_max_age_seconds behaves like an inactivity timeout. When
+  # false, the cookie age is a hard cap from creation.
+  session_idle_renewal: true
+  # When true, the cookie is destroyed when the browser closes. When
+  # false, it persists until session_max_age_seconds elapses.
+  session_expire_at_browser_close: false
   profile_uploads_dir: "data/uploads/dev"
 
 dashboard:

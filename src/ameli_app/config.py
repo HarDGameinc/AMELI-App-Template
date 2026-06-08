@@ -117,6 +117,8 @@ class Settings:
     session_cookie_name: str
     session_cookie_secure: bool
     session_max_age_seconds: int
+    session_idle_renewal: bool
+    session_expire_at_browser_close: bool
     django_secret_key: str
     django_debug: bool
     profile_uploads_dir: Path
@@ -210,6 +212,17 @@ def load_settings(
             os.getenv("AMELI_APP_SESSION_MAX_AGE_SECONDS", auth.get("session_max_age_seconds")),
             43200,
         ),
+        session_idle_renewal=_as_bool(
+            os.getenv("AMELI_APP_SESSION_IDLE_RENEWAL", auth.get("session_idle_renewal")),
+            default=True,
+        ),
+        session_expire_at_browser_close=_as_bool(
+            os.getenv(
+                "AMELI_APP_SESSION_EXPIRE_AT_BROWSER_CLOSE",
+                auth.get("session_expire_at_browser_close"),
+            ),
+            default=False,
+        ),
         django_secret_key=os.getenv("AMELI_APP_DJANGO_SECRET_KEY", "ameli-app-dev-secret-key"),
         django_debug=_as_bool(os.getenv("AMELI_APP_DJANGO_DEBUG"), default=environment == "dev"),
         profile_uploads_dir=path_from_value(
@@ -266,6 +279,9 @@ def settings_summary(settings: Settings) -> dict[str, Any]:
         "redoc_enabled": settings.redoc_enabled,
         "admin_enabled": settings.admin_enabled,
         "session_cookie_name": settings.session_cookie_name,
+        "session_max_age_seconds": settings.session_max_age_seconds,
+        "session_idle_renewal": settings.session_idle_renewal,
+        "session_expire_at_browser_close": settings.session_expire_at_browser_close,
         "config_path": str(settings.config_path),
         "email_backend": settings.email_backend,
         "email_from_address": settings.email_from_address,
