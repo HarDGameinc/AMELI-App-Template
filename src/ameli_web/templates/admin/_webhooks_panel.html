@@ -1,0 +1,82 @@
+<section class="panel" id="admin-webhooks-panel">
+  <div class="panel-header">
+    <h2 class="panel-title">Webhooks</h2>
+    <p class="muted panel-copy">Endpoints externos que reciben los audit events de la app (Slack, Discord, scripts internos). Cada endpoint firma el payload con HMAC-SHA256 usando su secret.</p>
+  </div>
+
+  <form id="webhook-create-form" class="form-card">
+    <div class="form-row">
+      <label for="webhook-name" class="form-label">Nombre</label>
+      <input id="webhook-name" name="name" class="form-control" type="text"
+             placeholder="ej: slack-ops, prom-relay" autocomplete="off" required>
+    </div>
+    <div class="form-row">
+      <label for="webhook-url" class="form-label">URL</label>
+      <input id="webhook-url" name="url" class="form-control" type="url"
+             placeholder="https://hooks.slack.com/services/..." required>
+    </div>
+    <div class="form-row">
+      <label for="webhook-events" class="form-label">Eventos (separados por coma, vacio = todos)</label>
+      <input id="webhook-events" name="events" class="form-control" type="text"
+             placeholder="login_success, login_failed, api_token_created" autocomplete="off">
+    </div>
+    <div class="modal-actions-row">
+      <button class="primary" type="submit">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">add</span>
+        <span>Crear webhook</span>
+      </button>
+    </div>
+    <p class="muted panel-copy" id="webhook-create-feedback" aria-live="polite"></p>
+  </form>
+
+  <div id="webhook-reveal" class="form-card warn-text" hidden>
+    <h3 class="form-card-title">Guarda este secret ahora</h3>
+    <p class="muted panel-copy"><strong>El secret se muestra una sola vez.</strong> Configura tu receptor (Slack/Discord/script) para verificar la firma <code>X-Ameli-Signature: sha256=...</code>.</p>
+    <pre class="mfa-recovery-list" id="webhook-reveal-value" style="word-break:break-all;white-space:pre-wrap;"></pre>
+    <div class="modal-actions-row">
+      <button class="icon-action" type="button" id="webhook-reveal-copy">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">content_copy</span>
+        <span>Copiar</span>
+      </button>
+      <button class="primary" type="button" id="webhook-reveal-ack">Listo, lo guarde</button>
+    </div>
+  </div>
+
+  <div class="events" id="webhook-list">
+    {% if webhooks|length == 0 %}
+    <div class="empty-state" data-webhooks-empty>Sin webhooks creados todavia.</div>
+    {% endif %}
+    {% for endpoint in webhooks %}
+    <article class="event ev-{% if endpoint.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}"
+             data-webhook-id="{{ endpoint.id }}">
+      <div class="ev-top">
+        <span class="ev-dot"></span>
+        <span class="ev-state">{{ endpoint.name }}</span>
+        <span class="session-state-badge {% if endpoint.enabled %}active{% else %}revoked{% endif %}">
+          {% if endpoint.enabled %}Activo{% else %}Deshabilitado{% endif %}
+        </span>
+      </div>
+      <div class="admin-inline-meta">
+        <span class="session-meta-item"><code>{{ endpoint.url|truncatechars:60 }}</code></span>
+        <span class="session-meta-item">Entregas: {{ endpoint.total_deliveries }} ({{ endpoint.total_failures }} fallos)</span>
+        {% if endpoint.last_triggered_at %}
+        <span class="session-meta-item">Ultimo intento: {{ endpoint.last_triggered_at|slice:":19" }}</span>
+        {% endif %}
+        {% if endpoint.events %}
+        <span class="session-meta-item">Eventos: {{ endpoint.events|join:", " }}</span>
+        {% else %}
+        <span class="session-meta-item muted">Suscrito a TODOS los eventos</span>
+        {% endif %}
+      </div>
+      {% if endpoint.enabled %}
+      <div class="modal-actions-row" style="margin-top:8px;">
+        <button class="icon-action" type="button" data-webhook-revoke="{{ endpoint.id }}">
+          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">link_off</span>
+          <span>Deshabilitar</span>
+        </button>
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>

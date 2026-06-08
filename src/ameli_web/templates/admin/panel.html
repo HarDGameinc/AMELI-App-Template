@@ -239,6 +239,8 @@
     <section class="panel" id="admin-audit-panel" data-pagination-panel="audit">
       {% include "admin/_audit_panel.html" %}
     </section>
+
+    {% include "admin/_webhooks_panel.html" %}
   </div>
 
   <aside class="admin-layout-side">
@@ -713,6 +715,138 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
     }
   });
+
+  // ---- Webhooks ----
+  const webhookForm = document.getElementById("webhook-create-form");
+  const webhookList = document.getElementById("webhook-list");
+  if (webhookForm && webhookList) {
+    const nameInput = document.getElementById("webhook-name");
+    const urlInput = document.getElementById("webhook-url");
+    const eventsInput = document.getElementById("webhook-events");
+    const createFeedback = document.getElementById("webhook-create-feedback");
+    const revealCard = document.getElementById("webhook-reveal");
+    const revealValue = document.getElementById("webhook-reveal-value");
+    const revealCopy = document.getElementById("webhook-reveal-copy");
+    const revealAck = document.getElementById("webhook-reveal-ack");
+
+    const flash = (message, isError = false) => {
+      if (!createFeedback) return;
+      createFeedback.textContent = message;
+      createFeedback.classList.toggle("warn-text", !!isError);
+      setTimeout(() => { if (createFeedback.textContent === message) createFeedback.textContent = ""; }, 3500);
+    };
+
+    webhookForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = (nameInput?.value || "").trim();
+      const url = (urlInput?.value || "").trim();
+      const events = (eventsInput?.value || "")
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      if (!name || !url) { flash("Nombre y URL son obligatorios.", true); return; }
+      try {
+        const response = await fetch("/admin/webhooks/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken,
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({ name, url, events }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          flash(data.error || "No se pudo crear el webhook.", true);
+          return;
+        }
+        revealValue.textContent =
+          `Endpoint id: ${data.endpoint.id}\nSecret (firma HMAC): ${data.endpoint.secret}\n\n`
+          + `Configura tu receptor para verificar el header:\n  X-Ameli-Signature: sha256=hmac_sha256(secret, body)`;
+        revealCard.hidden = false;
+        revealCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        nameInput.value = ""; urlInput.value = ""; eventsInput.value = "";
+        appendWebhookRow(data.endpoint);
+        flash("Webhook creado. Guarda el secret.");
+      } catch (err) {
+        flash("Error de red al crear el webhook.", true);
+      }
+    });
+
+    revealCopy?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(revealValue.textContent || "");
+        flash("Secret copiado al portapapeles.");
+      } catch (err) {
+        flash("No se pudo copiar — selecciona manualmente.", true);
+      }
+    });
+
+    revealAck?.addEventListener("click", () => {
+      revealCard.hidden = true;
+      revealValue.textContent = "";
+    });
+
+    webhookList.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-webhook-revoke]");
+      if (!button) return;
+      const endpointId = button.dataset.webhookRevoke;
+      if (!confirm("Deshabilitar este webhook? Dejara de recibir eventos.")) return;
+      button.disabled = true;
+      try {
+        const response = await fetch(`/admin/webhooks/${endpointId}/revoke/`, {
+          method: "POST",
+          headers: { "X-CSRF-Token": csrfToken },
+          credentials: "same-origin",
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          alert(data.error || "No se pudo deshabilitar.");
+          button.disabled = false;
+          return;
+        }
+        const article = button.closest("[data-webhook-id]");
+        if (article) {
+          article.classList.remove("ev-OPERATIVO");
+          article.classList.add("ev-DEGRADADO");
+          const badge = article.querySelector(".session-state-badge");
+          if (badge) { badge.textContent = "Deshabilitado"; badge.classList.replace("active", "revoked"); }
+          button.closest(".modal-actions-row")?.remove();
+        }
+      } catch (err) {
+        alert("Error de red al deshabilitar.");
+        button.disabled = false;
+      }
+    });
+
+    function appendWebhookRow(endpoint) {
+      const empty = webhookList.querySelector("[data-webhooks-empty]");
+      empty?.remove();
+      const article = document.createElement("article");
+      article.className = "event ev-OPERATIVO";
+      article.dataset.webhookId = endpoint.id;
+      const eventsLabel = (endpoint.events && endpoint.events.length)
+        ? `Eventos: ${endpoint.events.join(", ")}`
+        : `<span class="muted">Suscrito a TODOS los eventos</span>`;
+      article.innerHTML = `
+        <div class="ev-top">
+          <span class="ev-dot"></span>
+          <span class="ev-state">${endpoint.name}</span>
+          <span class="session-state-badge active">Activo</span>
+        </div>
+        <div class="admin-inline-meta">
+          <span class="session-meta-item"><code>${endpoint.url}</code></span>
+          <span class="session-meta-item">Entregas: 0 (0 fallos)</span>
+          <span class="session-meta-item">${eventsLabel}</span>
+        </div>
+        <div class="modal-actions-row" style="margin-top:8px;">
+          <button class="icon-action" type="button" data-webhook-revoke="${endpoint.id}">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">link_off</span>
+            <span>Deshabilitar</span>
+          </button>
+        </div>
+      `;
+      webhookList.prepend(article);
+    }
+  }
 });
 </script>
 {% endblock %}

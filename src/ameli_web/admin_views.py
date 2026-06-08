@@ -135,6 +135,10 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         current_session_key=current_session_key,
         **sessions_filters,
     )
+    from ameli_web.webhooks.models import WebhookEndpoint
+    from ameli_web.webhooks.services import serialize_endpoint
+    webhooks_list = [serialize_endpoint(e) for e in WebhookEndpoint.objects.all()]
+
     context = {
         "version": __version__,
         "users": users_page.items,
@@ -144,6 +148,7 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
             per_page_param="users_per_page",
         ),
         "users_filters": users_filters,
+        "webhooks": webhooks_list,
         "audit_entries": audit_page.items,
         "audit_pagination": audit_page.as_context(
             page_param="audit_page",
@@ -484,3 +489,60 @@ def admin_users_export(request: HttpRequest) -> HttpResponse:
     response = StreamingHttpResponse(_iter_users_csv_rows(queryset), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="users.csv"'
     return response
+
+
+# ============================ Webhooks admin ============================
+
+
+@superadmin_required
+def admin_webhooks(request: HttpRequest) -> JsonResponse:
+    from ameli_web.webhooks.services import (
+        create_webhook_endpoint,
+        revoke_webhook_endpoint,
+        serialize_endpoint,
+    )
+    from ameli_web.webhooks.models import WebhookEndpoint
+
+    if request.method == "GET":
+        items = [serialize_endpoint(e) for e in WebhookEndpoint.objects.all()]
+        return JsonResponse({"ok": True, "endpoints": items})
+
+    if request.method == "POST":
+        try:
+            payload = _json_body(request)
+            endpoint = create_webhook_endpoint(
+                name=str(payload.get("name") or "").strip(),
+                url=str(payload.get("url") or "").strip(),
+                events=payload.get("events") or [],
+                user=request.user,
+            )
+        except ValueError as exc:
+            return _json_error(str(exc))
+        return JsonResponse({
+            "ok": True,
+            "endpoint": serialize_endpoint(endpoint, include_secret=True),
+        })
+
+    return _json_error("method not allowed", status=405)
+
+
+@require_POST
+@superadmin_required
+def admin_webhook_revoke(request: HttpRequest, endpoint_id: int) -> JsonResponse:
+    from ameli_web.webhooks.services import revoke_webhook_endpoint, serialize_endpoint
+
+    try:
+        endpoint = revoke_webhook_endpoint(endpoint_id)
+    except ValueError as exc:
+        return _json_error(str(exc), status=404)
+    return JsonResponse({"ok": True, "endpoint": serialize_endpoint(endpoint)})
+
+
+@require_GET
+@superadmin_required
+def admin_webhook_deliveries(request: HttpRequest, endpoint_id: int) -> JsonResponse:
+    from ameli_web.webhooks.models import WebhookDelivery
+    from ameli_web.webhooks.services import serialize_delivery
+
+    rows = WebhookDelivery.objects.filter(endpoint_id=endpoint_id).order_by("-created_at")[:30]
+    return JsonResponse({"ok": True, "deliveries": [serialize_delivery(d) for d in rows]})
