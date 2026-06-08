@@ -74,6 +74,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "ameli_web.accounts.middleware.ApiTokenAuthMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "ameli_web.accounts.middleware.UserSessionMiddleware",
     "ameli_web.accounts.middleware.AdminAccessAuditMiddleware",

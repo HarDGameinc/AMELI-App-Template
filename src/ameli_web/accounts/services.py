@@ -1403,3 +1403,123 @@ def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[
         payload={},
     )
     return {"ok": True, "status": "completed", "user": serialize_user(user)}
+
+
+# ============================ API tokens ============================
+
+API_TOKEN_PREFIX = "ameli_"
+_API_TOKEN_ENTROPY_BYTES = 30  # base64-encoded -> 40 chars; total length ~46
+
+
+def _hash_api_token(plaintext: str) -> str:
+    """SHA-256 hex digest of the plaintext token; we never store the secret."""
+    import hashlib
+
+    return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def _generate_api_token_plaintext() -> str:
+    """Return ``ameli_<urlsafe-base64>``. Caller is responsible for hashing."""
+    import secrets
+
+    return API_TOKEN_PREFIX + secrets.token_urlsafe(_API_TOKEN_ENTROPY_BYTES)
+
+
+def serialize_api_token(token) -> dict[str, Any]:
+    return {
+        "id": token.id,
+        "name": token.name,
+        "token_prefix": token.token_prefix,
+        "created_at": token.created_at.isoformat() if token.created_at else None,
+        "last_used_at": token.last_used_at.isoformat() if token.last_used_at else None,
+        "revoked_at": token.revoked_at.isoformat() if token.revoked_at else None,
+        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+        "is_revoked": token.is_revoked,
+        "is_expired": token.is_expired(),
+    }
+
+
+def list_api_tokens(user) -> list[dict[str, Any]]:
+    """Return all tokens for the user (including revoked and expired)."""
+    from ameli_web.accounts.models import ApiToken
+
+    rows = ApiToken.objects.filter(user=user).order_by("-created_at")
+    return [serialize_api_token(row) for row in rows]
+
+
+def create_api_token(user, *, name: str, expires_at=None) -> dict[str, Any]:
+    """Create a new token; returns the plaintext ONCE.
+
+    The plaintext is included in the response under ``token`` so the caller
+    can show it to the user. Subsequent reads expose only the prefix.
+    """
+    from ameli_web.accounts.models import ApiToken
+
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("token name is required")
+    if len(clean_name) > 120:
+        raise ValueError("token name must be 120 characters or less")
+
+    plaintext = _generate_api_token_plaintext()
+    token = ApiToken.objects.create(
+        user=user,
+        name=clean_name,
+        token_hash=_hash_api_token(plaintext),
+        token_prefix=plaintext[: len(API_TOKEN_PREFIX) + 6],
+        expires_at=expires_at,
+    )
+    record_audit(
+        "api_token_created",
+        actor=user,
+        target_username=user.username,
+        payload={"token_id": token.id, "name": token.name, "prefix": token.token_prefix},
+    )
+    return {
+        "ok": True,
+        "token": plaintext,  # shown to the user once and only here
+        "record": serialize_api_token(token),
+    }
+
+
+def revoke_api_token(user, *, token_id: int) -> dict[str, Any]:
+    from ameli_web.accounts.models import ApiToken
+
+    token = ApiToken.objects.filter(user=user, id=token_id).first()
+    if token is None:
+        raise ValueError("token not found")
+    if token.revoked_at is not None:
+        return {"ok": True, "status": "already-revoked", "record": serialize_api_token(token)}
+    token.revoked_at = timezone.now()
+    token.save(update_fields=["revoked_at"])
+    record_audit(
+        "api_token_revoked",
+        actor=user,
+        target_username=user.username,
+        payload={"token_id": token.id, "name": token.name, "prefix": token.token_prefix},
+    )
+    return {"ok": True, "status": "revoked", "record": serialize_api_token(token)}
+
+
+def authenticate_api_token(plaintext: str):
+    """Resolve the user behind a bearer token, or ``None``.
+
+    Returns the ``User`` instance when the token is valid (not revoked,
+    not expired, user still enabled). Also bumps ``last_used_at``.
+    """
+    from ameli_web.accounts.models import ApiToken
+
+    if not plaintext or not plaintext.startswith(API_TOKEN_PREFIX):
+        return None
+    token = ApiToken.objects.select_related("user").filter(
+        token_hash=_hash_api_token(plaintext)
+    ).first()
+    if token is None:
+        return None
+    if token.is_revoked or token.is_expired():
+        return None
+    if not token.user.is_active:
+        return None
+    token.last_used_at = timezone.now()
+    token.save(update_fields=["last_used_at"])
+    return token.user

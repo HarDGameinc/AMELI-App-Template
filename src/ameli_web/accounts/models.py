@@ -133,3 +133,38 @@ class MFAEmailChallenge(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username}::email-challenge"
+
+
+class ApiToken(models.Model):
+    """A user-scoped bearer token for programmatic API access.
+
+    We never persist the plaintext token. The hash column is the canonical
+    identifier; the prefix is stored separately so the UI and audit can
+    reference a specific token without needing the secret (``ameli_xN9...``).
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="api_tokens")
+    name = models.CharField(max_length=120)
+    token_hash = models.CharField(max_length=128, unique=True, db_index=True)
+    token_prefix = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(blank=True, null=True)
+    revoked_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username}::token::{self.token_prefix}"
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
+
+    def is_expired(self, *, at=None) -> bool:
+        if self.expires_at is None:
+            return False
+        from django.utils import timezone
+
+        return (at or timezone.now()) >= self.expires_at
