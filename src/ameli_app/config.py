@@ -224,7 +224,7 @@ def load_settings(
             default=False,
         ),
         django_secret_key=os.getenv("AMELI_APP_DJANGO_SECRET_KEY", "ameli-app-dev-secret-key"),
-        django_debug=_as_bool(os.getenv("AMELI_APP_DJANGO_DEBUG"), default=environment == "dev"),
+        django_debug=_as_bool(os.getenv("AMELI_APP_DJANGO_DEBUG"), default=False),
         profile_uploads_dir=path_from_value(
             str(auth.get("profile_uploads_dir", f"data/uploads/{environment}"))
         ),

@@ -13,9 +13,45 @@ CFG = load_settings()
 ENV_NAME = (os.environ.get("APP_ENV", "").strip().lower() or CFG.environment or "dev")
 SECRET_KEY = CFG.django_secret_key
 DEBUG = CFG.django_debug
+
+# Boot-time guards: refuse to start a non-dev deploy that still uses the
+# repo's bundled defaults for SECRET_KEY or DEBUG. These are the two
+# misconfigurations most likely to leak through a copy-paste install
+# and they have outsized impact (session forgery, traceback PII leak).
+_INSECURE_DEFAULT_SECRET = "ameli-app-dev-secret-key"  # noqa: S105 (intentional reference)
+_IS_DEV_ENV = ENV_NAME == "dev"
+
+if SECRET_KEY == _INSECURE_DEFAULT_SECRET and not _IS_DEV_ENV:
+    raise RuntimeError(
+        "AMELI_APP_DJANGO_SECRET_KEY is the bundled default; refuse to boot "
+        "outside the dev environment. Generate one with "
+        "`python -c 'import secrets; print(secrets.token_urlsafe(60))'` "
+        "and set it in the env file."
+    )
+if DEBUG and not _IS_DEV_ENV:
+    raise RuntimeError(
+        "AMELI_APP_DJANGO_DEBUG=true is not allowed outside the dev environment. "
+        "Debug mode leaks SECRET_KEY, env vars, and stack traces."
+    )
+
+_default_allowed = "*" if _IS_DEV_ENV else ""
 ALLOWED_HOSTS = [
-    item.strip() for item in os.environ.get("AMELI_APP_DJANGO_ALLOWED_HOSTS", "*").split(",") if item.strip()
+    item.strip()
+    for item in os.environ.get("AMELI_APP_DJANGO_ALLOWED_HOSTS", _default_allowed).split(",")
+    if item.strip()
 ]
+if not ALLOWED_HOSTS:
+    raise RuntimeError(
+        "AMELI_APP_DJANGO_ALLOWED_HOSTS is empty. Set it to the comma-separated "
+        "list of hostnames this deploy answers to (e.g. 'metro.lan,10.0.0.5'). "
+        "Wildcards are accepted only in the dev environment."
+    )
+if "*" in ALLOWED_HOSTS and not _IS_DEV_ENV:
+    raise RuntimeError(
+        "AMELI_APP_DJANGO_ALLOWED_HOSTS contains '*' outside the dev environment. "
+        "Wildcards enable Host header injection and password reset poisoning."
+    )
+
 CSRF_TRUSTED_ORIGINS = [
     item.strip()
     for item in os.environ.get("AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
