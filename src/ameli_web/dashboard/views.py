@@ -168,15 +168,54 @@ def _redoc_html() -> str:
 </html>"""
 
 
+_PROCESS_START_TS = None
+
+
+def _process_uptime_seconds() -> int:
+    """Best-effort uptime since this Python process started.
+
+    We capture the start timestamp on first call rather than at import,
+    so testing with ``override_settings`` or reloading the module doesn't
+    skew the reading. The fallback is ``psutil`` when available; if not,
+    we rely on a module-level cached timestamp.
+    """
+    import time
+
+    global _PROCESS_START_TS
+    if _PROCESS_START_TS is None:
+        try:
+            import psutil
+
+            _PROCESS_START_TS = psutil.Process().create_time()
+        except Exception:
+            _PROCESS_START_TS = time.time()
+    return max(0, int(time.time() - _PROCESS_START_TS))
+
+
 @require_GET
 def health(request):
     db_status = database_status(settings.CFG)
+
+    checks = {
+        "database": {
+            "ok": bool(db_status.get("ok")),
+            "detail": db_status,
+        },
+    }
+
+    overall_ok = all(check["ok"] for check in checks.values())
     return JsonResponse(
         {
-            "ok": True,
-            "status": "OPERATIVO" if db_status.get("ok") else "DEGRADADO",
-            "db": db_status,
+            "ok": overall_ok,
+            "status": "OPERATIVO" if overall_ok else "DEGRADADO",
+            "service": settings.CFG.app_name,
+            "environment": settings.CFG.environment,
             "version": __version__,
+            "uptime_seconds": _process_uptime_seconds(),
+            "checks": checks,
+            # kept at the top level for backwards compatibility with the
+            # previous probe shape (``db`` was a sibling of ``ok``)
+            "db": db_status,
         }
     )
 
