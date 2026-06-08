@@ -1,0 +1,18 @@
+# Caddyfile de ejemplo para AMELI App Template
+# Ver docs/TLS_WITH_CADDY.md para instalacion y trust de la CA interna.
+
+metro-dev.lan {
+    tls internal
+    encode gzip
+
+    reverse_proxy 127.0.0.1:18080
+
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+}
+
+# Repetir el bloque por cada environment.
+# metro-staging.lan {
+#     tls internal
+#     reverse_proxy 127.0.0.1:18081
+# }
