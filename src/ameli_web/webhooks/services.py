@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
+import socket
 import time
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
@@ -15,6 +18,62 @@ from .models import WebhookDelivery, WebhookEndpoint
 
 _DEFAULT_TIMEOUT_SECONDS = 5
 _MAX_RESPONSE_EXCERPT = 400
+
+
+class WebhookTargetForbidden(Exception):
+    """Raised when an endpoint URL resolves to a private/loopback/reserved
+    address that the dispatcher must refuse (SSRF mitigation).
+
+    A superadmin (or compromised superadmin account) could otherwise point
+    a webhook at ``http://169.254.169.254/`` to read cloud metadata, at
+    ``http://127.0.0.1:5432/`` to fingerprint internal services, or at
+    ``http://10.0.0.1/admin/`` to pivot to lateral systems.
+    """
+
+
+def _is_safe_target_address(host: str) -> bool:
+    """Resolve ``host`` and accept only globally routable IP addresses.
+
+    Refuses loopback, link-local, multicast, reserved, private (RFC1918),
+    unspecified, and shared address space. Also blocks IPv4-mapped IPv6
+    variants of the same to defeat ``::ffff:10.0.0.1`` style tricks.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        sockaddr = info[4]
+        raw_ip = sockaddr[0]
+        try:
+            ip_obj = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            return False
+        # Unmap IPv4-in-IPv6 so the private-range check matches.
+        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped:
+            ip_obj = ip_obj.ipv4_mapped
+        if (
+            ip_obj.is_loopback
+            or ip_obj.is_link_local
+            or ip_obj.is_multicast
+            or ip_obj.is_reserved
+            or ip_obj.is_private
+            or ip_obj.is_unspecified
+        ):
+            return False
+    return True
+
+
+def _assert_target_is_safe(url: str) -> None:
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if not host:
+        raise WebhookTargetForbidden("webhook url has no hostname")
+    if not _is_safe_target_address(host):
+        raise WebhookTargetForbidden(
+            f"webhook target {host!r} resolves to a private or reserved address; "
+            "refusing to deliver to avoid SSRF"
+        )
 
 
 def _generate_secret() -> str:
@@ -73,6 +132,12 @@ def create_webhook_endpoint(*, name: str, url: str, events: list[str] | None = N
         raise ValueError("webhook name is required")
     if not clean_url.startswith(("http://", "https://")):
         raise ValueError("webhook url must start with http:// or https://")
+    # Refuse private/loopback targets at create time so an operator gets a
+    # clear error instead of "all my deliveries are failing silently".
+    try:
+        _assert_target_is_safe(clean_url)
+    except WebhookTargetForbidden as exc:
+        raise ValueError(str(exc)) from exc
     clean_events = [str(e).strip() for e in (events or []) if str(e).strip()]
     endpoint = WebhookEndpoint.objects.create(
         name=clean_name,
@@ -123,6 +188,35 @@ def deliver_event(endpoint: WebhookEndpoint, *, action: str, payload: dict[str, 
     response_excerpt = ""
     error_text = ""
     success = False
+
+    # Re-check the target at delivery time. DNS records can change between
+    # ``create`` and ``deliver`` (rebinding attacks); revalidating here
+    # closes that window cheaply.
+    try:
+        _assert_target_is_safe(endpoint.url)
+    except WebhookTargetForbidden as exc:
+        delivery = WebhookDelivery.objects.create(
+            endpoint=endpoint,
+            event_action=action,
+            event_payload=payload,
+            status_code=None,
+            response_excerpt="",
+            success=False,
+            error=str(exc)[:_MAX_RESPONSE_EXCERPT],
+            duration_ms=0,
+        )
+        now = timezone.now()
+        endpoint.last_triggered_at = now
+        endpoint.total_deliveries = (endpoint.total_deliveries or 0) + 1
+        endpoint.last_failure_at = now
+        endpoint.total_failures = (endpoint.total_failures or 0) + 1
+        endpoint.save(
+            update_fields=[
+                "last_triggered_at", "last_failure_at",
+                "total_deliveries", "total_failures",
+            ]
+        )
+        return delivery
 
     request = urllib_request.Request(endpoint.url, data=body, headers=headers, method="POST")
     try:
