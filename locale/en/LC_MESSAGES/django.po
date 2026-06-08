@@ -1,0 +1,42 @@
+# English translation for AMELI App Template.
+# Copyright (C) 2026 hardgameinc
+# This file is distributed under the same license as the AMELI App Template package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ameli-app-template\n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: 2026-06-09\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Demasiados intentos desde esta direccion. Espera unos segundos."
+msgstr "Too many attempts from this address. Wait a few seconds."
+
+msgid ""
+"Cuenta bloqueada temporalmente por demasiados intentos fallidos. Espera unos "
+"minutos o usa la recuperacion de clave."
+msgstr ""
+"Account temporarily locked after too many failed attempts. Wait a few "
+"minutes or use password recovery."
+
+msgid "Sesion cerrada."
+msgstr "Signed out."
+
+msgid "Perfil actualizado."
+msgstr "Profile updated."
+
+msgid "No se pudo guardar el perfil."
+msgstr "Could not save profile."
+
+msgid "Imagen de perfil actualizada."
+msgstr "Profile picture updated."
+
+msgid "Imagen de perfil eliminada."
+msgstr "Profile picture removed."
+
+msgid "No se pudo actualizar la contrasena."
+msgstr "Could not update password."

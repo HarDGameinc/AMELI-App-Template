@@ -1,0 +1,42 @@
+# Spanish translation for AMELI App Template.
+# Copyright (C) 2026 hardgameinc
+# This file is distributed under the same license as the AMELI App Template package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ameli-app-template\n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: 2026-06-09\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Demasiados intentos desde esta direccion. Espera unos segundos."
+msgstr "Demasiados intentos desde esta direccion. Espera unos segundos."
+
+msgid ""
+"Cuenta bloqueada temporalmente por demasiados intentos fallidos. Espera unos "
+"minutos o usa la recuperacion de clave."
+msgstr ""
+"Cuenta bloqueada temporalmente por demasiados intentos fallidos. Espera unos "
+"minutos o usa la recuperacion de clave."
+
+msgid "Sesion cerrada."
+msgstr "Sesion cerrada."
+
+msgid "Perfil actualizado."
+msgstr "Perfil actualizado."
+
+msgid "No se pudo guardar el perfil."
+msgstr "No se pudo guardar el perfil."
+
+msgid "Imagen de perfil actualizada."
+msgstr "Imagen de perfil actualizada."
+
+msgid "Imagen de perfil eliminada."
+msgstr "Imagen de perfil eliminada."
+
+msgid "No se pudo actualizar la contrasena."
+msgstr "No se pudo actualizar la contrasena."

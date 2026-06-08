@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db.models import Count
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from django.conf import settings as django_settings
 from django.contrib.auth.tokens import default_token_generator
@@ -1614,7 +1615,7 @@ def check_login_throttle(*, username: str, ip: str) -> None:
         ip_fails = _count_recent_login_failures(ip=ip, seconds=cfg["ip_window"])
         if ip_fails >= cfg["ip_max"]:
             raise LoginThrottled(
-                "Demasiados intentos desde esta direccion. Esperá unos segundos.",
+                _("Demasiados intentos desde esta direccion. Espera unos segundos."),
                 retry_after=cfg["ip_window"],
             )
 
@@ -1624,7 +1625,9 @@ def check_login_throttle(*, username: str, ip: str) -> None:
         )
         if user_fails >= cfg["user_max"]:
             raise AccountLocked(
-                "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
-                "Esperá unos minutos o usa la recuperacion de clave.",
+                _(
+                    "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
+                    "Espera unos minutos o usa la recuperacion de clave."
+                ),
                 retry_after=cfg["user_window"],
             )

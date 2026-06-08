@@ -72,6 +72,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -116,6 +117,15 @@ LANGUAGE_CODE = "es-cl"
 TIME_ZONE = CFG.timezone or "America/Santiago"
 USE_I18N = True
 USE_TZ = True
+
+# Languages we ship with the Template. Operators can add more by dropping
+# additional ``.po`` files under ``locale/<code>/LC_MESSAGES/django.po``
+# and registering the code here.
+LANGUAGES = [
+    ("es", "Espanol"),
+    ("en", "English"),
+]
+LOCALE_PATHS = [str(PROJECT_DIR / "locale")]
 
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [str(PROJECT_DIR / "src" / "ameli_app" / "static")]

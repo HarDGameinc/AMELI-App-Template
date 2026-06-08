@@ -14,6 +14,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
 
 from ameli_app import __version__
@@ -136,7 +137,7 @@ class TemplateLoginView(LoginView):
 @require_POST
 def logout_view(request: HttpRequest) -> HttpResponse:
     auth_logout(request)
-    messages.success(request, "Sesion cerrada.")
+    messages.success(request, _("Sesion cerrada."))
     return redirect("dashboard-home")
 
 
@@ -238,9 +239,9 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
                 request,
                 "Cambiaste tu email, asi que el 2FA por email se desactivo. Si lo queres usar de nuevo, activalo desde Seguridad.",
             )
-        messages.success(request, "Perfil actualizado.")
+        messages.success(request, _("Perfil actualizado."))
     else:
-        messages.error(request, "No se pudo guardar el perfil.")
+        messages.error(request, _("No se pudo guardar el perfil."))
     return redirect("accounts:profile")
 
 
@@ -284,7 +285,7 @@ def update_avatar(request: HttpRequest) -> HttpResponse:
         )
         if _expects_json(request):
             return JsonResponse({"ok": True, "status": "updated", "user": serialize_user(request.user)})
-        messages.success(request, "Imagen de perfil actualizada.")
+        messages.success(request, _("Imagen de perfil actualizada."))
     else:
         errors = [error for group in form.errors.values() for error in group]
         if _expects_json(request):
@@ -306,7 +307,7 @@ def delete_avatar_view(request: HttpRequest) -> HttpResponse:
     )
     if _expects_json(request):
         return JsonResponse({"ok": True, "status": "updated", "user": serialize_user(request.user)})
-    messages.success(request, "Imagen de perfil eliminada.")
+    messages.success(request, _("Imagen de perfil eliminada."))
     return redirect("accounts:profile")
 
 
@@ -360,7 +361,7 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
             target_username=request.user.username,
             payload={"reason": "validation-error"},
         )
-        messages.error(request, "No se pudo actualizar la contrasena.")
+        messages.error(request, _("No se pudo actualizar la contrasena."))
     return redirect("accounts:profile")
 
 
