@@ -147,6 +147,15 @@ class ApiToken(models.Model):
     name = models.CharField(max_length=120)
     token_hash = models.CharField(max_length=128, unique=True, db_index=True)
     token_prefix = models.CharField(max_length=16)
+    scopes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Capability scopes carried by this token. Empty list = ``read`` "
+            "only (least privilege). Known values: ``read``, ``write``, "
+            "``admin``. Admin-only endpoints require ``admin``."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(blank=True, null=True)
     revoked_at = models.DateTimeField(blank=True, null=True)
@@ -168,3 +177,18 @@ class ApiToken(models.Model):
         from django.utils import timezone
 
         return (at or timezone.now()) >= self.expires_at
+
+    def has_scope(self, scope: str) -> bool:
+        """Return True when the token is allowed to perform ``scope``.
+
+        Default-deny: an empty scopes list means ``read`` only, NOT "all".
+        This protects users that copy/pasted older tokens from before
+        scopes existed (the migration backfills them with ``["read"]``).
+        """
+        normalised = (scope or "").strip().lower()
+        if not normalised:
+            return False
+        token_scopes = {str(s).strip().lower() for s in (self.scopes or [])}
+        if not token_scopes:
+            return normalised == "read"
+        return normalised in token_scopes

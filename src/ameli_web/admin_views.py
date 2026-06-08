@@ -79,6 +79,16 @@ def superadmin_required(view_func):
             if _expects_json(request):
                 return _json_error("admin access required", status=403)
             return redirect("/profile/")
+        # If the request was authenticated by an API token (not a session),
+        # require the token to carry the ``admin`` scope. This ensures a
+        # leaked token cannot perform admin actions just because its owner
+        # happens to be a superadmin.
+        active_token = getattr(request, "api_token", None)
+        if active_token is not None and not active_token.has_scope("admin"):
+            return _json_error(
+                "token lacks admin scope; recreate with --scope admin",
+                status=403,
+            )
         return view_func(request, *args, **kwargs)
 
     return _wrapped

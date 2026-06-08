@@ -54,11 +54,14 @@ class ApiTokenAuthMiddleware:
         header = request.META.get("HTTP_AUTHORIZATION", "")
         if header.startswith("Bearer "):
             plaintext = header[len("Bearer "):].strip()
-            from .services import authenticate_api_token
+            from .services import authenticate_api_token_with_record
 
-            user = authenticate_api_token(plaintext)
-            if user is not None:
-                # Tag the request so views can tell session auth from token auth.
+            record = authenticate_api_token_with_record(plaintext)
+            if record is not None:
+                token, user = record
+                # Tag the request so views can tell session auth from token
+                # auth and enforce per-token scopes.
+                request.api_token = token
                 request.api_token_user = user
                 if not getattr(request.user, "is_authenticated", False):
                     request.user = user

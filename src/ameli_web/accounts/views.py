@@ -782,6 +782,7 @@ def api_tokens_view(request: HttpRequest) -> JsonResponse:
         result = create_api_token(
             request.user,
             name=str(payload.get("name") or "").strip(),
+            scopes=payload.get("scopes"),
         )
     except ValueError as exc:
         return _json_error(str(exc))

@@ -123,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional expiry, in days from now.",
     )
+    token.add_argument(
+        "--scope",
+        action="append",
+        dest="scopes",
+        default=None,
+        help=(
+            "Capability scope (repeatable). Allowed: read, write, admin. "
+            "Default is read-only when omitted."
+        ),
+    )
 
     revoke = sub.add_parser(
         "revoke-token",
@@ -212,7 +222,9 @@ def _handle_create_token(args) -> int:
         expires_at = timezone.now() + timedelta(days=args.expires_in_days)
 
     try:
-        result = create_api_token(user, name=args.name, expires_at=expires_at)
+        result = create_api_token(
+            user, name=args.name, expires_at=expires_at, scopes=args.scopes,
+        )
     except ValueError as exc:
         print(f"create-token failed: {exc}", file=sys.stderr)
         return 2

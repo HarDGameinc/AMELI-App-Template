@@ -1447,11 +1447,34 @@ def _generate_api_token_plaintext() -> str:
     return API_TOKEN_PREFIX + secrets.token_urlsafe(_API_TOKEN_ENTROPY_BYTES)
 
 
+VALID_API_TOKEN_SCOPES = ("read", "write", "admin")
+
+
+def _normalise_scopes(raw) -> list[str]:
+    """Clean and validate an incoming scopes list. Defaults to ``["read"]``
+    when empty (least-privilege)."""
+    cleaned = []
+    seen = set()
+    for item in (raw or []):
+        value = str(item or "").strip().lower()
+        if not value:
+            continue
+        if value not in VALID_API_TOKEN_SCOPES:
+            raise ValueError(
+                f"unknown scope {value!r}; allowed: {', '.join(VALID_API_TOKEN_SCOPES)}"
+            )
+        if value not in seen:
+            seen.add(value)
+            cleaned.append(value)
+    return cleaned or ["read"]
+
+
 def serialize_api_token(token) -> dict[str, Any]:
     return {
         "id": token.id,
         "name": token.name,
         "token_prefix": token.token_prefix,
+        "scopes": list(token.scopes or []) or ["read"],
         "created_at": token.created_at.isoformat() if token.created_at else None,
         "last_used_at": token.last_used_at.isoformat() if token.last_used_at else None,
         "revoked_at": token.revoked_at.isoformat() if token.revoked_at else None,
@@ -1469,11 +1492,17 @@ def list_api_tokens(user) -> list[dict[str, Any]]:
     return [serialize_api_token(row) for row in rows]
 
 
-def create_api_token(user, *, name: str, expires_at=None) -> dict[str, Any]:
+def create_api_token(
+    user, *, name: str, expires_at=None, scopes: list[str] | None = None
+) -> dict[str, Any]:
     """Create a new token; returns the plaintext ONCE.
 
     The plaintext is included in the response under ``token`` so the caller
     can show it to the user. Subsequent reads expose only the prefix.
+
+    ``scopes`` controls what the token is allowed to do. Defaults to
+    ``["read"]`` so a token leaked from a script cannot escalate to
+    write/admin operations even when the owning user has those rights.
     """
     from ameli_web.accounts.models import ApiToken
 
@@ -1482,6 +1511,7 @@ def create_api_token(user, *, name: str, expires_at=None) -> dict[str, Any]:
         raise ValueError("token name is required")
     if len(clean_name) > 120:
         raise ValueError("token name must be 120 characters or less")
+    clean_scopes = _normalise_scopes(scopes)
 
     plaintext = _generate_api_token_plaintext()
     token = ApiToken.objects.create(
@@ -1489,13 +1519,17 @@ def create_api_token(user, *, name: str, expires_at=None) -> dict[str, Any]:
         name=clean_name,
         token_hash=_hash_api_token(plaintext),
         token_prefix=plaintext[: len(API_TOKEN_PREFIX) + 6],
+        scopes=clean_scopes,
         expires_at=expires_at,
     )
     record_audit(
         "api_token_created",
         actor=user,
         target_username=user.username,
-        payload={"token_id": token.id, "name": token.name, "prefix": token.token_prefix},
+        payload={
+            "token_id": token.id, "name": token.name,
+            "prefix": token.token_prefix, "scopes": clean_scopes,
+        },
     )
     return {
         "ok": True,
@@ -1523,11 +1557,11 @@ def revoke_api_token(user, *, token_id: int) -> dict[str, Any]:
     return {"ok": True, "status": "revoked", "record": serialize_api_token(token)}
 
 
-def authenticate_api_token(plaintext: str):
-    """Resolve the user behind a bearer token, or ``None``.
+def authenticate_api_token_with_record(plaintext: str):
+    """Resolve the (token, user) tuple behind a bearer token, or ``None``.
 
-    Returns the ``User`` instance when the token is valid (not revoked,
-    not expired, user still enabled). Also bumps ``last_used_at``.
+    Used by the middleware to enforce per-token scopes; views that don't
+    care about the token record can keep calling ``authenticate_api_token``.
     """
     from ameli_web.accounts.models import ApiToken
 
@@ -1544,7 +1578,13 @@ def authenticate_api_token(plaintext: str):
         return None
     token.last_used_at = timezone.now()
     token.save(update_fields=["last_used_at"])
-    return token.user
+    return (token, token.user)
+
+
+def authenticate_api_token(plaintext: str):
+    """Backwards-compatible wrapper: returns just the user."""
+    record = authenticate_api_token_with_record(plaintext)
+    return record[1] if record is not None else None
 
 
 # ============================ Login throttle ============================
