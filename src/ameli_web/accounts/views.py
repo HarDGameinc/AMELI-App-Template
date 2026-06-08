@@ -684,9 +684,23 @@ def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
 
 
 def _build_public_base_url(request: HttpRequest) -> str:
+    """Resolve the base URL for outbound links (password reset emails, etc).
+
+    Falling back to ``request.build_absolute_uri("/")`` would use the
+    request's ``Host`` header, which an attacker can spoof to redirect
+    reset emails to a server they control (password reset poisoning).
+    Outside dev we therefore REQUIRE ``public_url_base`` to be configured.
+    """
     configured = getattr(getattr(settings, "CFG", None), "public_url_base", "")
     if configured:
         return configured.rstrip("/")
+    if not settings.DEBUG and getattr(settings, "ENV_NAME", "dev") != "dev":
+        raise RuntimeError(
+            "public_url_base is not configured. Set ``dashboard.public_url_base`` "
+            "in app.yaml (or AMELI_APP_PUBLIC_URL_BASE) to the canonical URL of "
+            "this deploy. Falling back to the request Host header would expose "
+            "the password reset flow to host header injection."
+        )
     absolute = request.build_absolute_uri("/")
     return absolute.rstrip("/")
 
