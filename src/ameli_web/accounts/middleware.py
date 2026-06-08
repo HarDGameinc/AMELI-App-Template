@@ -1,9 +1,29 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
 
 from .services import record_audit, sync_request_session
+
+
+class SecurityHeadersMiddleware:
+    """Attach the project-wide CSP and a couple of supporting headers.
+
+    Django already sets ``X-Content-Type-Options`` and
+    ``Referrer-Policy`` from ``SECURE_*`` settings; CSP needs a custom
+    middleware. We keep this in-app to avoid adding ``django-csp``.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self._policy = getattr(settings, "CONTENT_SECURITY_POLICY", "")
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if self._policy and "Content-Security-Policy" not in response:
+            response["Content-Security-Policy"] = self._policy
+        return response
 
 
 class UserSessionMiddleware:

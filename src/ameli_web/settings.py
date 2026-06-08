@@ -107,6 +107,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "ameli_web.accounts.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -116,6 +117,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "ameli_web.accounts.middleware.UserSessionMiddleware",
     "ameli_web.accounts.middleware.AdminAccessAuditMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "ameli_web.urls"
@@ -174,8 +176,12 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/profile/"
 LOGOUT_REDIRECT_URL = "/login/"
 SESSION_COOKIE_NAME = CFG.session_cookie_name or "ameli_app_session"
-SESSION_COOKIE_SECURE = bool(CFG.session_cookie_secure)
+# Default to secure cookies outside dev so the operator opts INTO an
+# insecure deploy explicitly rather than the other way around.
+SESSION_COOKIE_SECURE = bool(CFG.session_cookie_secure) if _IS_DEV_ENV else True
 SESSION_COOKIE_AGE = max(300, int(CFG.session_max_age_seconds or 43200))
+SESSION_COOKIE_HTTPONLY = True  # JS cannot read the session cookie.
+SESSION_COOKIE_SAMESITE = "Lax"
 # When True, every authenticated request renews the session's expiry, so
 # ``SESSION_COOKIE_AGE`` works as an "inactivity timeout": the user only
 # gets logged out if they stop hitting the app for that many seconds.
@@ -186,10 +192,40 @@ SESSION_SAVE_EVERY_REQUEST = bool(CFG.session_idle_renewal)
 # doesn't lose the session (matches the rest of the Template's UX).
 SESSION_EXPIRE_AT_BROWSER_CLOSE = bool(CFG.session_expire_at_browser_close)
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+CSRF_COOKIE_HTTPONLY = True  # we read the token from the {% csrf_token %} tag, not from JS.
+CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_HEADER_NAME = "HTTP_X_CSRF_TOKEN"
-SECURE_BROWSER_XSS_FILTER = True
+
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
+
+# When a TLS-terminating proxy (Caddy, nginx) sits in front, Django needs
+# to know the original scheme to make ``request.is_secure()`` honest and
+# to set ``Secure`` cookies correctly. Configure your proxy to forward
+# ``X-Forwarded-Proto`` and uncomment the next line in production. Left
+# commented out by default to avoid trusting a header from an unknown
+# upstream when the operator is still bringing up TLS.
+# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# HSTS: only meaningful when the deploy is reachable over HTTPS, and
+# easy to lock yourself out of staging if you set it too early. Off by
+# default. Enable when TLS is stable.
+SECURE_HSTS_SECONDS = 0
+
+# Strict, source-friendly CSP. ``django-csp`` would give finer control
+# but adding it ships fine for this baseline.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "script-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
