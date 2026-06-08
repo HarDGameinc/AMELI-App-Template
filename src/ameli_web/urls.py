@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import admin
+from django.http import Http404, HttpResponse, HttpResponseForbidden
 from django.urls import include, path, re_path
 from django.views.static import serve
 
@@ -50,7 +51,38 @@ urlpatterns = [
 
 static_root = Path(settings.STATICFILES_DIRS[0])
 media_root = Path(settings.MEDIA_ROOT)
-urlpatterns += [
-    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": static_root}),
-    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": media_root}),
-]
+
+
+def _authenticated_media(request, path):
+    """Gate ``/media/`` behind login.
+
+    Avatars (and any future user-uploaded blob) live here. Without this
+    gate, anyone who guesses a filename can fetch it bypassing the rest
+    of the auth model. In production, Caddy/nginx is expected to enforce
+    the same rule and serve the bytes directly; this view is the
+    fallback when no reverse proxy is in front.
+    """
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return HttpResponseForbidden("authentication required")
+    try:
+        return serve(request, path, document_root=str(media_root))
+    except Http404:
+        raise
+
+
+if settings.DEBUG:
+    # ``django.views.static.serve`` is dev-only per Django's own docs.
+    # Outside dev, Caddy/nginx is expected to serve ``/static/`` and
+    # ``/media/`` directly from disk (and apply its own auth/quotas).
+    urlpatterns += [
+        re_path(r"^static/(?P<path>.*)$", serve, {"document_root": str(static_root)}),
+        re_path(r"^media/(?P<path>.*)$", _authenticated_media),
+    ]
+else:
+    # In non-dev we still wire ``/media/`` through the auth gate even
+    # though the reverse proxy should normally intercept it — defence in
+    # depth in case the proxy config drifts.
+    urlpatterns += [
+        re_path(r"^media/(?P<path>.*)$", _authenticated_media),
+    ]
