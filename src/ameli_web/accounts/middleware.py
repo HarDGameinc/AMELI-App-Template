@@ -32,10 +32,28 @@ class UserSessionMiddleware:
 
     def __call__(self, request):
         if getattr(request, "user", None) is not None and request.user.is_authenticated:
-            session_record = sync_request_session(request)
-            if session_record is not None and session_record.revoked_at is not None:
-                messages.warning(request, "Tu sesión fue revocada y necesitas iniciar sesión de nuevo.")
+            # Tokens are stateless; the per-session record is only relevant
+            # for cookie sessions. Skip for token auth to avoid creating
+            # spurious ``UserSession`` rows.
+            via_token = getattr(request, "api_token", None) is not None
+            # An admin can disable a user while their session is still
+            # active. Without this gate the user keeps making requests
+            # until the cookie expires. Force a logout the moment a
+            # disabled user comes back.
+            if not via_token and not request.user.is_active:
+                from django.contrib.auth import logout as auth_logout
+
+                auth_logout(request)
+                messages.warning(
+                    request,
+                    "Tu cuenta esta deshabilitada. Contacta al administrador.",
+                )
                 return redirect("accounts:login")
+            if not via_token:
+                session_record = sync_request_session(request)
+                if session_record is not None and session_record.revoked_at is not None:
+                    messages.warning(request, "Tu sesión fue revocada y necesitas iniciar sesión de nuevo.")
+                    return redirect("accounts:login")
         return self.get_response(request)
 
 
