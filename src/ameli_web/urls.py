@@ -26,6 +26,7 @@ urlpatterns = [
     path("admin/users", admin_views.admin_users, name="admin-users"),
     path("admin/audit", admin_views.admin_audit, name="admin-audit"),
     path("admin/audit/export/", admin_views.admin_audit_export, name="admin-audit-export"),
+    path("admin/users/export/", admin_views.admin_users_export, name="admin-users-export"),
     path("admin/sessions", admin_views.admin_sessions, name="admin-sessions"),
     path("admin/sessions/<str:session_key>/revoke", admin_views.admin_revoke_session, name="admin-revoke-session"),
     path("admin/users/<str:username>", admin_views.admin_update_user, name="admin-update-user"),

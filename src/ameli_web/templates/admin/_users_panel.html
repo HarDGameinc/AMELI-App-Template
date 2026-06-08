@@ -34,6 +34,23 @@ helper can swap just this fragment without reloading the whole admin page.
   {% endif %}
 </form>
 
+<div class="modal-actions-row" style="margin-bottom:8px;" data-users-export-actions>
+  <a class="icon-action"
+     href="{% url 'admin-users-export' %}?{% for key, value in request.GET.items %}{% if key != 'partial' and key != 'users_page' and key != 'format' %}{{ key }}={{ value }}&{% endif %}{% endfor %}format=csv"
+     data-users-export-csv
+     download>
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">download</span>
+    <span>Exportar CSV</span>
+  </a>
+  <a class="icon-action"
+     href="{% url 'admin-users-export' %}?{% for key, value in request.GET.items %}{% if key != 'partial' and key != 'users_page' and key != 'format' %}{{ key }}={{ value }}&{% endif %}{% endfor %}format=json"
+     data-users-export-json
+     download>
+    <span class="material-symbols-rounded icon-glyph" aria-hidden="true">data_object</span>
+    <span>Exportar JSON</span>
+  </a>
+</div>
+
 <div class="admin-user-list" id="users-list">
   {% for user_item in users %}
   <article class="event ev-{% if user_item.enabled %}OPERATIVO{% else %}DEGRADADO{% endif %}"

@@ -17,6 +17,7 @@ from ameli_web.accounts.services import (
     create_user_account,
     delete_user_account,
     filtered_audit_queryset,
+    filtered_users_queryset,
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
@@ -371,4 +372,90 @@ def admin_audit_export(request: HttpRequest) -> HttpResponse:
 
     response = StreamingHttpResponse(_iter_audit_csv_rows(queryset), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="audit.csv"'
+    return response
+
+
+_USERS_EXPORT_COLUMNS = [
+    "username",
+    "display_name",
+    "role",
+    "is_active",
+    "must_change_password",
+    "last_login",
+    "date_joined",
+]
+
+
+def _users_export_filters(request: HttpRequest) -> dict[str, str]:
+    """Read the same users filters used by the panel view."""
+    return {
+        "search": (request.GET.get("users_search") or "").strip(),
+        "role": (request.GET.get("users_role") or "").strip(),
+        "status": (request.GET.get("users_status") or "").strip(),
+    }
+
+
+def _iter_users_csv_rows(queryset):
+    """Stream the users queryset row by row, encoding each row as a CSV line."""
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    def _flush() -> str:
+        value = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        return value
+
+    writer.writerow(_USERS_EXPORT_COLUMNS)
+    yield _flush()
+
+    for user in queryset.iterator(chunk_size=200):
+        writer.writerow([
+            user.username,
+            user.display_name or "",
+            user.role,
+            "yes" if user.is_active else "no",
+            "yes" if user.must_change_password else "no",
+            user.last_login.isoformat() if user.last_login else "",
+            user.date_joined.isoformat() if user.date_joined else "",
+        ])
+        yield _flush()
+
+
+def _iter_users_json_rows(queryset):
+    """Stream the users queryset as a single JSON array."""
+    yield "["
+    first = True
+    for user in queryset.iterator(chunk_size=200):
+        payload = {
+            "username": user.username,
+            "display_name": user.display_name or "",
+            "role": user.role,
+            "is_active": bool(user.is_active),
+            "must_change_password": bool(user.must_change_password),
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "date_joined": user.date_joined.isoformat() if user.date_joined else None,
+        }
+        yield ("" if first else ",") + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        first = False
+    yield "]"
+
+
+@require_GET
+@superadmin_required
+def admin_users_export(request: HttpRequest) -> HttpResponse:
+    """Download the (filtered) users list as CSV or JSON."""
+    fmt = (request.GET.get("format") or "csv").strip().lower()
+    queryset = filtered_users_queryset(**_users_export_filters(request))
+
+    if fmt == "json":
+        response = StreamingHttpResponse(_iter_users_json_rows(queryset), content_type="application/json")
+        response["Content-Disposition"] = 'attachment; filename="users.json"'
+        return response
+
+    response = StreamingHttpResponse(_iter_users_csv_rows(queryset), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="users.csv"'
     return response

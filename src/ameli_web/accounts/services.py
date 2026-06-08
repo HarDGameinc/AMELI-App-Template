@@ -432,24 +432,14 @@ def list_users() -> list[dict[str, Any]]:
     return [serialize_user(user) for user in User.objects.all().order_by("username")]
 
 
-def paginate_users_for_admin(
-    *,
-    page: int = 1,
-    per_page: int = 25,
-    search: str = "",
-    role: str = "",
-    status: str = "",
-):
-    """Return a paginated, filtered slice of users for the admin panel.
+def _users_queryset_for_filters(*, search: str = "", role: str = "", status: str = ""):
+    """Build the User queryset for the admin panel filters.
 
-    ``search`` matches against ``username`` and ``display_name`` (icontains).
-    ``role`` accepts the literal role values (``superadmin``/``public``);
-    other values are ignored. ``status`` accepts ``enabled``/``disabled``
-    and maps onto ``is_active``.
+    Extracted so the pagination view and the CSV/JSON export endpoint can
+    share the exact same filter semantics — see the equivalent
+    ``_audit_queryset_for_filters`` for the audit log.
     """
     from django.db.models import Q
-
-    from ameli_web.pagination import Page, paginate_queryset
 
     queryset = User.objects.all().order_by("username")
 
@@ -469,6 +459,28 @@ def paginate_users_for_admin(
     elif status_value == "disabled":
         queryset = queryset.filter(is_active=False)
 
+    return queryset
+
+
+def paginate_users_for_admin(
+    *,
+    page: int = 1,
+    per_page: int = 25,
+    search: str = "",
+    role: str = "",
+    status: str = "",
+):
+    """Return a paginated, filtered slice of users for the admin panel.
+
+    ``search`` matches against ``username`` and ``display_name`` (icontains).
+    ``role`` accepts the literal role values (``superadmin``/``public``);
+    other values are ignored. ``status`` accepts ``enabled``/``disabled``
+    and maps onto ``is_active``.
+    """
+    from ameli_web.pagination import Page, paginate_queryset
+
+    queryset = _users_queryset_for_filters(search=search, role=role, status=status)
+
     body = paginate_queryset(queryset, page=page, per_page=per_page)
     items = [serialize_user(user) for user in body.items]
     return Page(
@@ -482,6 +494,11 @@ def paginate_users_for_admin(
         start_index=body.start_index,
         end_index=body.end_index,
     )
+
+
+def filtered_users_queryset(*, search: str = "", role: str = "", status: str = ""):
+    """Public alias for the filtered queryset, used by the export endpoint."""
+    return _users_queryset_for_filters(search=search, role=role, status=status)
 
 
 def bootstrap_superadmin(username: str, password: str, *, must_change_password: bool = False) -> dict[str, Any]:
