@@ -63,13 +63,34 @@ def record_audit(action: str, *, actor=None, target_username: str | None = None,
     )
 
 
+def _trusted_proxies() -> set[str]:
+    """List of REMOTE_ADDR values whose ``X-Forwarded-For`` we trust.
+
+    Without a whitelist a malicious client can put any value in
+    ``X-Forwarded-For`` and bypass rate limiting, poison audit IPs, and
+    confuse account lockout. We only look at the header when the immediate
+    peer (``REMOTE_ADDR``) is on this list — typically the loopback
+    address of the local Caddy/nginx reverse proxy.
+    """
+    from django.conf import settings as django_settings
+
+    raw = getattr(django_settings, "TRUSTED_PROXIES", None)
+    if raw is None:
+        return {"127.0.0.1", "::1"}  # the local reverse proxy is the only safe default
+    return {str(item).strip() for item in raw if str(item).strip()}
+
+
 def client_ip(request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "").strip()
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
-    if request.META.get("REMOTE_ADDR"):
-        return str(request.META["REMOTE_ADDR"])
-    return ""
+    """Return the originating client IP, only honoring proxy headers from
+    trusted intermediaries."""
+    remote = str(request.META.get("REMOTE_ADDR") or "")
+    if remote in _trusted_proxies():
+        forwarded = request.headers.get("X-Forwarded-For", "").strip()
+        if forwarded:
+            # ``X-Forwarded-For`` is ``client, proxy1, proxy2``; the leftmost
+            # is the original client (as injected by the trusted proxy).
+            return forwarded.split(",", 1)[0].strip()
+    return remote
 
 
 def sync_request_session(request) -> UserSession | None:
@@ -1571,15 +1592,15 @@ def _count_recent_login_failures(*, username: str = "", ip: str = "", seconds: i
     if username:
         queryset = queryset.filter(target_username__iexact=username)
     if ip:
-        from django.db.models import Q, TextField
-        from django.db.models.functions import Cast
+        from django.db.models import Q
 
-        # The login_failed signal uses ``ip_address`` while our login_throttled
-        # event uses ``ip``; match either spelling so a mix in history still
-        # counts toward the throttle.
-        queryset = queryset.annotate(_payload_text=Cast("payload", TextField())).filter(
-            Q(_payload_text__icontains=f'"ip": "{ip}"')
-            | Q(_payload_text__icontains=f'"ip_address": "{ip}"')
+        # The login_failed signal uses ``ip_address``; the login_throttled
+        # event we record on our own uses ``ip``. Match either key with an
+        # exact-value JSON lookup so an IP that is a prefix of another
+        # (``192.168.1.1`` vs ``192.168.1.10``) does not produce false
+        # positives the way a substring search would.
+        queryset = queryset.filter(
+            Q(payload__ip=ip) | Q(payload__ip_address=ip)
         )
     return queryset.count()
 
