@@ -99,3 +99,91 @@ def test_swagger_html_omits_integrity_when_unconfigured(client, settings):
     settings.CDN_SRI_HASHES = {}
     body = client.get("/docs").content.decode("utf-8")
     assert "integrity=" not in body
+
+
+# ---------------------------------------------------------------------------
+# H7 — HIBP k-anonymity password check (opt-in)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def hibp_validator(monkeypatch, settings):
+    """A configured HIBPPasswordValidator with the network mocked out."""
+    from ameli_web.accounts import validators
+
+    settings.HIBP_PASSWORD_CHECK = True
+    return validators
+
+
+def _sha1(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha1(text.encode("utf-8")).hexdigest().upper()
+
+
+def test_hibp_validator_passes_when_disabled(settings):
+    """When the toggle is off (the default) the validator never makes a
+    network call and never raises, regardless of how leaked the password
+    is. The plain policy validator still does the heavy lifting."""
+    from ameli_web.accounts.validators import HIBPPasswordValidator
+
+    settings.HIBP_PASSWORD_CHECK = False
+    HIBPPasswordValidator().validate("Password!2026")
+
+
+def test_hibp_validator_rejects_known_leaked_password(hibp_validator, monkeypatch):
+    """When the HIBP response includes our suffix with a non-zero count,
+    refuse the password with a user-facing message."""
+    from django.core.exceptions import ValidationError
+
+    digest = _sha1("Password!2026")
+    prefix, suffix = digest[:5], digest[5:]
+
+    def fake_query(p, **kwargs):
+        assert p == prefix  # only the prefix is sent, never the full hash
+        return f"{suffix}:42\nFFFFFF:1\n"
+
+    monkeypatch.setattr(hibp_validator, "_query_hibp", fake_query)
+    with pytest.raises(ValidationError, match="HIBP"):
+        hibp_validator.HIBPPasswordValidator().validate("Password!2026")
+
+
+def test_hibp_validator_accepts_unseen_password(hibp_validator, monkeypatch):
+    """A password whose suffix is not in the HIBP response passes."""
+    def fake_query(p, **kwargs):
+        return "AAAAAAAAAAAA:1\nBBBBBBBBBBBB:5\n"
+
+    monkeypatch.setattr(hibp_validator, "_query_hibp", fake_query)
+    hibp_validator.HIBPPasswordValidator().validate("SomeFreshPass!12?")
+
+
+def test_hibp_validator_fails_open_on_network_error(hibp_validator, monkeypatch):
+    """If HIBP is unreachable we LOG and let the password through.
+    Failing closed would make password changes impossible the moment
+    the upstream blips, which is a worse trade-off than the modest
+    increase in attack surface."""
+    from urllib.error import URLError
+
+    def fake_query(p, **kwargs):
+        raise URLError("dns failure")
+
+    monkeypatch.setattr(hibp_validator, "_query_hibp", fake_query)
+    hibp_validator.HIBPPasswordValidator().validate("AnyValidPass!12?")
+
+
+def test_hibp_validator_only_sends_prefix(hibp_validator, monkeypatch):
+    """k-anonymity guarantee: the validator must only send the first
+    five chars of the hash to HIBP, never the rest of the digest and
+    never the plaintext."""
+    captured = {}
+
+    def fake_query(p, **kwargs):
+        captured["prefix"] = p
+        return ""
+
+    monkeypatch.setattr(hibp_validator, "_query_hibp", fake_query)
+    plaintext = "TestPrivacy!12?"
+    hibp_validator.HIBPPasswordValidator().validate(plaintext)
+    digest = _sha1(plaintext)
+    assert captured["prefix"] == digest[:5]
+    assert len(captured["prefix"]) == 5

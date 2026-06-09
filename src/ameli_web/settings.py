@@ -208,7 +208,16 @@ AUTH_PASSWORD_VALIDATORS = [
         "OPTIONS": {"min_length": 12},
     },
     {"NAME": "ameli_web.accounts.validators.PasswordPolicyValidator"},
+    {"NAME": "ameli_web.accounts.validators.HIBPPasswordValidator"},
 ]
+
+# Toggle the HIBP k-anonymity check. Off by default to keep the baseline
+# network-independent (the validator silently passes when this is false
+# or when the network call fails). Operators in a position to make the
+# outbound call can flip it on for an extra layer of defence.
+HIBP_PASSWORD_CHECK = os.environ.get("AMELI_APP_HIBP_PASSWORD_CHECK", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 LANGUAGE_CODE = "es-cl"
 TIME_ZONE = CFG.timezone or "America/Santiago"
