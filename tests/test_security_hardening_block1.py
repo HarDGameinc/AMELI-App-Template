@@ -130,6 +130,11 @@ def test_profile_with_must_change_password_renders_blocking_modal(client, tester
     # Modal markers must be present, normal profile layout must be gone.
     assert "force-pw-screen" in body
     assert "Debes cambiar tu contrasena" in body
+    # Logout in the modal must be a POST form, not a bare link: /logout/
+    # is decorated with @require_POST and a GET there returns 405.
+    assert 'id="force-pw-logout-form"' in body
+    assert 'method="post"' in body
+    assert 'form="force-pw-logout-form"' in body
     # ``profile-tab-general`` is the General tab id used by the regular
     # profile layout; the force-password branch does NOT render the tab
     # nav so this id should not appear.
