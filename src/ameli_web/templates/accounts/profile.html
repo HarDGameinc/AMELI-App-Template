@@ -569,32 +569,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ---- Test email ----
-  const testEmailBtn = document.getElementById("profile-email-test");
-  const testEmailFeedback = document.getElementById("profile-email-test-feedback");
-  testEmailBtn?.addEventListener("click", async () => {
-    testEmailBtn.disabled = true;
-    if (testEmailFeedback) testEmailFeedback.textContent = "Enviando...";
-    try {
-      const response = await fetch("{% url 'accounts:profile-email-test' %}", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-csrf-token": document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "",
-        },
-      });
-      let data = {};
-      try { data = await response.json(); } catch {}
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "No se pudo enviar el correo de prueba.");
-      }
-      if (testEmailFeedback) testEmailFeedback.textContent = `Correo de prueba enviado a ${data.email}. Reviza tu bandeja (puede tardar unos segundos).`;
-    } catch (error) {
-      if (testEmailFeedback) testEmailFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-    } finally {
-      testEmailBtn.disabled = false;
-    }
-  });
+  // ``profile-email-test`` button used to live in the General tab; it
+  // moved out when the email field migrated to the double-opt-in card.
+  // The handler stays no-op-safe via ``?.`` in case a future iteration
+  // brings the button back.
 
   // ---- MFA enrollment / disable ----
   const csrfTokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
