@@ -111,42 +111,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list-users", help="List managed user accounts.")
 
-    token = sub.add_parser(
-        "create-token",
-        help="Create an API bearer token for a user and print the plaintext.",
-    )
-    token.add_argument("--user", required=True, help="Username that owns the token.")
-    token.add_argument("--name", required=True, help="Human-readable token name.")
-    token.add_argument(
-        "--expires-in-days",
-        type=int,
-        default=None,
-        help="Optional expiry, in days from now.",
-    )
-    token.add_argument(
-        "--scope",
-        action="append",
-        dest="scopes",
-        default=None,
-        help=(
-            "Capability scope (repeatable). Allowed: read, write, admin. "
-            "Default is read-only when omitted."
-        ),
-    )
-
-    revoke = sub.add_parser(
-        "revoke-token",
-        help="Revoke an API token by id (find ids via list-tokens).",
-    )
-    revoke.add_argument("--user", required=True, help="Username that owns the token.")
-    revoke.add_argument("--id", required=True, type=int, dest="token_id", help="Token id.")
-
-    list_tokens = sub.add_parser(
-        "list-tokens",
-        help="List API tokens (metadata only, never the plaintext).",
-    )
-    list_tokens.add_argument("--user", required=True, help="Username whose tokens to list.")
-
     shell = sub.add_parser(
         "shell",
         help="Open a Django-ready Python shell or run a snippet/script.",
@@ -186,76 +150,6 @@ def _handle_list_users(args) -> int:
     from ameli_web.accounts.services import list_users
 
     _json({"ok": True, "users": list_users()})
-    return 0
-
-
-def _resolve_user_or_exit(username: str):
-    """Look up a user by username, printing a helpful error if missing.
-
-    Centralised so the token CLI subcommands give consistent feedback.
-    """
-    from django.contrib.auth import get_user_model
-
-    user = get_user_model().objects.filter(username=username).first()
-    if user is None:
-        print(f"user not found: {username}", file=sys.stderr)
-    return user
-
-
-def _handle_create_token(args) -> int:
-    _bootstrap_django(args)
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from ameli_web.accounts.services import create_api_token
-
-    user = _resolve_user_or_exit(args.user)
-    if user is None:
-        return 2
-
-    expires_at = None
-    if args.expires_in_days is not None:
-        if args.expires_in_days <= 0:
-            print("expires-in-days must be a positive integer", file=sys.stderr)
-            return 2
-        expires_at = timezone.now() + timedelta(days=args.expires_in_days)
-
-    try:
-        result = create_api_token(
-            user, name=args.name, expires_at=expires_at, scopes=args.scopes,
-        )
-    except ValueError as exc:
-        print(f"create-token failed: {exc}", file=sys.stderr)
-        return 2
-    _json(result)
-    return 0
-
-
-def _handle_revoke_token(args) -> int:
-    _bootstrap_django(args)
-    from ameli_web.accounts.services import revoke_api_token
-
-    user = _resolve_user_or_exit(args.user)
-    if user is None:
-        return 2
-    try:
-        result = revoke_api_token(user, token_id=args.token_id)
-    except ValueError as exc:
-        print(f"revoke-token failed: {exc}", file=sys.stderr)
-        return 2
-    _json(result)
-    return 0
-
-
-def _handle_list_tokens(args) -> int:
-    _bootstrap_django(args)
-    from ameli_web.accounts.services import list_api_tokens
-
-    user = _resolve_user_or_exit(args.user)
-    if user is None:
-        return 2
-    _json({"ok": True, "tokens": list_api_tokens(user)})
     return 0
 
 
@@ -356,12 +250,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_create_user(args)
     if args.command == "list-users":
         return _handle_list_users(args)
-    if args.command == "create-token":
-        return _handle_create_token(args)
-    if args.command == "revoke-token":
-        return _handle_revoke_token(args)
-    if args.command == "list-tokens":
-        return _handle_list_tokens(args)
     if args.command == "shell":
         return _handle_shell(args)
 

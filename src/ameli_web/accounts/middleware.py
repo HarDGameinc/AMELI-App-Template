@@ -32,15 +32,9 @@ class UserSessionMiddleware:
 
     def __call__(self, request):
         if getattr(request, "user", None) is not None and request.user.is_authenticated:
-            # Tokens are stateless; the per-session record is only relevant
-            # for cookie sessions. Skip for token auth to avoid creating
-            # spurious ``UserSession`` rows.
-            via_token = getattr(request, "api_token", None) is not None
             # An admin can disable a user while their session is still
-            # active. Without this gate the user keeps making requests
-            # until the cookie expires. Force a logout the moment a
-            # disabled user comes back.
-            if not via_token and not request.user.is_active:
+            # active. Force a logout the moment a disabled user comes back.
+            if not request.user.is_active:
                 from django.contrib.auth import logout as auth_logout
 
                 auth_logout(request)
@@ -49,11 +43,10 @@ class UserSessionMiddleware:
                     "Tu cuenta esta deshabilitada. Contacta al administrador.",
                 )
                 return redirect("accounts:login")
-            if not via_token:
-                session_record = sync_request_session(request)
-                if session_record is not None and session_record.revoked_at is not None:
-                    messages.warning(request, "Tu sesión fue revocada y necesitas iniciar sesión de nuevo.")
-                    return redirect("accounts:login")
+            session_record = sync_request_session(request)
+            if session_record is not None and session_record.revoked_at is not None:
+                messages.warning(request, "Tu sesión fue revocada y necesitas iniciar sesión de nuevo.")
+                return redirect("accounts:login")
         return self.get_response(request)
 
 
@@ -72,35 +65,4 @@ class AdminAccessAuditMiddleware:
             )
             messages.warning(request, "Tu cuenta no tiene permisos para acceder al panel de administración.")
             return redirect("accounts:profile")
-        return self.get_response(request)
-
-
-class ApiTokenAuthMiddleware:
-    """Authenticate ``Authorization: Bearer ameli_<token>`` requests.
-
-    Runs before ``AuthenticationMiddleware`` would set the session-based
-    user. When a valid token is present we set ``request.user`` directly,
-    bypassing the session machinery. We do NOT call ``login(request, ...)``
-    because we don't want a cookie session to be created for an API call —
-    each API call must carry its own bearer token.
-    """
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        header = request.META.get("HTTP_AUTHORIZATION", "")
-        if header.startswith("Bearer "):
-            plaintext = header[len("Bearer "):].strip()
-            from .services import authenticate_api_token_with_record
-
-            record = authenticate_api_token_with_record(plaintext)
-            if record is not None:
-                token, user = record
-                # Tag the request so views can tell session auth from token
-                # auth and enforce per-token scopes.
-                request.api_token = token
-                request.api_token_user = user
-                if not getattr(request.user, "is_authenticated", False):
-                    request.user = user
         return self.get_response(request)

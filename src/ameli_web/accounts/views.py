@@ -148,8 +148,6 @@ _SESSIONS_PER_PAGE_COOKIE = "ps_sessions_per_page"
 def profile_view(request: HttpRequest) -> HttpResponse:
     from ameli_web.pagination import coerce_page, persist_per_page_cookie, resolve_per_page
 
-    from .services import list_api_tokens
-
     current_session_key = str(request.session.session_key or "")
     user_payload = serialize_user(request.user)
     per_page = resolve_per_page(request, _SESSIONS_PER_PAGE_COOKIE, default=20, query_param="sessions_per_page")
@@ -159,7 +157,6 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         per_page=per_page,
         current_session_key=current_session_key,
     )
-    api_tokens = list_api_tokens(request.user)
     current_session = next(
         (item for item in sessions_page.items if item.get("session_key") == current_session_key),
         {"session_id": current_session_key, "session_key": current_session_key},
@@ -175,7 +172,6 @@ def profile_view(request: HttpRequest) -> HttpResponse:
             anchor="profile-tab-sessions",
             per_page_param="sessions_per_page",
         ),
-        "api_tokens": api_tokens,
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
@@ -767,49 +763,3 @@ def reset_password_view(request: HttpRequest, uidb64: str, token: str) -> HttpRe
     return redirect("accounts:login")
 
 
-# ============================ API tokens ============================
-
-
-@login_required
-@require_http_methods(["GET", "POST"])
-def api_tokens_view(request: HttpRequest) -> JsonResponse:
-    from .services import create_api_token, list_api_tokens
-
-    if request.method == "GET":
-        return JsonResponse({"ok": True, "tokens": list_api_tokens(request.user)})
-    try:
-        payload = _json_body(request)
-        result = create_api_token(
-            request.user,
-            name=str(payload.get("name") or "").strip(),
-            scopes=payload.get("scopes"),
-        )
-    except ValueError as exc:
-        return _json_error(str(exc))
-    return JsonResponse(result)
-
-
-@login_required
-@require_POST
-def api_token_revoke_view(request: HttpRequest, token_id: int) -> JsonResponse:
-    from .services import revoke_api_token
-
-    try:
-        return JsonResponse(revoke_api_token(request.user, token_id=int(token_id)))
-    except ValueError as exc:
-        return _json_error(str(exc), status=404)
-
-
-def api_me(request: HttpRequest) -> JsonResponse:
-    """Tiny endpoint that returns the authenticated user; useful for clients
-    to verify their bearer token works."""
-    from .services import serialize_user
-
-    user = getattr(request, "user", None)
-    if not user or not user.is_authenticated:
-        return _json_error("authentication required", status=401)
-    return JsonResponse({
-        "ok": True,
-        "user": serialize_user(user),
-        "auth_mode": "token" if getattr(request, "api_token_user", None) else "session",
-    })

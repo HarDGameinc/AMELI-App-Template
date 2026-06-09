@@ -50,9 +50,4 @@ urlpatterns = [
     path("profile/mfa/email/confirm/", views.mfa_email_confirm_view, name="profile-mfa-email-confirm"),
     path("profile/mfa/email/confirm", views.mfa_email_confirm_view),
     path("api/admin/session", views.admin_session_json, name="admin-session-json"),
-    path("profile/tokens/", views.api_tokens_view, name="profile-api-tokens"),
-    path("profile/tokens/<int:token_id>/revoke/", views.api_token_revoke_view, name="profile-api-token-revoke"),
-    path("profile/tokens/<int:token_id>/revoke", views.api_token_revoke_view),
-    path("api/me/", views.api_me, name="api-me"),
-    path("api/me", views.api_me),
 ]

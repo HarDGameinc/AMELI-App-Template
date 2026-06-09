@@ -79,16 +79,6 @@ def superadmin_required(view_func):
             if _expects_json(request):
                 return _json_error("admin access required", status=403)
             return redirect("/profile/")
-        # If the request was authenticated by an API token (not a session),
-        # require the token to carry the ``admin`` scope. This ensures a
-        # leaked token cannot perform admin actions just because its owner
-        # happens to be a superadmin.
-        active_token = getattr(request, "api_token", None)
-        if active_token is not None and not active_token.has_scope("admin"):
-            return _json_error(
-                "token lacks admin scope; recreate with --scope admin",
-                status=403,
-            )
         return view_func(request, *args, **kwargs)
 
     return _wrapped
@@ -145,9 +135,6 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         current_session_key=current_session_key,
         **sessions_filters,
     )
-    from ameli_web.webhooks.models import WebhookEndpoint
-    from ameli_web.webhooks.services import serialize_endpoint
-    webhooks_list = [serialize_endpoint(e) for e in WebhookEndpoint.objects.all()]
 
     context = {
         "version": __version__,
@@ -158,7 +145,6 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
             per_page_param="users_per_page",
         ),
         "users_filters": users_filters,
-        "webhooks": webhooks_list,
         "audit_entries": audit_page.items,
         "audit_pagination": audit_page.as_context(
             page_param="audit_page",
@@ -501,58 +487,3 @@ def admin_users_export(request: HttpRequest) -> HttpResponse:
     return response
 
 
-# ============================ Webhooks admin ============================
-
-
-@superadmin_required
-def admin_webhooks(request: HttpRequest) -> JsonResponse:
-    from ameli_web.webhooks.services import (
-        create_webhook_endpoint,
-        revoke_webhook_endpoint,
-        serialize_endpoint,
-    )
-    from ameli_web.webhooks.models import WebhookEndpoint
-
-    if request.method == "GET":
-        items = [serialize_endpoint(e) for e in WebhookEndpoint.objects.all()]
-        return JsonResponse({"ok": True, "endpoints": items})
-
-    if request.method == "POST":
-        try:
-            payload = _json_body(request)
-            endpoint = create_webhook_endpoint(
-                name=str(payload.get("name") or "").strip(),
-                url=str(payload.get("url") or "").strip(),
-                events=payload.get("events") or [],
-                user=request.user,
-            )
-        except ValueError as exc:
-            return _json_error(str(exc))
-        return JsonResponse({
-            "ok": True,
-            "endpoint": serialize_endpoint(endpoint, include_secret=True),
-        })
-
-    return _json_error("method not allowed", status=405)
-
-
-@require_POST
-@superadmin_required
-def admin_webhook_revoke(request: HttpRequest, endpoint_id: int) -> JsonResponse:
-    from ameli_web.webhooks.services import revoke_webhook_endpoint, serialize_endpoint
-
-    try:
-        endpoint = revoke_webhook_endpoint(endpoint_id)
-    except ValueError as exc:
-        return _json_error(str(exc), status=404)
-    return JsonResponse({"ok": True, "endpoint": serialize_endpoint(endpoint)})
-
-
-@require_GET
-@superadmin_required
-def admin_webhook_deliveries(request: HttpRequest, endpoint_id: int) -> JsonResponse:
-    from ameli_web.webhooks.models import WebhookDelivery
-    from ameli_web.webhooks.services import serialize_delivery
-
-    rows = WebhookDelivery.objects.filter(endpoint_id=endpoint_id).order_by("-created_at")[:30]
-    return JsonResponse({"ok": True, "deliveries": [serialize_delivery(d) for d in rows]})
