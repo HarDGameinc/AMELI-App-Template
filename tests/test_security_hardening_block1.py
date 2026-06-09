@@ -136,6 +136,11 @@ def test_profile_with_must_change_password_renders_blocking_modal(client, tester
     assert 'id="profile-tab-general"' not in body
     # The change-password form is still present so the user can act.
     assert 'id="profile-password-form"' in body
+    # Regression guard: ``{# ... #}`` is single-line only in Django, so a
+    # multi-line prologue accidentally written that way leaks into the
+    # rendered HTML. Pin a unique phrase from the comment so the test
+    # catches the leak immediately.
+    assert "Force-change-password screen rendered" not in body
 
 
 @pytest.mark.django_db
