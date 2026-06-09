@@ -1105,13 +1105,17 @@ def _check_email_mfa_rate_limit(user) -> None:
         gap = (now - latest.created_at).total_seconds()
         if gap < mfa.EMAIL_CODE_RESEND_INTERVAL_SECONDS:
             wait = int(mfa.EMAIL_CODE_RESEND_INTERVAL_SECONDS - gap)
-            raise ValueError(f"too many requests; wait {wait} seconds before asking for a new code")
+            raise ValueError(
+                f"Espera {wait} segundos antes de pedir otro codigo por email."
+            )
     hour_count = MFAEmailChallenge.objects.filter(
         user=user,
         created_at__gte=now - timedelta(hours=1),
     ).count()
     if hour_count >= mfa.EMAIL_CODE_HOURLY_LIMIT:
-        raise ValueError("too many requests in the last hour; try again later")
+        raise ValueError(
+            "Demasiados pedidos de codigo por email en la ultima hora. Probá mas tarde o usá tu app de autenticacion."
+        )
 
 
 def _send_mfa_email_code(user, code: str) -> None:
