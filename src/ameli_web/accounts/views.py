@@ -15,7 +15,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ameli_app import __version__
 from ameli_web.utils import format_timestamp_ui
@@ -387,17 +387,18 @@ def revoke_session_view(request: HttpRequest, session_key: str) -> HttpResponse:
     return redirect("accounts:profile")
 
 
+@login_required
+@require_GET
 def admin_session_json(request: HttpRequest) -> JsonResponse:
     payload = {
         "ok": True,
         "enabled": True,
-        "authenticated": request.user.is_authenticated,
-        "auth_mode": "session" if request.user.is_authenticated else None,
+        "authenticated": True,
+        "auth_mode": "session",
         "csrf_token": get_token(request),
+        "user": serialize_user(request.user),
+        "can_access_admin": request.user.is_staff,
     }
-    if request.user.is_authenticated:
-        payload["user"] = serialize_user(request.user)
-        payload["can_access_admin"] = request.user.is_staff
     return JsonResponse(payload)
 
 
@@ -432,6 +433,10 @@ def mfa_confirm_view(request: HttpRequest) -> JsonResponse:
             payload={"reason": str(exc)},
         )
         return _json_error(str(exc))
+    # Enabling MFA is a privilege change. Rotate the session key so any
+    # parallel cookie (stolen via XSS, copied from a shared machine) is
+    # invalidated and the legitimate user keeps going on a fresh one.
+    request.session.cycle_key()
     return JsonResponse(result)
 
 
@@ -447,6 +452,7 @@ def mfa_disable_view(request: HttpRequest) -> JsonResponse:
         result = disable_mfa_for_self(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
+    request.session.cycle_key()
     return JsonResponse(result)
 
 
@@ -462,6 +468,7 @@ def mfa_totp_disable_view(request: HttpRequest) -> JsonResponse:
         result = disable_mfa_totp_for_self(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
+    request.session.cycle_key()
     return JsonResponse(result)
 
 
@@ -477,6 +484,7 @@ def mfa_email_disable_view(request: HttpRequest) -> JsonResponse:
         result = disable_mfa_email_for_self(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
+    request.session.cycle_key()
     return JsonResponse(result)
 
 
@@ -487,6 +495,7 @@ def mfa_regenerate_view(request: HttpRequest) -> JsonResponse:
         result = regenerate_recovery_codes(request.user.username)
     except ValueError as exc:
         return _json_error(str(exc))
+    request.session.cycle_key()
     return JsonResponse(result)
 
 
@@ -521,6 +530,7 @@ def mfa_email_confirm_view(request: HttpRequest) -> JsonResponse:
             payload={"reason": str(exc)},
         )
         return _json_error(str(exc))
+    request.session.cycle_key()
     return JsonResponse(result)
 
 

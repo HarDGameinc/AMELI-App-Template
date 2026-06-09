@@ -58,6 +58,28 @@ CSRF_TRUSTED_ORIGINS = [
     if item.strip()
 ]
 
+# REMOTE_ADDR values whose ``X-Forwarded-For`` is trusted by ``client_ip``.
+# Wrong settings here are silent: a missing entry makes throttling and audit
+# IPs collapse onto the proxy address; an extra entry lets the next hop
+# spoof IPs. We force the operator to make this decision explicitly outside
+# the dev environment, defaulting to just loopback in dev for convenience.
+_trusted_proxies_env = os.environ.get("AMELI_APP_TRUSTED_PROXIES", "").strip()
+if _trusted_proxies_env:
+    TRUSTED_PROXIES = {
+        item.strip() for item in _trusted_proxies_env.split(",") if item.strip()
+    }
+elif _IS_DEV_ENV:
+    TRUSTED_PROXIES = {"127.0.0.1", "::1"}
+else:
+    raise RuntimeError(
+        "AMELI_APP_TRUSTED_PROXIES is empty outside the dev environment. "
+        "Set it to the comma-separated list of REMOTE_ADDR values for the "
+        "reverse proxies sitting in front of this deploy (typically "
+        "'127.0.0.1,::1' when Caddy/nginx runs on the same host). Leaving "
+        "it blank collapses throttling onto the proxy address and lets the "
+        "first hop spoof client IPs."
+    )
+
 
 def _default_sqlite_path() -> str:
     # SQLite is intentionally kept only as a local fallback when DATABASE_URL
@@ -114,6 +136,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "ameli_web.accounts.middleware.UserSessionMiddleware",
+    "ameli_web.accounts.middleware.MustChangePasswordMiddleware",
     "ameli_web.accounts.middleware.AdminAccessAuditMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -140,6 +163,18 @@ WSGI_APPLICATION = "ameli_web.wsgi.application"
 ASGI_APPLICATION = "ameli_web.asgi.application"
 
 DATABASES = {"default": _database_settings()}
+
+# Argon2id is the OWASP-recommended hasher and resists GPU attacks better
+# than PBKDF2-SHA256. We keep PBKDF2 as a fallback so existing hashes keep
+# verifying; Django re-encodes them with Argon2 on the next successful
+# login (``UPDATE_LAST_LOGIN_ENCODING`` behaviour).
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+]
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -200,11 +235,19 @@ X_FRAME_OPTIONS = "DENY"
 
 # When a TLS-terminating proxy (Caddy, nginx) sits in front, Django needs
 # to know the original scheme to make ``request.is_secure()`` honest and
-# to set ``Secure`` cookies correctly. Configure your proxy to forward
-# ``X-Forwarded-Proto`` and uncomment the next line in production. Left
-# commented out by default to avoid trusting a header from an unknown
-# upstream when the operator is still bringing up TLS.
-# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# to set ``Secure`` cookies correctly. The proxy must be configured to
+# strip any client-provided ``X-Forwarded-Proto`` and inject its own; if
+# the header is trusted while an upstream is uncontrolled, an attacker
+# can mint "secure" sessions over plaintext.
+_proxy_ssl_header = os.environ.get("AMELI_APP_SECURE_PROXY_SSL_HEADER", "").strip()
+if _proxy_ssl_header:
+    if "=" not in _proxy_ssl_header:
+        raise RuntimeError(
+            "AMELI_APP_SECURE_PROXY_SSL_HEADER must be 'HEADER_NAME=value' "
+            "(e.g. 'HTTP_X_FORWARDED_PROTO=https')."
+        )
+    _proxy_header_name, _proxy_header_value = _proxy_ssl_header.split("=", 1)
+    SECURE_PROXY_SSL_HEADER = (_proxy_header_name.strip(), _proxy_header_value.strip())
 
 # HSTS: only meaningful when the deploy is reachable over HTTPS, and
 # easy to lock yourself out of staging if you set it too early. Off by

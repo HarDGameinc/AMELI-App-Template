@@ -9,6 +9,7 @@ description = "AMELI Django-first operational app template"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13.0",
+  "argon2-cffi>=23.1.0",
   "Django>=5.2.0",
   "Pillow>=11.0.0",
   "psycopg[binary]>=3.1.0",

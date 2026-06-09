@@ -65,15 +65,27 @@ def test_non_dev_refuses_debug_true(monkeypatch):
         _reload_settings(monkeypatch, env="prod",
                          AMELI_APP_DJANGO_SECRET_KEY="a-very-long-random-real-secret-not-default",
                          AMELI_APP_DJANGO_ALLOWED_HOSTS="ameli.example.com",
-                         AMELI_APP_DJANGO_DEBUG="true")
+                         AMELI_APP_DJANGO_DEBUG="true",
+                         AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1")
+
+
+def test_non_dev_refuses_empty_trusted_proxies(monkeypatch):
+    with pytest.raises(RuntimeError, match="TRUSTED_PROXIES"):
+        _reload_settings(monkeypatch, env="prod",
+                         AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+                         AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+                         AMELI_APP_DJANGO_DEBUG="false",
+                         AMELI_APP_TRUSTED_PROXIES=None)
 
 
 def test_non_dev_boots_with_explicit_safe_config(monkeypatch):
     settings = _reload_settings(monkeypatch, env="prod",
                                 AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
                                 AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan,10.0.0.5",
-                                AMELI_APP_DJANGO_DEBUG="false")
+                                AMELI_APP_DJANGO_DEBUG="false",
+                                AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1")
     assert settings.SECRET_KEY != "ameli-app-dev-secret-key"
     assert settings.DEBUG is False
     assert "metro.lan" in settings.ALLOWED_HOSTS
     assert "10.0.0.5" in settings.ALLOWED_HOSTS
+    assert settings.TRUSTED_PROXIES == {"127.0.0.1", "::1"}

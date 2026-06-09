@@ -329,6 +329,25 @@ def _audit_export_filters(request: HttpRequest) -> dict[str, str]:
     }
 
 
+def _csv_safe(value):
+    """Defang CSV-injection ("formula injection") payloads.
+
+    Excel and LibreOffice treat any cell whose first character is one of
+    ``= + - @`` (also tab/CR after a quote, sometimes) as a formula. An
+    attacker who controls a username, target field or audit payload can
+    inject ``=HYPERLINK(...)`` and have the operator's spreadsheet phone
+    home or execute external functions. We neutralise the cell by prefixing
+    it with a single quote, which Excel strips on display but interpreters
+    no longer treat as code.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 def _iter_audit_csv_rows(queryset):
     """Stream the audit queryset row by row, encoding each row as a CSV line.
 
@@ -355,11 +374,11 @@ def _iter_audit_csv_rows(queryset):
         writer.writerow([
             row.get("id"),
             row.get("created_at"),
-            row.get("actor_username") or "",
-            row.get("target_username") or "",
-            row.get("action") or "",
-            row.get("display_result_label") or "",
-            json.dumps(row.get("payload") or {}, ensure_ascii=False, sort_keys=True),
+            _csv_safe(row.get("actor_username")),
+            _csv_safe(row.get("target_username")),
+            _csv_safe(row.get("action")),
+            _csv_safe(row.get("display_result_label")),
+            _csv_safe(json.dumps(row.get("payload") or {}, ensure_ascii=False, sort_keys=True)),
         ])
         yield _flush()
 
@@ -440,9 +459,9 @@ def _iter_users_csv_rows(queryset):
 
     for user in queryset.iterator(chunk_size=200):
         writer.writerow([
-            user.username,
-            user.display_name or "",
-            user.role,
+            _csv_safe(user.username),
+            _csv_safe(user.display_name),
+            _csv_safe(user.role),
             "yes" if user.is_active else "no",
             "yes" if user.must_change_password else "no",
             user.last_login.isoformat() if user.last_login else "",
