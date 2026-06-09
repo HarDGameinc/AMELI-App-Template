@@ -7,7 +7,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from ameli_app import __version__
 from ameli_web.accounts.models import User, UserSession
@@ -182,25 +182,24 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
     return response
 
 
+@require_http_methods(["GET", "POST"])
 @superadmin_required
 def admin_users(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
         users = list_users()
         return JsonResponse({"ok": True, "users": users, "summary": summarize_users()})
-    if request.method == "POST":
-        payload = _json_body(request)
-        try:
-            result = create_user_account(
-                actor_username=request.user.username,
-                username=str(payload.get("username") or "").strip(),
-                password=str(payload.get("password") or "").strip(),
-                role=str(payload.get("role") or User.ROLE_PUBLIC).strip(),
-                must_change_password=bool(payload.get("must_change_password")),
-            )
-        except ValueError as exc:
-            return _json_error(str(exc))
-        return JsonResponse(result)
-    return _json_error("method not allowed", status=405)
+    payload = _json_body(request)
+    try:
+        result = create_user_account(
+            actor_username=request.user.username,
+            username=str(payload.get("username") or "").strip(),
+            password=str(payload.get("password") or "").strip(),
+            role=str(payload.get("role") or User.ROLE_PUBLIC).strip(),
+            must_change_password=bool(payload.get("must_change_password")),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    return JsonResponse(result)
 
 
 @require_GET
@@ -237,6 +236,7 @@ def admin_revoke_session(request: HttpRequest, session_key: str) -> JsonResponse
     return JsonResponse({"ok": True, "status": "updated", "session_key": session_key})
 
 
+@require_http_methods(["POST", "PATCH", "DELETE"])
 @superadmin_required
 def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
     if request.method == "DELETE":
@@ -245,8 +245,6 @@ def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
         except ValueError as exc:
             return _json_error(str(exc))
         return JsonResponse(result)
-    if request.method not in {"PATCH", "POST"}:
-        return _json_error("method not allowed", status=405)
     payload = _json_body(request)
     try:
         result = update_user_account(
