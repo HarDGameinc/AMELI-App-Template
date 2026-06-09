@@ -83,7 +83,20 @@ def test_user_with_must_change_password_redirected_from_admin(client, admin_user
     client.force_login(admin_user)
     response = client.get("/admin/")
     assert response.status_code in {301, 302}
-    assert response["Location"].endswith("/profile/password/")
+    # We redirect to the profile page (which hosts the change form inside
+    # the Security tab) and not to ``/profile/password/`` — that endpoint
+    # is POST-only and a GET there returns 405.
+    assert response["Location"].startswith("/profile/")
+    assert "/profile/password" not in response["Location"]
+
+
+@pytest.mark.django_db
+def test_change_password_path_is_post_only_for_safety(client, tester):
+    client.force_login(tester)
+    response = client.get("/profile/password/")
+    # Defensive pin: if a future refactor wires a GET handler here we want
+    # the must-change-password redirect target reviewed at the same time.
+    assert response.status_code == 405
 
 
 @pytest.mark.django_db
@@ -104,10 +117,12 @@ def test_user_with_must_change_password_is_blocked_from_preferences(client, test
     tester.save(update_fields=["must_change_password"])
 
     client.force_login(tester)
-    # A sensitive POST (preferences edit) must still be intercepted.
+    # A sensitive POST (preferences edit) must still be intercepted and
+    # sent back to the change-password form.
     response = client.post("/profile/preferences/", data={"display_name": "x"})
     assert response.status_code in {301, 302}
-    assert "/profile/password" in response["Location"]
+    assert response["Location"].startswith("/profile/")
+    assert "profile-tab-security" in response["Location"]
 
 
 @pytest.mark.django_db

@@ -97,7 +97,11 @@ class MustChangePasswordMiddleware:
                 request,
                 "Debes cambiar tu contrasena antes de continuar usando la aplicacion.",
             )
-            return redirect("accounts:profile-password")
+            # ``/profile/password/`` is the POST-only submit endpoint; the
+            # form itself lives inside the Security tab of ``/profile/``,
+            # so we send the user there and use the URL fragment to focus
+            # the right tab on arrival.
+            return redirect("/profile/#profile-tab-security")
         return self.get_response(request)
 
     @classmethod
