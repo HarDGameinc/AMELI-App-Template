@@ -875,12 +875,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const emailCancelBtn = document.getElementById("profile-email-cancel");
-  if (emailCancelBtn) {
+  // ``emailCancelBtn`` is already taken further up by the MFA-email
+  // disable handler; use a different name here so both can coexist.
+  const emailChangeCancelBtn = document.getElementById("profile-email-cancel");
+  if (emailChangeCancelBtn) {
     const feedback = document.getElementById("profile-email-cancel-feedback");
-    emailCancelBtn.addEventListener("click", async () => {
+    emailChangeCancelBtn.addEventListener("click", async () => {
       if (!confirm("Cancelar el cambio pendiente?")) return;
-      emailCancelBtn.disabled = true;
+      emailChangeCancelBtn.disabled = true;
       try {
         const response = await fetch("/profile/email-change/cancel-pending/", {
           method: "POST",
@@ -890,14 +892,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.ok) {
           if (feedback) feedback.textContent = data.error || "No se pudo cancelar.";
-          emailCancelBtn.disabled = false;
+          emailChangeCancelBtn.disabled = false;
           return;
         }
         if (feedback) feedback.textContent = "Cancelado. Refrescando...";
         setTimeout(() => window.location.reload(), 800);
       } catch (err) {
         if (feedback) feedback.textContent = "Error de red al cancelar.";
-        emailCancelBtn.disabled = false;
+        emailChangeCancelBtn.disabled = false;
       }
     });
   }
