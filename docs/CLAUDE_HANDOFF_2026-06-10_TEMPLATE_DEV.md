@@ -22,7 +22,7 @@ UI), e infraestructura i18n con catalogos espanol e ingles.
 
 Cierre del 2026-06-09 dejo el backlog operativo con tres items abiertos
 en el orden pedido: UI de tokens, webhooks, i18n. El usuario decidio
-postergar Starlink y dedicar la sesion a estos tres frentes.
+dedicar la sesion a estos tres frentes del Template.
 
 ### Bloque del dia (4 commits)
 
@@ -184,18 +184,16 @@ Decisiones:
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 1 | **AMELI Report Starlink** (primera app real con multi-tenancy) | Estrategico | Grande |
-| 2 | Reintento + queue para webhooks (si el sync timeout se vuelve cuello) | Medio | Medio |
-| 3 | Selector de idioma manual (cookie + dropdown en header) | UX | Chico |
-| 4 | Traducciones EN completas para toda la UI (no solo backend) | i18n | Medio-grande |
-| 5 | Retry policy + dead-letter para webhooks fallidos | Medio | Medio |
+| 1 | Reintento + queue para webhooks (si el sync timeout se vuelve cuello) | Medio | Medio |
+| 2 | Selector de idioma manual (cookie + dropdown en header) | UX | Chico |
+| 3 | Traducciones EN completas para toda la UI (no solo backend) | i18n | Medio-grande |
+| 4 | Retry policy + dead-letter para webhooks fallidos | Medio | Medio |
 
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash de `main` post-promocion
 2. **Migrar webhooks**: `.venv/bin/ameli-app shell -c "from django.core.management import call_command; call_command('migrate')"`
-3. Si vas por Starlink: arrancar diseno de Cliente/Area/Sitio
-4. Si seguis con Template: probable orden = retry para webhooks +
+3. Si seguis con Template: probable orden = retry para webhooks +
    selector de idioma en header
 
 ### Comandos utiles de continuidad

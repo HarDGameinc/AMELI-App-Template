@@ -8,8 +8,8 @@ Continuacion de
 Cierra los tres bloques de mejoras del Template solicitados por el
 usuario el dia anterior: admin/observabilidad, seguridad/auth y
 operativo/infra. Multi-tenancy fue conversada pero el usuario opto por
-mantener el Template simple y construir esa capa dentro de AMELI Report
-Starlink cuando la app arranque.
+mantener el Template simple y construir esa capa dentro de la primera
+app heredada cuando arranque.
 
 ### Estado general al cierre
 
@@ -170,8 +170,8 @@ subcomandos CLI:
 .venv/bin/ameli-app revoke-token --user admin --id <token_id>
 ```
 
-Util especificamente para scripts internos (Starlink Report y siguientes)
-que no van a pasar por el browser. Los outputs son JSON parseable.
+Util especificamente para scripts internos que no van a pasar por el
+browser. Los outputs son JSON parseable.
 **7 tests**.
 
 ### Bloque 3 — Operativo / infra (3 commits)
@@ -247,14 +247,13 @@ clientes, y Firefox deja de quejarse del "Inseguro" en formularios.
 
 ### Decisiones tomadas (no re-discutirlas)
 
-- **Multi-tenancy: NO en el Template**. La construye Starlink Report en
-  su propia capa cuando arranque. Si una segunda app la necesita, ahi
-  extraemos el patron al Template con dos casos reales.
+- **Multi-tenancy: NO en el Template**. La construye la primera app
+  heredada en su propia capa cuando arranque. Si una segunda app la
+  necesita, ahi extraemos el patron al Template con dos casos reales.
 - **Login throttle usa AuditEvent**, no tabla nueva. Cero migracion,
   permite query con la infra de filtros existente.
 - **API tokens via CLI** porque exentar CSRF en POST JSON es riesgoso.
-  Los scripts internos (caso de uso real para Starlink) crean tokens
-  con `ameli-app create-token`.
+  Los scripts internos crean tokens con `ameli-app create-token`.
 - **Metrics endpoint publico sin auth**. La restriccion la pone el ops
   via reverse proxy. Sin PII en la respuesta.
 - **TLS via Caddy, no nginx + mkcert**. Mas simple operativamente,
@@ -276,7 +275,7 @@ clientes, y Firefox deja de quejarse del "Inseguro" en formularios.
 1. Revision items 2, 3, 4 + multi-tenancy.
 2. Decision: hacer los tres bloques tacticos (admin/observabilidad,
    seguridad/auth, operativo/infra) en ese orden. Multi-tenancy queda
-   para Starlink, no para el Template.
+   para las apps heredadas, no para el Template.
 3. Bloque 1: 4 commits, screenshot del usuario validando users export +
    sessions panel + metrics + log JSON.
 4. Bloque 2: 3 commits + verificacion via screenshot del MFA recovery
@@ -289,20 +288,16 @@ clientes, y Firefox deja de quejarse del "Inseguro" en formularios.
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 1 | **AMELI Report Starlink** (primera app real con multi-tenancy adentro) | Estrategico | Grande (8+ commits) |
-| 2 | UI HTML para gestion de API tokens en `/profile/` | UX | Chico |
-| 3 | Health checks adicionales (workers, queue, storage) | Operativo | Chico |
-| 4 | i18n con gettext | Internacionalizacion | Medio |
-| 5 | Webhooks para eventos importantes | Integraciones | Medio |
+| 1 | UI HTML para gestion de API tokens en `/profile/` | UX | Chico |
+| 2 | Health checks adicionales (workers, queue, storage) | Operativo | Chico |
+| 3 | i18n con gettext | Internacionalizacion | Medio |
+| 4 | Webhooks para eventos importantes | Integraciones | Medio |
 
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash de `main` post-promocion del dia
-2. Si Starlink arranca: empezar con el diseno de modelos
-   `Cliente`/`Area`/`Sitio` antes de codear (revisar conversacion
-   2026-06-08 sobre multi-tenancy).
-3. Si Starlink se posterga: hacer UI de tokens (chico, alta utilidad) +
-   migrar a JSON logs y configurar Prometheus scraping.
+2. Continuar mejorando el Template: UI de tokens (chico, alta utilidad)
+   + migrar a JSON logs y configurar Prometheus scraping.
 
 ### Comandos utiles de continuidad
 
@@ -319,7 +314,7 @@ systemctl restart ameli-app-template-dev-api.service
 Crear un API token desde CLI (sin pasar por web/CSRF):
 
 ```bash
-.venv/bin/ameli-app create-token --user admin --name "starlink-deploy"
+.venv/bin/ameli-app create-token --user admin --name "deploy-bot"
 # {
 #   "ok": true,
 #   "token": "ameli_xxxxxxx...",   <- guardar este valor una sola vez

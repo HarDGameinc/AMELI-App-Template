@@ -230,12 +230,11 @@ proximas sesiones:
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 1 | **AMELI Report Starlink** (primera app real) | Estrategico | Grande |
-| 2 | UI HTML para mostrar/editar scopes de tokens | UX | Chico |
-| 3 | MFA defense in depth para `/django-admin/` | Seguridad | Medio |
-| 4 | Selector de idioma en header (i18n loop) | UX | Chico |
-| 5 | Retry + queue para webhooks fallidos | Operativo | Medio |
-| 6 | Doc receptor webhook con verificacion de timestamp | Doc | Chico |
+| 1 | UI HTML para mostrar/editar scopes de tokens | UX | Chico |
+| 2 | MFA defense in depth para `/django-admin/` | Seguridad | Medio |
+| 3 | Selector de idioma en header (i18n loop) | UX | Chico |
+| 4 | Retry + queue para webhooks fallidos | Operativo | Medio |
+| 5 | Doc receptor webhook con verificacion de timestamp | Doc | Chico |
 
 ### Orden recomendado para retomar
 
