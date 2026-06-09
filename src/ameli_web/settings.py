@@ -58,7 +58,16 @@ CSRF_TRUSTED_ORIGINS = [
     if item.strip()
 ]
 
-# REMOTE_ADDR values whose ``X-Forwarded-For`` is trusted by ``client_ip``.
+# Operational endpoints (``/health``, ``/api/health``, ``/metrics``) are
+# public by default so probes and Prometheus scrapers reach them without
+# fuss. When this list has at least one entry, the views refuse any
+# client IP not in the list — useful when the deploy is exposed on a
+# network where ``/health`` would leak version and uptime to anyone.
+HEALTH_METRICS_ALLOWLIST = {
+    item.strip()
+    for item in os.environ.get("AMELI_APP_HEALTH_METRICS_ALLOWLIST", "").split(",")
+    if item.strip()
+}
 # Wrong settings here are silent: a missing entry makes throttling and audit
 # IPs collapse onto the proxy address; an extra entry lets the next hop
 # spoof IPs. We force the operator to make this decision explicitly outside

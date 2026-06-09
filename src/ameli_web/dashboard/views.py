@@ -192,8 +192,31 @@ def _process_uptime_seconds() -> int:
     return max(0, int(time.time() - _PROCESS_START_TS))
 
 
+def _operational_allowlist_block(request):
+    """Refuse a request when ``HEALTH_METRICS_ALLOWLIST`` is configured
+    and the client IP is not in it.
+
+    Returns an :class:`HttpResponse` to short-circuit the view, or
+    ``None`` to let the view body run. Empty list means "no restriction"
+    so existing deploys behind a trusted reverse proxy keep working.
+    """
+    raw = getattr(settings, "HEALTH_METRICS_ALLOWLIST", None) or []
+    allowlist = {str(item).strip() for item in raw if str(item).strip()}
+    if not allowlist:
+        return None
+    from ameli_web.accounts.services import client_ip
+
+    ip = client_ip(request)
+    if ip in allowlist:
+        return None
+    return HttpResponse(b"forbidden\n", status=403, content_type="text/plain; charset=utf-8")
+
+
 @require_GET
 def health(request):
+    blocked = _operational_allowlist_block(request)
+    if blocked is not None:
+        return blocked
     db_status = database_status(settings.CFG)
 
     checks = {
@@ -222,6 +245,9 @@ def health(request):
 
 @require_GET
 def api_health(request):
+    blocked = _operational_allowlist_block(request)
+    if blocked is not None:
+        return blocked
     payload = {
         "ok": True,
         "service": settings.CFG.app_name,
@@ -245,6 +271,9 @@ def metrics(request):
     Template dependency-free; if a deployment outgrows this approach,
     swap in the library and migrate the body.
     """
+    blocked = _operational_allowlist_block(request)
+    if blocked is not None:
+        return blocked
     from django.http import HttpResponse
     from django.utils import timezone
 
