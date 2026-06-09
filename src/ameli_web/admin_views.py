@@ -84,6 +84,33 @@ def superadmin_required(view_func):
     return _wrapped
 
 
+def sudo_required(view_func):
+    """Refuse a write action when the session is not in active sudo.
+
+    Used in addition to ``superadmin_required`` for state-changing admin
+    endpoints. The JSON response carries ``need_sudo: true`` so the UI
+    can prompt for re-authentication and retry transparently. Read-only
+    endpoints (lists, exports) keep using ``superadmin_required`` alone.
+    """
+    @wraps(view_func)
+    def _wrapped(request: HttpRequest, *args, **kwargs):
+        from ameli_web.accounts.services import session_in_sudo
+
+        if not session_in_sudo(request.session):
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "sudo required",
+                    "need_sudo": True,
+                    "sudo_url": "/admin/sudo/",
+                },
+                status=401,
+            )
+        return view_func(request, *args, **kwargs)
+
+    return _wrapped
+
+
 USERS_PER_PAGE_COOKIE = "ps_users_per_page"
 AUDIT_PER_PAGE_COOKIE = "ps_audit_per_page"
 SESSIONS_PER_PAGE_COOKIE = "ps_admin_sessions_per_page"
@@ -188,6 +215,15 @@ def admin_users(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
         users = list_users()
         return JsonResponse({"ok": True, "users": users, "summary": summarize_users()})
+    # POST creates a new user, possibly a superadmin. Require sudo so a
+    # leaked admin session cannot silently mint additional superadmins.
+    from ameli_web.accounts.services import session_in_sudo
+
+    if not session_in_sudo(request.session):
+        return JsonResponse(
+            {"ok": False, "error": "sudo required", "need_sudo": True, "sudo_url": "/admin/sudo/"},
+            status=401,
+        )
     payload = _json_body(request)
     try:
         result = create_user_account(
@@ -228,6 +264,7 @@ def admin_sessions(request: HttpRequest) -> JsonResponse:
 
 @require_POST
 @superadmin_required
+@sudo_required
 def admin_revoke_session(request: HttpRequest, session_key: str) -> JsonResponse:
     session = UserSession.objects.select_related("user").filter(session_key=session_key).first()
     if session is None:
@@ -238,6 +275,7 @@ def admin_revoke_session(request: HttpRequest, session_key: str) -> JsonResponse
 
 @require_http_methods(["POST", "PATCH", "DELETE"])
 @superadmin_required
+@sudo_required
 def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
     if request.method == "DELETE":
         try:
@@ -263,6 +301,7 @@ def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
 
 @require_POST
 @superadmin_required
+@sudo_required
 def admin_disable_user_mfa(request: HttpRequest, username: str) -> JsonResponse:
     try:
         result = admin_disable_mfa_for_user(actor_username=request.user.username, username=username)
@@ -273,6 +312,7 @@ def admin_disable_user_mfa(request: HttpRequest, username: str) -> JsonResponse:
 
 @require_POST
 @superadmin_required
+@sudo_required
 def admin_reset_user_password(request: HttpRequest, username: str) -> JsonResponse:
     payload = _json_body(request)
     try:
@@ -504,3 +544,52 @@ def admin_users_export(request: HttpRequest) -> HttpResponse:
     return response
 
 
+
+
+# ============================ Sudo (re-auth gate) ============================
+
+
+@require_POST
+@superadmin_required
+def admin_sudo(request: HttpRequest) -> JsonResponse:
+    """Re-authenticate the operator and stamp the session as ``sudo``.
+
+    The UI calls this when a privileged action returns 401 with
+    ``need_sudo: true``. On success the session carries a short-lived
+    grace window during which subsequent sensitive actions skip the
+    prompt.
+    """
+    from ameli_web.accounts.services import grant_sudo, verify_sudo_credentials
+
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    password = str(payload.get("password") or "")
+    mfa_code = str(payload.get("mfa_code") or "")
+    try:
+        verify_sudo_credentials(
+            request.user, password=password, mfa_code=mfa_code
+        )
+    except ValueError as exc:
+        from ameli_web.accounts.services import record_audit
+
+        record_audit(
+            "sudo_failed",
+            actor=request.user,
+            target_username=request.user.username,
+            payload={"reason": str(exc)},
+        )
+        return _json_error(str(exc), status=403)
+    grace = grant_sudo(request.session)
+    from ameli_web.accounts.services import record_audit
+
+    record_audit(
+        "sudo_granted",
+        actor=request.user,
+        target_username=request.user.username,
+        payload={"grace_seconds": grace},
+    )
+    return JsonResponse(
+        {"ok": True, "expires_in_seconds": grace, "mfa_required": request.user.mfa_enabled}
+    )

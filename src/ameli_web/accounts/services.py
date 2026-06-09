@@ -1678,3 +1678,87 @@ def check_login_throttle(*, username: str, ip: str) -> None:
                 ),
                 retry_after=cfg["user_window"],
             )
+
+
+# ============================ Sudo-mode for admin actions ============================
+#
+# An admin who is already logged in with MFA can still be impersonated if
+# their session cookie leaks (XSS, shared workstation, network attack).
+# A leaked superadmin cookie lets the attacker create another superadmin,
+# clear someone's MFA, reset a password and so on — without re-asserting
+# control of the password or the second factor.
+#
+# Sudo-mode raises the bar: every sensitive admin action requires the
+# operator to confirm with their password (and MFA code if enrolled) in
+# the last few minutes. We keep the grant in the session under
+# ``sudo_until`` so the operator does not have to re-enter their
+# credentials for every click during a maintenance window.
+
+SUDO_GRACE_SECONDS_DEFAULT = 300  # 5 minutes
+
+
+class SudoRequired(Exception):
+    """Raised when an admin action runs without a fresh sudo grant."""
+
+
+def grant_sudo(session, *, seconds: int | None = None) -> int:
+    """Stamp ``sudo_until`` on the session and return the grace window."""
+    from django.conf import settings as django_settings
+
+    grace = int(
+        seconds
+        if seconds is not None
+        else getattr(django_settings, "SUDO_GRACE_SECONDS", SUDO_GRACE_SECONDS_DEFAULT)
+    )
+    grace = max(30, grace)  # don't let an operator footgun themselves with 0
+    expires_at = timezone.now() + timedelta(seconds=grace)
+    session["sudo_until"] = expires_at.isoformat()
+    session.modified = True
+    return grace
+
+
+def revoke_sudo(session) -> None:
+    """Drop any active sudo grant (used on logout and on password change)."""
+    if "sudo_until" in session:
+        del session["sudo_until"]
+        session.modified = True
+
+
+def session_in_sudo(session) -> bool:
+    """Return True when the session still has a valid sudo grant."""
+    raw = session.get("sudo_until")
+    if not raw:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(str(raw))
+    except (ValueError, TypeError):
+        return False
+    return expires_at > timezone.now()
+
+
+def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
+    """Confirm the operator owns the session by re-checking their password
+    and (when applicable) a fresh MFA code.
+
+    Raises :class:`ValueError` with a user-facing message if anything is
+    missing or wrong. Returns silently on success.
+    """
+    if not user or not user.is_authenticated:
+        raise ValueError("autenticacion requerida")
+    if not user.check_password((password or "")):
+        raise ValueError("contrasena invalida")
+    # MFA gate: only enforce when the user has enrolled at least one
+    # method. Operators that never enrolled MFA can still re-auth with
+    # password alone.
+    if not user.mfa_enabled:
+        return
+    code = (mfa_code or "").strip()
+    if not code:
+        raise ValueError("codigo 2fa requerido")
+    # Try TOTP first when enabled; fall back to a recovery code so an
+    # operator who lost their device can still sudo.
+    if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(user.mfa_secret, code):
+        return
+    if consume_recovery_code(user, code):
+        return
+    raise ValueError("codigo 2fa invalido")

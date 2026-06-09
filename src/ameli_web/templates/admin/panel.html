@@ -405,11 +405,122 @@
   </div>
 </div>
 
+<div class="modal-backdrop utility-modal" id="sudo-modal" hidden data-modal="sudo" role="dialog" aria-modal="true" aria-labelledby="sudo-modal-title">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <h3 class="modal-title" id="sudo-modal-title">Re-autenticacion requerida</h3>
+      <button type="button" class="login-modal-close" data-modal-close aria-label="Cerrar">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <p class="modal-copy">Las acciones administrativas sensibles necesitan que confirmes tu contrasena (y tu codigo 2FA si lo tenes activado) antes de continuar. El permiso queda activo por unos minutos.</p>
+    <form id="sudo-form">
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="sudo-password">Contrasena</label>
+        <div class="modal-input-with-action">
+          <input id="sudo-password" class="modal-input" type="password" name="password" autocomplete="current-password" placeholder="Tu clave actual" required>
+          <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="sudo-password" aria-label="Mostrar u ocultar contrasena">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-form-row" id="sudo-mfa-row" hidden>
+        <label class="modal-form-label" for="sudo-mfa-code">Codigo 2FA</label>
+        <input id="sudo-mfa-code" class="modal-input" type="text" name="mfa_code" autocomplete="one-time-code" inputmode="numeric" placeholder="123 456 o XXXX-XXXX-XXXX">
+        <div class="modal-form-help">App de autenticacion o codigo de respaldo.</div>
+      </div>
+      <p class="warn-text" id="sudo-error" aria-live="polite"></p>
+      <div class="modal-actions-row">
+        <button type="button" class="icon-action" data-modal-close>Cancelar</button>
+        <button class="primary" type="submit" id="sudo-submit">Confirmar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const csrfToken = "{{ csrf_token }}";
 
-  async function requestJson(url, options = {}) {
+  // ---- Sudo prompt ----
+  // ``requestJson`` retries once after a successful sudo grant. We keep
+  // a single in-flight promise so concurrent calls share one prompt.
+  let sudoInFlight = null;
+
+  function promptForSudo() {
+    if (sudoInFlight) return sudoInFlight;
+    const modal = document.getElementById("sudo-modal");
+    const form = document.getElementById("sudo-form");
+    const passwordInput = document.getElementById("sudo-password");
+    const mfaInput = document.getElementById("sudo-mfa-code");
+    const mfaRow = document.getElementById("sudo-mfa-row");
+    const errorBox = document.getElementById("sudo-error");
+    const submitBtn = document.getElementById("sudo-submit");
+
+    modal.hidden = false;
+    passwordInput.value = "";
+    mfaInput.value = "";
+    errorBox.textContent = "";
+    mfaRow.hidden = true;
+    passwordInput.focus();
+
+    sudoInFlight = new Promise((resolve, reject) => {
+      const cleanup = () => {
+        modal.hidden = true;
+        form.removeEventListener("submit", onSubmit);
+        modal.querySelectorAll("[data-modal-close]").forEach((b) =>
+          b.removeEventListener("click", onCancel)
+        );
+        sudoInFlight = null;
+      };
+      const onSubmit = async (ev) => {
+        ev.preventDefault();
+        errorBox.textContent = "";
+        submitBtn.disabled = true;
+        try {
+          const response = await fetch("/admin/sudo/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken,
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              password: passwordInput.value,
+              mfa_code: mfaInput.value,
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) {
+            const msg = (data.error || "No se pudo confirmar.").toString();
+            errorBox.textContent = msg;
+            if (msg.toLowerCase().includes("2fa")) {
+              mfaRow.hidden = false;
+              mfaInput.focus();
+            }
+            submitBtn.disabled = false;
+            return;
+          }
+          cleanup();
+          resolve(true);
+        } catch (err) {
+          errorBox.textContent = "Error de red al confirmar.";
+          submitBtn.disabled = false;
+        }
+      };
+      const onCancel = () => {
+        cleanup();
+        reject(new Error("sudo cancelado"));
+      };
+      form.addEventListener("submit", onSubmit);
+      modal.querySelectorAll("[data-modal-close]").forEach((b) =>
+        b.addEventListener("click", onCancel)
+      );
+    });
+    return sudoInFlight;
+  }
+
+  async function requestJson(url, options = {}, _retriedAfterSudo = false) {
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -419,6 +530,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     let data = {};
     try { data = await response.json(); } catch {}
+    // Sudo gate: if the server says we need sudo, prompt the operator
+    // and retry the original request once. Cancelling the prompt
+    // surfaces as a regular thrown error so the caller's catch handler
+    // shows its usual feedback.
+    if (response.status === 401 && data.need_sudo && !_retriedAfterSudo) {
+      try {
+        await promptForSudo();
+      } catch (cancelled) {
+        throw new Error("Accion cancelada. Hace falta confirmar tu identidad.");
+      }
+      return requestJson(url, options, true);
+    }
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "Operacion no completada.");
     }

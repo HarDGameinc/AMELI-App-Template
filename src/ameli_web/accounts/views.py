@@ -144,6 +144,9 @@ class TemplateLoginView(LoginView):
 
 @require_POST
 def logout_view(request: HttpRequest) -> HttpResponse:
+    from .services import revoke_sudo
+
+    revoke_sudo(request.session)
     auth_logout(request)
     messages.success(request, _("Sesion cerrada."))
     return redirect("dashboard-home")
@@ -336,6 +339,8 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
         if not current_password or not new_password:
             return _json_error("current_password and new_password are required")
         try:
+            from .services import revoke_sudo
+
             result = change_password_for_user(
                 request.user.username,
                 current_password,
@@ -344,6 +349,10 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
             )
             user = User.objects.get(pk=request.user.pk)
             update_session_auth_hash(request, user)
+            # A password change should invalidate any open sudo grant:
+            # an attacker that grabbed a sudo'd session must lose it the
+            # moment the legitimate user rotates their credentials.
+            revoke_sudo(request.session)
             return JsonResponse(result)
         except ValueError as exc:
             record_audit(

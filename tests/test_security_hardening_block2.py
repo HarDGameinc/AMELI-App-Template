@@ -69,7 +69,14 @@ def test_admin_update_user_rejects_get(client, admin_user, tester):
 
 @pytest.mark.django_db
 def test_admin_update_user_accepts_patch(client, admin_user, tester):
+    from ameli_web.accounts.services import grant_sudo
+
     client.force_login(admin_user)
+    # Grant sudo so the sudo_required decorator does not return 401.
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
     response = client.patch(
         "/admin/users/tester",
         data='{"enabled": true}',
@@ -214,3 +221,126 @@ def test_admin_disable_mfa_skips_email_when_user_has_none(tester, admin_user, se
     assert result["ok"] is True
     assert result["notified"] is False
     assert mail.outbox == []
+
+
+# ---------------------------------------------------------------------------
+# H5 — sudo-mode for admin write actions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_admin_write_without_sudo_returns_need_sudo(client, admin_user, tester):
+    """An admin with a fresh login session (no sudo grant yet) must be
+    redirected through the re-auth endpoint before mutating state."""
+    client.force_login(admin_user)
+    response = client.patch(
+        "/admin/users/tester",
+        data='{"enabled": true}',
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+    payload = response.json()
+    assert payload["need_sudo"] is True
+    assert payload["sudo_url"] == "/admin/sudo/"
+
+
+@pytest.mark.django_db
+def test_admin_sudo_grants_and_unblocks_writes(client, admin_user, tester):
+    client.force_login(admin_user)
+
+    grant = client.post(
+        "/admin/sudo/",
+        data=f'{{"password": "{ADMIN_PASSWORD}"}}',
+        content_type="application/json",
+    )
+    assert grant.status_code == 200
+    assert grant.json()["ok"] is True
+
+    response = client.patch(
+        "/admin/users/tester",
+        data='{"enabled": true}',
+        content_type="application/json",
+    )
+    # Should not be the sudo gate anymore. Either the patch succeeded or
+    # the domain rejected the payload for a non-sudo reason, but it is
+    # NOT 401 need_sudo.
+    assert response.status_code != 401
+
+
+@pytest.mark.django_db
+def test_admin_sudo_rejects_wrong_password(client, admin_user):
+    client.force_login(admin_user)
+    response = client.post(
+        "/admin/sudo/",
+        data='{"password": "definitely-not-it"}',
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+    assert response.json()["ok"] is False
+
+
+@pytest.mark.django_db
+def test_admin_sudo_requires_mfa_when_user_enrolled(client, admin_user):
+    admin_user.mfa_totp_enabled = True
+    admin_user.mfa_enabled = True
+    admin_user.mfa_secret = "JBSWY3DPEHPK3PXP"
+    admin_user.save()
+    client.force_login(admin_user)
+
+    # Password alone must NOT be enough when MFA is enrolled.
+    response = client.post(
+        "/admin/sudo/",
+        data=f'{{"password": "{ADMIN_PASSWORD}"}}',
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+    assert "2fa" in response.json()["error"].lower()
+
+
+@pytest.mark.django_db
+def test_password_change_revokes_open_sudo_grant(client, admin_user):
+    """An attacker that grabbed a sudo'd session must lose the grant the
+    instant the legitimate user rotates their password."""
+    from ameli_web.accounts.services import grant_sudo, session_in_sudo
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+    assert session_in_sudo(client.session)
+
+    new_password = "BrandNew!12?Secure"
+    response = client.post(
+        "/profile/password/",
+        data=f'{{"current_password": "{ADMIN_PASSWORD}", "new_password": "{new_password}"}}',
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    # The grant must be gone.
+    assert not session_in_sudo(client.session)
+
+
+@pytest.mark.django_db
+def test_logout_revokes_sudo_grant(client, admin_user):
+    from ameli_web.accounts.services import grant_sudo
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+    assert "sudo_until" in client.session
+
+    client.post("/logout/")
+    # ``client.session`` is regenerated after logout, so the new session
+    # cannot carry the sudo stamp from the previous one.
+    assert "sudo_until" not in client.session
+
+
+@pytest.mark.django_db
+def test_admin_users_list_does_not_require_sudo(client, admin_user):
+    """Read-only endpoints stay free so an operator can look without
+    re-authing — only writes are gated."""
+    client.force_login(admin_user)
+    response = client.get("/admin/users")
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
