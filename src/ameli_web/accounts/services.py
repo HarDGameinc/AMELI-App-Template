@@ -1031,17 +1031,20 @@ def _send_mfa_disabled_by_admin_notification(user, *, actor_username: str) -> bo
         body=body,
         to=[user.email],
     )
+    actor = User.objects.filter(username__iexact=actor_username).first()
     try:
         email.send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 - we audit and move on
         record_audit(
             "mfa_disabled_notify_failed",
+            actor=actor,
             target_username=user.username,
             payload={"reason": f"{exc.__class__.__name__}: {exc}"},
         )
         return True
     record_audit(
         "mfa_disabled_notify_sent",
+        actor=actor,
         target_username=user.username,
         payload={"email": user.email},
     )

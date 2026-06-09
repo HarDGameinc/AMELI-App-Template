@@ -177,6 +177,28 @@ def test_admin_disable_mfa_emails_the_user(tester, admin_user, settings):
 
 
 @pytest.mark.django_db
+def test_admin_disable_mfa_audit_row_carries_actor(tester, admin_user, settings):
+    """The notify-sent audit row should be attributed to the admin that
+    triggered the disable, not to the anonymous ``record_audit`` default."""
+    from django.core import mail
+    from ameli_web.accounts.services import admin_disable_mfa_for_user
+    from ameli_web.audit.models import AuditEvent
+
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    tester.email = "tester@example.com"
+    tester.mfa_totp_enabled = True
+    tester.mfa_enabled = True
+    tester.mfa_secret = "JBSWY3DPEHPK3PXP"
+    tester.save()
+    mail.outbox.clear()
+
+    admin_disable_mfa_for_user(actor_username="admin", username="tester")
+    row = AuditEvent.objects.filter(action="mfa_disabled_notify_sent").last()
+    assert row is not None
+    assert row.actor_username == "admin"
+
+
+@pytest.mark.django_db
 def test_admin_disable_mfa_skips_email_when_user_has_none(tester, admin_user, settings):
     from django.core import mail
     from ameli_web.accounts.services import admin_disable_mfa_for_user
