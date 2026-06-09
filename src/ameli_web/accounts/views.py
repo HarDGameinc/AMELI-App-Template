@@ -690,11 +690,31 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
 
 @require_POST
 def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
+    from .services import LoginThrottled, check_mfa_resend_throttle, client_ip
+
     user = _pending_mfa_user(request)
     if user is None:
         return _json_error("la sesion de ingreso expiro; vuelve a /login/", status=401)
     if not user.mfa_email_enabled:
         return _json_error("el reenvio por email solo aplica al metodo email", status=400)
+    ip = client_ip(request)
+    try:
+        check_mfa_resend_throttle(ip=ip)
+    except LoginThrottled as exc:
+        record_audit(
+            "mfa_email_resend_throttled",
+            target_username=user.username,
+            payload={"ip": ip, "retry_after": exc.retry_after},
+        )
+        return _json_error(str(exc), status=429)
+    # Audit BEFORE attempting delivery so the throttle counts the attempt
+    # even when SMTP errors out: an attacker should not be able to retry
+    # for free just because the SMTP path is broken.
+    record_audit(
+        "mfa_email_resend_requested",
+        target_username=user.username,
+        payload={"ip": ip},
+    )
     try:
         result = send_mfa_email_login_code(user)
     except ValueError as exc:
@@ -738,10 +758,29 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
     }
 
     if request.method == "POST":
+        from .services import LoginThrottled, check_forgot_password_throttle, client_ip
+
         identifier = str(request.POST.get("identifier") or "").strip()
         if not identifier:
             context["form_error"] = "Tipea tu usuario o tu email para pedir el reset."
             return render(request, "accounts/forgot_password.html", context, status=400)
+        ip = client_ip(request)
+        try:
+            check_forgot_password_throttle(ip=ip)
+        except LoginThrottled as exc:
+            record_audit(
+                "password_reset_throttled",
+                payload={"ip": ip, "identifier": identifier, "retry_after": exc.retry_after},
+            )
+            context["form_error"] = str(exc)
+            return render(request, "accounts/forgot_password.html", context, status=429)
+        # Audit BEFORE delivery so the throttle counts the request even
+        # when the user does not exist or SMTP errors out. Without this
+        # the IP could spray invalid identifiers for free.
+        record_audit(
+            "password_reset_requested",
+            payload={"ip": ip, "identifier": identifier},
+        )
         try:
             request_password_reset(identifier, base_url=_build_public_base_url(request))
         except Exception:  # noqa: BLE001 - never leak sending errors to the form

@@ -1001,13 +1001,62 @@ def send_profile_test_email(user, *, last_sent_at: datetime | None = None) -> di
     return {"ok": True, "email": user.email, "sent_at": timezone.now().isoformat()}
 
 
+def _send_mfa_disabled_by_admin_notification(user, *, actor_username: str) -> bool:
+    """Notify the user that their 2FA was disabled by an administrator.
+
+    Returns True when an email was actually attempted (user has an
+    address), False when there is nothing to notify. Delivery exceptions
+    are swallowed: the disable action itself must complete even if SMTP
+    is broken — we audit a ``mfa_disabled_notify_failed`` row so the
+    operator can replay manually.
+    """
+    if not (user.email or "").strip():
+        return False
+    context = {
+        "app_name": django_settings.CFG.app_name,
+        "username": user.username,
+        "actor": actor_username or "admin",
+    }
+    body = render_to_string("accounts/mfa_disabled_by_admin.txt", context)
+    subject = f"[{django_settings.CFG.app_name}] Se deshabilito el 2FA de tu cuenta"
+    message_class = EmailMessage
+    try:
+        body.encode("us-ascii")
+        subject.encode("us-ascii")
+        message_class = _PasswordResetEmail
+    except UnicodeEncodeError:
+        pass
+    email = message_class(
+        subject=subject,
+        body=body,
+        to=[user.email],
+    )
+    try:
+        email.send(fail_silently=False)
+    except Exception as exc:  # noqa: BLE001 - we audit and move on
+        record_audit(
+            "mfa_disabled_notify_failed",
+            target_username=user.username,
+            payload={"reason": f"{exc.__class__.__name__}: {exc}"},
+        )
+        return True
+    record_audit(
+        "mfa_disabled_notify_sent",
+        target_username=user.username,
+        payload={"email": user.email},
+    )
+    return True
+
+
 def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, Any]:
     """Forcibly disable MFA for a user (e.g. lost device support case).
 
     Unlike disable_mfa_for_self, this does not ask for the target's
     password — it is an admin recovery action. Rejects self use so a
     superadmin still has to go through their own profile (and password)
-    to disable their own MFA.
+    to disable their own MFA. Notifies the user by email so a malicious
+    admin cannot silently take over an account: even if the audit log
+    is tampered with, the legitimate user gets a real-time signal.
     """
     is_self = (actor_username or "").lower() == (username or "").lower()
     if is_self:
@@ -1037,9 +1086,12 @@ def admin_disable_mfa_for_user(actor_username: str, username: str) -> dict[str, 
         "mfa_disabled_by_admin",
         actor=actor,
         target_username=user.username,
-        payload={},
+        payload={"actor": actor_username},
     )
-    return {"ok": True, "status": "disabled"}
+    notified = _send_mfa_disabled_by_admin_notification(
+        user, actor_username=actor_username,
+    )
+    return {"ok": True, "status": "disabled", "notified": notified}
 
 
 def _check_email_mfa_rate_limit(user) -> None:
@@ -1500,6 +1552,97 @@ class AccountLocked(Exception):
     def __init__(self, message: str, *, retry_after: int = 0):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+# Defaults for the per-IP throttle that protects the ``/login/forgot/``
+# request endpoint. Tuned so a typo-prone user can still ask 3-4 times
+# but an attacker enumerating usernames or flooding SMTP gets stopped.
+FORGOT_PASSWORD_IP_MAX_DEFAULT = 5
+FORGOT_PASSWORD_IP_WINDOW_DEFAULT = 600  # 10 minutes
+
+# Defaults for the per-IP throttle that protects ``/login/verify-mfa/resend/``.
+# The per-user rate limit inside ``_check_email_mfa_rate_limit`` is per
+# account; this one adds a per-IP cap so an attacker hitting the same
+# resend endpoint with rotating users cannot cost-amplify the SMTP path.
+MFA_RESEND_IP_MAX_DEFAULT = 8
+MFA_RESEND_IP_WINDOW_DEFAULT = 300  # 5 minutes
+
+
+def _count_recent_audit_by_action(
+    *, action: str, ip: str = "", username: str = "", seconds: int
+) -> int:
+    """Count audit events matching ``action`` within the window.
+
+    Used by the per-action throttles below. The lookup uses an exact JSON
+    path match for ``ip`` and ``ip_address`` so a prefix like
+    ``192.168.1.1`` does not collide with ``192.168.1.10``.
+    """
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=max(1, seconds))
+    queryset = AuditEvent.objects.filter(action=action, created_at__gte=cutoff)
+    if ip:
+        from django.db.models import Q
+
+        queryset = queryset.filter(Q(payload__ip=ip) | Q(payload__ip_address=ip))
+    if username:
+        queryset = queryset.filter(target_username__iexact=username)
+    return queryset.count()
+
+
+def check_forgot_password_throttle(*, ip: str) -> None:
+    """Refuse a ``/login/forgot/`` request when the IP has already asked
+    for too many resets in the window. Raises :class:`LoginThrottled` so
+    the existing handler can react like it does for login throttling.
+    """
+    if not ip:
+        return
+    from django.conf import settings as django_settings
+
+    ip_max = getattr(
+        django_settings, "FORGOT_PASSWORD_IP_MAX", FORGOT_PASSWORD_IP_MAX_DEFAULT
+    )
+    ip_window = getattr(
+        django_settings, "FORGOT_PASSWORD_IP_WINDOW", FORGOT_PASSWORD_IP_WINDOW_DEFAULT
+    )
+    recent = _count_recent_audit_by_action(
+        action="password_reset_requested", ip=ip, seconds=ip_window
+    )
+    if recent >= ip_max:
+        raise LoginThrottled(
+            _(
+                "Demasiados pedidos de recuperacion desde esta direccion. "
+                "Espera unos minutos antes de volver a intentarlo."
+            ),
+            retry_after=ip_window,
+        )
+
+
+def check_mfa_resend_throttle(*, ip: str) -> None:
+    """Refuse a ``/login/verify-mfa/resend/`` when the IP has triggered
+    too many resends already. Complements the per-user limit inside
+    :func:`_check_email_mfa_rate_limit` so an attacker rotating usernames
+    cannot bypass the per-account cap.
+    """
+    if not ip:
+        return
+    from django.conf import settings as django_settings
+
+    ip_max = getattr(django_settings, "MFA_RESEND_IP_MAX", MFA_RESEND_IP_MAX_DEFAULT)
+    ip_window = getattr(
+        django_settings, "MFA_RESEND_IP_WINDOW", MFA_RESEND_IP_WINDOW_DEFAULT
+    )
+    recent = _count_recent_audit_by_action(
+        action="mfa_email_resend_requested", ip=ip, seconds=ip_window
+    )
+    if recent >= ip_max:
+        raise LoginThrottled(
+            _(
+                "Demasiados reenvios desde esta direccion. "
+                "Espera unos minutos antes de pedir otro codigo."
+            ),
+            retry_after=ip_window,
+        )
 
 
 def check_login_throttle(*, username: str, ip: str) -> None:

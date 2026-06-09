@@ -1,0 +1,12 @@
+Hola @{{ username }},
+
+Un administrador ({{ actor }}) acaba de deshabilitar la autenticacion en dos pasos (2FA) de tu cuenta en {{ app_name }}.
+
+A partir de este momento, solo se necesita tu contrasena para ingresar. Esto suele hacerse para ayudarte a recuperar el acceso cuando perdiste tu dispositivo de 2FA.
+
+Si vos pediste este cambio, no hay nada que hacer. Te recomendamos volver a activar 2FA desde tu perfil cuando puedas.
+
+Si vos NO pediste este cambio, contacta a tu administrador y considera cambiar tu contrasena de inmediato.
+
+Saludos,
+{{ app_name }}
