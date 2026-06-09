@@ -344,3 +344,95 @@ def test_admin_users_list_does_not_require_sudo(client, admin_user):
     response = client.get("/admin/users")
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+@pytest.mark.django_db
+def test_sudo_status_reports_enrolled_methods(client, admin_user):
+    """The modal pre-flights this endpoint to render the right inputs.
+    Pin the shape so a future refactor cannot quietly break the UX."""
+    admin_user.mfa_totp_enabled = True
+    admin_user.mfa_email_enabled = True
+    admin_user.mfa_enabled = True
+    admin_user.mfa_secret = "JBSWY3DPEHPK3PXP"
+    admin_user.email = "admin@example.com"
+    admin_user.save()
+    client.force_login(admin_user)
+
+    response = client.get("/admin/sudo/status/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["in_sudo"] is False
+    assert payload["mfa"]["enabled"] is True
+    assert payload["mfa"]["totp"] is True
+    assert payload["mfa"]["email"] is True
+    assert payload["mfa"]["email_address"] == "admin@example.com"
+
+
+@pytest.mark.django_db
+def test_sudo_accepts_email_mfa_code(admin_user, settings):
+    """Operators enrolled only in email MFA must be able to sudo. Before
+    the fix the verifier only checked TOTP and recovery codes."""
+    from ameli_web.accounts.models import MFAEmailChallenge
+    from ameli_web.accounts.services import verify_sudo_credentials
+    from ameli_web.accounts.mfa import hash_email_code
+
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    admin_user.mfa_email_enabled = True
+    admin_user.mfa_enabled = True
+    admin_user.mfa_totp_enabled = False
+    admin_user.email = "admin@example.com"
+    admin_user.save()
+
+    # Drop a fresh challenge as if send_sudo_email_code had run.
+    from django.utils import timezone
+    from datetime import timedelta
+
+    code = "654321"
+    MFAEmailChallenge.objects.create(
+        user=admin_user,
+        code_hash=hash_email_code(code),
+        expires_at=timezone.now() + timedelta(minutes=10),
+    )
+
+    # No exception means the verifier accepted the email code.
+    verify_sudo_credentials(admin_user, password=ADMIN_PASSWORD, mfa_code=code)
+
+
+@pytest.mark.django_db
+def test_sudo_email_code_endpoint_sends_mail(client, admin_user, settings):
+    from django.core import mail
+
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    admin_user.mfa_email_enabled = True
+    admin_user.mfa_enabled = True
+    admin_user.email = "admin@example.com"
+    admin_user.save()
+    client.force_login(admin_user)
+    mail.outbox.clear()
+
+    response = client.post(
+        "/admin/sudo/email-code/",
+        data="{}",
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["admin@example.com"]
+
+
+@pytest.mark.django_db
+def test_sudo_email_code_endpoint_rejects_non_email_users(client, admin_user):
+    """An operator without email MFA enrolled gets a 400, not a silent
+    no-op (so the UI can surface the misconfiguration)."""
+    admin_user.mfa_email_enabled = False
+    admin_user.save()
+    client.force_login(admin_user)
+
+    response = client.post(
+        "/admin/sudo/email-code/",
+        data="{}",
+        content_type="application/json",
+    )
+    assert response.status_code == 400

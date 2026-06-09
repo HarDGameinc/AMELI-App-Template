@@ -45,6 +45,8 @@ urlpatterns = [
     path("admin/change-password", admin_views.admin_change_password, name="admin-change-password"),
     path("admin/sudo/", admin_views.admin_sudo, name="admin-sudo"),
     path("admin/sudo", admin_views.admin_sudo),
+    path("admin/sudo/status/", admin_views.admin_sudo_status, name="admin-sudo-status"),
+    path("admin/sudo/email-code/", admin_views.admin_sudo_email_code, name="admin-sudo-email-code"),
     path("django-admin/", admin.site.urls),
 ]
 

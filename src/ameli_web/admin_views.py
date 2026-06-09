@@ -593,3 +593,61 @@ def admin_sudo(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {"ok": True, "expires_in_seconds": grace, "mfa_required": request.user.mfa_enabled}
     )
+
+
+@require_POST
+@superadmin_required
+def admin_sudo_email_code(request: HttpRequest) -> JsonResponse:
+    """Dispatch a single-use email code so the operator can complete a
+    sudo prompt without their authenticator app. Throttled per-user by
+    the existing email MFA rate limit so spamming is bounded."""
+    from ameli_web.accounts.services import (
+        LoginThrottled,
+        check_mfa_resend_throttle,
+        client_ip,
+        record_audit,
+        send_sudo_email_code,
+    )
+
+    ip = client_ip(request)
+    try:
+        check_mfa_resend_throttle(ip=ip)
+    except LoginThrottled as exc:
+        return _json_error(str(exc), status=429)
+    record_audit(
+        "sudo_email_code_requested",
+        actor=request.user,
+        target_username=request.user.username,
+        payload={"ip": ip},
+    )
+    try:
+        result = send_sudo_email_code(request.user)
+    except ValueError as exc:
+        return _json_error(str(exc), status=400)
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(
+            f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502
+        )
+    return JsonResponse(result)
+
+
+@require_GET
+@superadmin_required
+def admin_sudo_status(request: HttpRequest) -> JsonResponse:
+    """Surface the operator's MFA enrollment so the sudo modal can render
+    the right inputs (TOTP, email button, recovery codes hint)."""
+    from ameli_web.accounts.services import session_in_sudo
+
+    user = request.user
+    return JsonResponse(
+        {
+            "ok": True,
+            "in_sudo": session_in_sudo(request.session),
+            "mfa": {
+                "enabled": bool(user.mfa_enabled),
+                "totp": bool(user.mfa_totp_enabled),
+                "email": bool(user.mfa_email_enabled),
+                "email_address": user.email if user.mfa_email_enabled else "",
+            },
+        }
+    )

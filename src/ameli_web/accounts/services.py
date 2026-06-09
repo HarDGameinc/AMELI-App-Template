@@ -1740,6 +1740,15 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
     """Confirm the operator owns the session by re-checking their password
     and (when applicable) a fresh MFA code.
 
+    Accepts any of the enrolled methods so the operator can use whatever
+    is closest at hand:
+
+    * TOTP code from the authenticator app (when ``mfa_totp_enabled``)
+    * Single-use code emailed via :func:`send_sudo_email_code` (when
+      ``mfa_email_enabled``)
+    * Recovery code (always, so an operator who lost both devices can
+      still sudo)
+
     Raises :class:`ValueError` with a user-facing message if anything is
     missing or wrong. Returns silently on success.
     """
@@ -1747,18 +1756,27 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
         raise ValueError("autenticacion requerida")
     if not user.check_password((password or "")):
         raise ValueError("contrasena invalida")
-    # MFA gate: only enforce when the user has enrolled at least one
-    # method. Operators that never enrolled MFA can still re-auth with
-    # password alone.
     if not user.mfa_enabled:
         return
     code = (mfa_code or "").strip()
     if not code:
         raise ValueError("codigo 2fa requerido")
-    # Try TOTP first when enabled; fall back to a recovery code so an
-    # operator who lost their device can still sudo.
     if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(user.mfa_secret, code):
+        return
+    if user.mfa_email_enabled and consume_email_mfa_code(user, code):
         return
     if consume_recovery_code(user, code):
         return
-    raise ValueError("codigo 2fa invalido")
+    raise ValueError("codigo 2fa invalido o expirado")
+
+
+def send_sudo_email_code(user) -> dict[str, Any]:
+    """Send a single-use email code so the operator can sudo without the
+    TOTP app. Reuses the login-time email MFA pipeline (with the same
+    per-user rate-limit) so this path stays consistent.
+    """
+    if not (user and user.is_authenticated):
+        raise ValueError("autenticacion requerida")
+    if not user.mfa_email_enabled:
+        raise ValueError("email 2fa no esta activado para esta cuenta")
+    return send_mfa_email_login_code(user)

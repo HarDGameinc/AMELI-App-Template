@@ -427,7 +427,14 @@
       <div class="modal-form-row" id="sudo-mfa-row" hidden>
         <label class="modal-form-label" for="sudo-mfa-code">Codigo 2FA</label>
         <input id="sudo-mfa-code" class="modal-input" type="text" name="mfa_code" autocomplete="one-time-code" inputmode="numeric" placeholder="123 456 o XXXX-XXXX-XXXX">
-        <div class="modal-form-help">App de autenticacion o codigo de respaldo.</div>
+        <div class="modal-form-help" id="sudo-mfa-help">App de autenticacion o codigo de respaldo.</div>
+        <div class="modal-actions-row" id="sudo-email-actions" hidden style="margin-top:8px;">
+          <button class="icon-action" type="button" id="sudo-send-email">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
+            <span>Recibir codigo por email</span>
+          </button>
+          <span class="muted" id="sudo-email-feedback" aria-live="polite"></span>
+        </div>
       </div>
       <p class="warn-text" id="sudo-error" aria-live="polite"></p>
       <div class="modal-actions-row">
@@ -447,6 +454,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // a single in-flight promise so concurrent calls share one prompt.
   let sudoInFlight = null;
 
+  async function fetchSudoStatus() {
+    try {
+      const response = await fetch("/admin/sudo/status/", { credentials: "same-origin" });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (err) {
+      return null;
+    }
+  }
+
   function promptForSudo() {
     if (sudoInFlight) return sudoInFlight;
     const modal = document.getElementById("sudo-modal");
@@ -454,6 +471,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const passwordInput = document.getElementById("sudo-password");
     const mfaInput = document.getElementById("sudo-mfa-code");
     const mfaRow = document.getElementById("sudo-mfa-row");
+    const mfaHelp = document.getElementById("sudo-mfa-help");
+    const emailActions = document.getElementById("sudo-email-actions");
+    const emailBtn = document.getElementById("sudo-send-email");
+    const emailFeedback = document.getElementById("sudo-email-feedback");
     const errorBox = document.getElementById("sudo-error");
     const submitBtn = document.getElementById("sudo-submit");
 
@@ -462,7 +483,27 @@ document.addEventListener("DOMContentLoaded", () => {
     mfaInput.value = "";
     errorBox.textContent = "";
     mfaRow.hidden = true;
+    emailActions.hidden = true;
+    if (emailFeedback) emailFeedback.textContent = "";
     passwordInput.focus();
+
+    // Pre-fetch the operator's enrolled MFA methods so the modal renders
+    // the right help text and action buttons before the first submit.
+    fetchSudoStatus().then((status) => {
+      if (!status || !status.mfa || !status.mfa.enabled) return;
+      mfaRow.hidden = false;
+      const hints = [];
+      if (status.mfa.totp) hints.push("app de autenticacion");
+      if (status.mfa.email) hints.push("codigo enviado al email");
+      hints.push("codigo de respaldo");
+      mfaHelp.textContent = "Aceptamos: " + hints.join(", ") + ".";
+      if (status.mfa.email) {
+        emailActions.hidden = false;
+        if (status.mfa.email_address && emailFeedback) {
+          emailFeedback.textContent = "Se enviara a " + status.mfa.email_address;
+        }
+      }
+    });
 
     sudoInFlight = new Promise((resolve, reject) => {
       const cleanup = () => {
@@ -471,6 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.querySelectorAll("[data-modal-close]").forEach((b) =>
           b.removeEventListener("click", onCancel)
         );
+        if (emailBtn) emailBtn.removeEventListener("click", onSendEmail);
         sudoInFlight = null;
       };
       const onSubmit = async (ev) => {
@@ -508,11 +550,42 @@ document.addEventListener("DOMContentLoaded", () => {
           submitBtn.disabled = false;
         }
       };
+      const onSendEmail = async () => {
+        if (!emailBtn) return;
+        emailBtn.disabled = true;
+        if (emailFeedback) emailFeedback.textContent = "Enviando...";
+        try {
+          const response = await fetch("/admin/sudo/email-code/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken,
+            },
+            credentials: "same-origin",
+            body: "{}",
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) {
+            const msg = (data.error || "No se pudo enviar el codigo.").toString();
+            if (emailFeedback) emailFeedback.textContent = msg;
+            emailBtn.disabled = false;
+            return;
+          }
+          if (emailFeedback) {
+            emailFeedback.textContent = "Codigo enviado. Revisa tu email y pegalo arriba.";
+          }
+          mfaInput.focus();
+        } catch (err) {
+          if (emailFeedback) emailFeedback.textContent = "Error de red al enviar.";
+          emailBtn.disabled = false;
+        }
+      };
       const onCancel = () => {
         cleanup();
         reject(new Error("sudo cancelado"));
       };
       form.addEventListener("submit", onSubmit);
+      if (emailBtn) emailBtn.addEventListener("click", onSendEmail);
       modal.querySelectorAll("[data-modal-close]").forEach((b) =>
         b.addEventListener("click", onCancel)
       );
