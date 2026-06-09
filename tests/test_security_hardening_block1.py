@@ -91,12 +91,15 @@ def test_user_with_must_change_password_redirected_from_admin(client, admin_user
 
 
 @pytest.mark.django_db
-def test_change_password_path_is_post_only_for_safety(client, tester):
+def test_change_password_get_redirects_to_security_tab(client, tester):
+    """A GET against the submit endpoint must land on the form, not a
+    405. This covers stale bookmarks, ``?next=/profile/password/`` after
+    login, and the must-change-password middleware target."""
     client.force_login(tester)
     response = client.get("/profile/password/")
-    # Defensive pin: if a future refactor wires a GET handler here we want
-    # the must-change-password redirect target reviewed at the same time.
-    assert response.status_code == 405
+    assert response.status_code in {301, 302}
+    assert response["Location"].startswith("/profile/")
+    assert "profile-tab-security" in response["Location"]
 
 
 @pytest.mark.django_db

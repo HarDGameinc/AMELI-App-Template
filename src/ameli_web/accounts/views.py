@@ -308,8 +308,16 @@ def delete_avatar_view(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def change_password_view(request: HttpRequest) -> HttpResponse:
+    # ``/profile/password/`` is the submit target of the change form, but
+    # any flow that lands here with a GET (a stale bookmark, a ``?next=``
+    # bounce after login, the must-change-password middleware) deserves
+    # to see the form rather than a bare 405. Send GETs to the profile
+    # page with the Security tab focused so the user can complete the
+    # change.
+    if request.method == "GET":
+        return redirect("/profile/#profile-tab-security")
     if _expects_json(request):
         try:
             payload = _json_body(request)
