@@ -103,6 +103,53 @@ def test_change_password_get_redirects_to_security_tab(client, tester):
 
 
 @pytest.mark.django_db
+def test_login_with_must_change_password_redirects_to_security_tab(client, tester):
+    """Quick-fix companion to the modal: signing in with the flag set
+    must drop the user directly on the Security tab so the form is
+    visible without an extra click on the tab nav."""
+    tester.must_change_password = True
+    tester.save(update_fields=["must_change_password"])
+    response = client.post(
+        "/login/",
+        data={"username": "tester", "password": TESTER_PASSWORD},
+        follow=False,
+    )
+    assert response.status_code in {301, 302}
+    assert response["Location"].endswith("/profile/#profile-tab-security")
+
+
+@pytest.mark.django_db
+def test_profile_with_must_change_password_renders_blocking_modal(client, tester):
+    tester.must_change_password = True
+    tester.save(update_fields=["must_change_password"])
+    client.force_login(tester)
+
+    response = client.get("/profile/")
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    # Modal markers must be present, normal profile layout must be gone.
+    assert "force-pw-screen" in body
+    assert "Debes cambiar tu contrasena" in body
+    # ``profile-tab-general`` is the General tab id used by the regular
+    # profile layout; the force-password branch does NOT render the tab
+    # nav so this id should not appear.
+    assert 'id="profile-tab-general"' not in body
+    # The change-password form is still present so the user can act.
+    assert 'id="profile-password-form"' in body
+
+
+@pytest.mark.django_db
+def test_profile_without_flag_keeps_normal_layout(client, tester):
+    client.force_login(tester)
+    response = client.get("/profile/")
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    assert "force-pw-screen" not in body
+    # Tabs are back.
+    assert 'id="profile-tab-general"' in body
+
+
+@pytest.mark.django_db
 def test_user_with_must_change_password_can_reach_profile_form(client, tester):
     tester.must_change_password = True
     tester.save(update_fields=["must_change_password"])

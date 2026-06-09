@@ -13,6 +13,9 @@
 {% endblock %}
 
 {% block content %}
+{% if current_user.must_change_password %}
+{% include "accounts/_force_password_modal.html" %}
+{% else %}
 <section class="panel profile-hero">
   <div class="profile-identity">
     <div class="profile-avatar">
@@ -821,4 +824,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
 });
 </script>
+{% endif %}
 {% endblock %}

@@ -97,6 +97,14 @@ class TemplateLoginView(LoginView):
         return context
 
     def get_success_url(self):
+        # When the user must change their password (admin-forced reset,
+        # superadmin bootstrap), drop them straight onto the Security tab
+        # of the profile page. The middleware will block any other URL
+        # anyway, but doing the redirect here gives a smoother UX than
+        # making the user land on the General tab and discover the banner.
+        user = getattr(self.request, "user", None)
+        if user is not None and user.is_authenticated and getattr(user, "must_change_password", False):
+            return "/profile/#profile-tab-security"
         return self.get_redirect_url() or "/profile/"
 
     def post(self, request, *args, **kwargs):

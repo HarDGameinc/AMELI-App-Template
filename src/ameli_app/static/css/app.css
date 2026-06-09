@@ -721,3 +721,74 @@
       .back-to-top { bottom:16px; right:16px; padding:8px 10px; }
       .back-to-top-label { display:none; }
     }
+
+/* ---- Force-change-password screen ---- */
+/* Blocking overlay rendered in place of the normal profile content when
+   the user has must_change_password=True. The middleware already blocks
+   every other URL; this is the visual companion. */
+.force-pw-active {
+  overflow: hidden;
+}
+.force-pw-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px;
+  background: rgba(8, 12, 20, 0.78);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;
+}
+.force-pw-card {
+  width: 100%;
+  max-width: 640px;
+  background: var(--panel-bg, #11161f);
+  border: 1px solid var(--panel-border, #1f2733);
+  border-radius: 14px;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.45);
+  padding: 28px 28px 24px;
+}
+.force-pw-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+  margin-bottom: 18px;
+}
+.force-pw-icon {
+  font-size: 40px !important;
+  color: var(--warn-fg, #f5b041);
+  align-self: center;
+  margin-bottom: 4px;
+}
+.force-pw-copy {
+  margin: 0 auto;
+  max-width: 520px;
+}
+.force-pw-form {
+  background: transparent;
+  padding: 0;
+  border: none;
+}
+.force-pw-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.force-pw-logout {
+  text-decoration: none;
+}
+.force-pw-feedback {
+  margin-top: 10px;
+  text-align: center;
+}
+@media (max-width: 600px) {
+  .force-pw-screen { padding: 24px 12px; }
+  .force-pw-card { padding: 20px 18px; }
+  .force-pw-actions { flex-direction: column-reverse; }
+  .force-pw-actions .primary,
+  .force-pw-logout { width: 100%; justify-content: center; }
+}
