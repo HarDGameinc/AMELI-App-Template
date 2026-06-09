@@ -1,0 +1,12 @@
+Hola @{{ username }},
+
+Pediste cambiar el email de tu cuenta en {{ app_name }} a esta direccion ({{ new_email }}).
+
+Para confirmar el cambio, abri este enlace en tu navegador (caduca en {{ ttl_hours }} horas y solo sirve una vez):
+
+{{ confirm_url }}
+
+Si vos no pediste este cambio, ignora este mensaje. La direccion vieja sigue siendo la oficial mientras no se confirme.
+
+Saludos,
+{{ app_name }}

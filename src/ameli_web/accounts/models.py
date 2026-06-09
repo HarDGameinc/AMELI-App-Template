@@ -133,3 +133,38 @@ class MFAEmailChallenge(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username}::email-challenge"
+
+
+class EmailChangeRequest(models.Model):
+    """A pending email change waiting for double-opt-in confirmation.
+
+    The legitimate user starts a change with their current password; we
+    write a record here, email the NEW address with a confirm link, and
+    email the OLD address with an alert + cancel link. The change is
+    applied only when the new address proves it can receive mail.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="email_changes")
+    new_email = models.EmailField()
+    token_hash = models.CharField(max_length=128, db_index=True, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    confirmed_at = models.DateTimeField(blank=True, null=True)
+    cancelled_at = models.DateTimeField(blank=True, null=True)
+    cancel_reason = models.CharField(max_length=64, blank=True, default="")
+    ip_address = models.CharField(max_length=128, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username}::email-change::{self.new_email}"
+
+    @property
+    def is_pending(self) -> bool:
+        return self.confirmed_at is None and self.cancelled_at is None
+
+    def is_expired(self, *, at=None) -> bool:
+        from django.utils import timezone
+
+        return (at or timezone.now()) >= self.expires_at

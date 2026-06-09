@@ -33,7 +33,6 @@ from .services import (
     consume_email_mfa_code,
     consume_recovery_code,
     delete_avatar,
-    change_email_for_self,
     disable_mfa_email_for_self,
     disable_mfa_for_self,
     disable_mfa_totp_for_self,
@@ -155,6 +154,12 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 _SESSIONS_PER_PAGE_COOKIE = "ps_sessions_per_page"
 
 
+def _pending_email_change(user):
+    from .services import pending_email_change_for
+
+    return pending_email_change_for(user)
+
+
 @login_required
 def profile_view(request: HttpRequest) -> HttpResponse:
     from ameli_web.pagination import coerce_page, persist_per_page_cookie, resolve_per_page
@@ -187,6 +192,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
         "mfa_status": serialize_mfa_status(request.user),
+        "pending_email_change": _pending_email_change(request.user),
         "display_last_login_at": format_timestamp_ui(request.user.last_login),
         "csrf_token": get_token(request),
     }
@@ -228,24 +234,19 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
 
     form = ProfilePreferencesForm(request.POST, instance=request.user)
     if form.is_valid():
-        new_email = form.cleaned_data.get("email", "")
-        # Persist display_name and theme via form, then route email through
-        # the service so the email-MFA invariants (disable + cleanup) hold.
+        # Email rotates through the double-opt-in flow exposed at
+        # ``/profile/email-change/``; this form is only for display_name
+        # and theme. Quietly discard any email value the user may have
+        # typed here so a stale UI never bypasses the confirmation flow.
         request.user.display_name = form.cleaned_data["display_name"]
         request.user.theme_preference = form.cleaned_data["theme_preference"]
         request.user.save(update_fields=["display_name", "theme_preference", "updated_at"])
-        email_result = change_email_for_self(request.user.username, new_email)
         record_audit(
             "update_my_preferences",
             actor=request.user,
             target_username=request.user.username,
             payload={"theme_preference": request.user.theme_preference},
         )
-        if email_result.get("mfa_email_disabled"):
-            messages.warning(
-                request,
-                "Cambiaste tu email, asi que el 2FA por email se desactivo. Si lo queres usar de nuevo, activalo desde Seguridad.",
-            )
         messages.success(request, _("Perfil actualizado."))
     else:
         messages.error(request, _("No se pudo guardar el perfil."))
@@ -735,25 +736,12 @@ def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
 
 
 def _build_public_base_url(request: HttpRequest) -> str:
-    """Resolve the base URL for outbound links (password reset emails, etc).
+    """Shim that keeps the existing import sites working; the canonical
+    implementation lives in :mod:`accounts.services` so the email-change
+    flow can reuse the same guard without a circular import."""
+    from .services import _build_public_base_url as _impl
 
-    Falling back to ``request.build_absolute_uri("/")`` would use the
-    request's ``Host`` header, which an attacker can spoof to redirect
-    reset emails to a server they control (password reset poisoning).
-    Outside dev we therefore REQUIRE ``public_url_base`` to be configured.
-    """
-    configured = getattr(getattr(settings, "CFG", None), "public_url_base", "")
-    if configured:
-        return configured.rstrip("/")
-    if not settings.DEBUG and getattr(settings, "ENV_NAME", "dev") != "dev":
-        raise RuntimeError(
-            "public_url_base is not configured. Set ``dashboard.public_url_base`` "
-            "in app.yaml (or AMELI_APP_PUBLIC_URL_BASE) to the canonical URL of "
-            "this deploy. Falling back to the request Host header would expose "
-            "the password reset flow to host header injection."
-        )
-    absolute = request.build_absolute_uri("/")
-    return absolute.rstrip("/")
+    return _impl(request)
 
 
 @require_http_methods(["GET", "POST"])
@@ -837,3 +825,119 @@ def reset_password_view(request: HttpRequest, uidb64: str, token: str) -> HttpRe
     return redirect("accounts:login")
 
 
+
+
+# ============================ Email change (double-opt-in) ============================
+
+
+@login_required
+@require_POST
+def email_change_request_view(request: HttpRequest) -> JsonResponse:
+    from .services import client_ip, request_email_change
+
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    try:
+        result = request_email_change(
+            request.user,
+            new_email=str(payload.get("new_email") or "").strip(),
+            current_password=str(payload.get("current_password") or ""),
+            request=request,
+            ip=client_ip(request),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except Exception as exc:  # noqa: BLE001 - SMTP layer
+        logger.exception("email change request delivery failed for %s", request.user.username)
+        return _json_error(
+            f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502
+        )
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def email_change_cancel_self_view(request: HttpRequest) -> JsonResponse:
+    """Cancel a pending request from inside ``/profile/`` without a token
+    (e.g. the user changed their mind in the same browser session)."""
+    from .services import EmailChangeRequest, record_audit
+
+    pending = (
+        EmailChangeRequest.objects.filter(
+            user=request.user, confirmed_at__isnull=True, cancelled_at__isnull=True
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if pending is None:
+        return _json_error("no hay un cambio pendiente", status=404)
+    pending.cancelled_at = timezone.now()
+    pending.cancel_reason = "user_cancel_in_app"
+    pending.save(update_fields=["cancelled_at", "cancel_reason"])
+    record_audit(
+        "email_change_cancelled",
+        actor=request.user,
+        target_username=request.user.username,
+        payload={"request_id": pending.id, "new_email": pending.new_email, "reason": "in_app"},
+    )
+    return JsonResponse({"ok": True, "status": "cancelled"})
+
+
+@require_http_methods(["GET"])
+def email_change_confirm_view(request: HttpRequest, request_id: int, token: str) -> HttpResponse:
+    """Public endpoint reached from the new-address email. Confirms the
+    change and renders a friendly outcome page."""
+    from .services import confirm_email_change
+
+    try:
+        result = confirm_email_change(request_id=int(request_id), token_plaintext=token)
+    except ValueError as exc:
+        return render(
+            request,
+            "accounts/email_change_outcome.html",
+            {"ok": False, "message": str(exc), "version": __version__},
+            status=400,
+        )
+    return render(
+        request,
+        "accounts/email_change_outcome.html",
+        {
+            "ok": True,
+            "title": "Email actualizado",
+            "message": f"Tu email ahora es {result['new_email']}.",
+            "version": __version__,
+        },
+    )
+
+
+@require_http_methods(["GET"])
+def email_change_cancel_view(request: HttpRequest, request_id: int, token: str) -> HttpResponse:
+    """Public endpoint reached from the OLD-address alert email. Lets the
+    legitimate user revert a request they didn't make."""
+    from .services import cancel_email_change
+
+    try:
+        result = cancel_email_change(
+            request_id=int(request_id),
+            token_plaintext=token,
+            reason="alert_link",
+        )
+    except ValueError as exc:
+        return render(
+            request,
+            "accounts/email_change_outcome.html",
+            {"ok": False, "message": str(exc), "version": __version__},
+            status=400,
+        )
+    return render(
+        request,
+        "accounts/email_change_outcome.html",
+        {
+            "ok": True,
+            "title": "Pedido cancelado",
+            "message": f"El cambio a {result['new_email']} no se aplico. Si vos no pediste el cambio, considera cambiar tu contrasena.",
+            "version": __version__,
+        },
+    )

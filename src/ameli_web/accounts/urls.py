@@ -50,4 +50,17 @@ urlpatterns = [
     path("profile/mfa/email/confirm/", views.mfa_email_confirm_view, name="profile-mfa-email-confirm"),
     path("profile/mfa/email/confirm", views.mfa_email_confirm_view),
     path("api/admin/session", views.admin_session_json, name="admin-session-json"),
+    path("profile/email-change/", views.email_change_request_view, name="profile-email-change"),
+    path("profile/email-change", views.email_change_request_view),
+    path("profile/email-change/cancel-pending/", views.email_change_cancel_self_view, name="profile-email-change-cancel"),
+    path(
+        "profile/email-change/confirm/<int:request_id>/<str:token>/",
+        views.email_change_confirm_view,
+        name="profile-email-change-confirm",
+    ),
+    path(
+        "profile/email-change/cancel/<int:request_id>/<str:token>/",
+        views.email_change_cancel_view,
+        name="profile-email-change-cancel-token",
+    ),
 ]

@@ -294,4 +294,4 @@ def test_verify_mfa_resend_is_rate_limited(client, user_with_email_mfa):
     second = client.post("/login/verify-mfa/resend/")
 
     assert second.status_code == 429
-    assert "wait" in second.json()["error"].lower()
+    assert "espera" in second.json()["error"].lower()

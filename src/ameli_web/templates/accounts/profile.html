@@ -92,25 +92,11 @@
           <div class="modal-form-help">Si lo dejas vacio, seguira mostrandose el nombre de usuario.</div>
         </div>
         <div class="modal-form-row">
-          <label class="modal-form-label" for="{{ preferences_form.email.id_for_label }}">Email</label>
-          {{ preferences_form.email }}
-          <div class="modal-form-help">
-            Sirve para recibir el codigo de 2FA por email y para restablecer tu contrasena si la olvidas.
-            {% if mfa_status.email_enabled %}<br><strong class="warn-text">Si cambias el email, el 2FA por email se desactivara y vas a tener que reenrolar.</strong>{% endif %}
-          </div>
-        </div>
-        {% if current_user.email %}
-        <div class="modal-actions-row" style="margin-bottom:6px;">
-          <button class="icon-action" type="button" id="profile-email-test">
-            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">outgoing_mail</span>
-            <span>Enviar correo de prueba</span>
-          </button>
-        </div>
-        <p class="muted" id="profile-email-test-feedback"></p>
-        {% endif %}
-        <div class="modal-form-row">
           <label class="modal-form-label" for="{{ preferences_form.theme_preference.id_for_label }}">Tema preferido</label>
           {{ preferences_form.theme_preference }}
+        </div>
+        <div class="modal-form-help">
+          El email se gestiona en su propia tarjeta de Seguridad — necesita contrasena y confirmacion en la nueva direccion.
         </div>
         <div class="modal-actions-row">
           <button class="primary" type="submit">Guardar perfil</button>
@@ -419,6 +405,57 @@
         <button class="primary" type="button" id="profile-mfa-recovery-ack">Listo, los guarde</button>
       </div>
       <p class="muted panel-copy" id="profile-mfa-recovery-feedback" aria-live="polite"></p>
+    </div>
+
+    <div class="panel">
+      <div class="form-card-head">
+        <div class="metric-label">Email de la cuenta</div>
+        <p class="muted panel-copy">Cambiarlo requiere tu contrasena y la confirmacion del dueño de la nueva direccion. La vieja recibe un aviso con un link para revertir.</p>
+      </div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="metric-label">Direccion actual</span>
+          <span class="profile-note {% if not current_user.email %}warn-text{% endif %}">{% if current_user.email %}{{ current_user.email }}{% else %}Sin email registrado{% endif %}</span>
+        </div>
+      </div>
+      {% if pending_email_change %}
+      <div class="form-card warn-text" id="profile-email-pending" data-email-pending>
+        <h3 class="form-card-title">Cambio pendiente</h3>
+        <p class="muted panel-copy">Tenes un cambio pendiente a <strong>{{ pending_email_change.new_email }}</strong>. Confirma desde el link que mandamos a esa direccion (caduca el {{ pending_email_change.expires_at|slice:":19" }}).</p>
+        <div class="modal-actions-row">
+          <button class="icon-action" type="button" id="profile-email-cancel">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">close</span>
+            <span>Cancelar pedido</span>
+          </button>
+          <span class="muted" id="profile-email-cancel-feedback" aria-live="polite"></span>
+        </div>
+      </div>
+      {% else %}
+      <form id="profile-email-change-form" class="form-card">
+        {% csrf_token %}
+        <div class="modal-form-row">
+          <label class="modal-form-label" for="profile-email-new">Nueva direccion de email</label>
+          <input id="profile-email-new" class="modal-input" type="email" name="new_email" autocomplete="email" placeholder="nuevo@dominio.com" required>
+          <div class="modal-form-help">Te mandamos un link a esta direccion. El cambio NO se aplica hasta que la abras.</div>
+        </div>
+        <div class="modal-form-row">
+          <label class="modal-form-label" for="profile-email-password">Contrasena actual</label>
+          <div class="modal-input-with-action">
+            <input id="profile-email-password" class="modal-input" type="password" name="current_password" autocomplete="current-password" placeholder="Para confirmar que sos vos" required>
+            <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-email-password" aria-label="Mostrar u ocultar contrasena">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+            </button>
+          </div>
+        </div>
+        {% if mfa_status.email_enabled %}
+        <p class="muted panel-copy"><strong class="warn-text">Tenes 2FA por email activo:</strong> al confirmar el cambio el 2FA por email se desactiva (la nueva direccion no esta enrolada). Si lo queres seguir usando, volve a activarlo desde abajo despues.</p>
+        {% endif %}
+        <div class="modal-actions-row">
+          <button class="primary" type="submit">Pedir cambio de email</button>
+        </div>
+        <p class="muted" id="profile-email-change-feedback" aria-live="polite"></p>
+      </form>
+      {% endif %}
     </div>
 
   </div>
@@ -821,6 +858,71 @@ document.addEventListener("DOMContentLoaded", () => {
       regenerateBtn.disabled = false;
     }
   });
+
+  // ---- Email change (double-opt-in) ----
+  const emailForm = document.getElementById("profile-email-change-form");
+  if (emailForm) {
+    const newEmailInput = document.getElementById("profile-email-new");
+    const passwordInput = document.getElementById("profile-email-password");
+    const feedback = document.getElementById("profile-email-change-feedback");
+    emailForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (feedback) feedback.textContent = "";
+      try {
+        const response = await fetch("/profile/email-change/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfTokenInput,
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            new_email: (newEmailInput?.value || "").trim(),
+            current_password: passwordInput?.value || "",
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          if (feedback) feedback.textContent = data.error || "No se pudo iniciar el cambio.";
+          return;
+        }
+        if (feedback) {
+          feedback.textContent = "Te mandamos un mail a " + data.new_email + ". Confirma desde el link.";
+        }
+        // Refresh so the form switches to the pending-state panel.
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (err) {
+        if (feedback) feedback.textContent = "Error de red al iniciar el cambio.";
+      }
+    });
+  }
+
+  const emailCancelBtn = document.getElementById("profile-email-cancel");
+  if (emailCancelBtn) {
+    const feedback = document.getElementById("profile-email-cancel-feedback");
+    emailCancelBtn.addEventListener("click", async () => {
+      if (!confirm("Cancelar el cambio pendiente?")) return;
+      emailCancelBtn.disabled = true;
+      try {
+        const response = await fetch("/profile/email-change/cancel-pending/", {
+          method: "POST",
+          headers: { "X-CSRF-Token": csrfTokenInput },
+          credentials: "same-origin",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          if (feedback) feedback.textContent = data.error || "No se pudo cancelar.";
+          emailCancelBtn.disabled = false;
+          return;
+        }
+        if (feedback) feedback.textContent = "Cancelado. Refrescando...";
+        setTimeout(() => window.location.reload(), 800);
+      } catch (err) {
+        if (feedback) feedback.textContent = "Error de red al cancelar.";
+        emailCancelBtn.disabled = false;
+      }
+    });
+  }
 
 });
 </script>

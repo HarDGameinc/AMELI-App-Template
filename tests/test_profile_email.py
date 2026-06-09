@@ -154,8 +154,14 @@ def test_send_test_email_rate_limit_blocks_immediate_resend(public_user):
 
 
 @pytest.mark.django_db
-def test_profile_preferences_form_updates_email(client, public_user):
+def test_profile_preferences_form_does_not_change_email_directly(client, public_user):
+    """The preferences form used to apply email changes immediately. After
+    moving to the double-opt-in flow that path is intentionally inert:
+    a typed value here must be ignored so a stale UI cannot bypass the
+    confirmation step. The dedicated /profile/email-change/ endpoint is
+    the only way to start a change now."""
     client.force_login(public_user)
+    original_email = public_user.email
 
     response = client.post(
         "/profile/preferences/",
@@ -168,31 +174,8 @@ def test_profile_preferences_form_updates_email(client, public_user):
 
     assert response.status_code == 302
     public_user.refresh_from_db()
-    assert public_user.email == "viewer-new@example.com"
+    assert public_user.email == original_email
     assert public_user.display_name == "Viewer Alias"
-
-
-@pytest.mark.django_db
-def test_profile_preferences_email_change_disables_email_mfa(client, public_user):
-    mail.outbox.clear()
-    start_mfa_email_enrollment("viewer")
-    confirm_mfa_email_enrollment("viewer", _extract_code())
-    public_user.refresh_from_db()
-    assert public_user.mfa_email_enabled is True
-    client.force_login(public_user)
-
-    client.post(
-        "/profile/preferences/",
-        {
-            "display_name": "",
-            "email": "viewer-new@example.com",
-            "theme_preference": "auto",
-        },
-    )
-
-    public_user.refresh_from_db()
-    assert public_user.email == "viewer-new@example.com"
-    assert public_user.mfa_email_enabled is False
 
 
 @pytest.mark.django_db
@@ -241,11 +224,14 @@ def test_send_test_email_view_rate_limit_returns_error_on_immediate_resend(clien
 
 
 @pytest.mark.django_db
-def test_profile_renders_email_input_and_test_button(client, public_user):
+def test_profile_renders_email_change_form(client, public_user):
+    """The Security tab now hosts the double-opt-in change form, with
+    inputs for the new address and the current password."""
     client.force_login(public_user)
 
     response = client.get("/profile/")
 
     body = response.content.decode("utf-8")
-    assert 'id="id_email"' in body or 'name="email"' in body
-    assert 'id="profile-email-test"' in body
+    assert 'id="profile-email-change-form"' in body
+    assert 'id="profile-email-new"' in body
+    assert 'id="profile-email-password"' in body

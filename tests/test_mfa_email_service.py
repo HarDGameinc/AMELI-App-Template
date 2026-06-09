@@ -246,7 +246,7 @@ def test_consume_email_mfa_code_rejects_wrong_format(public_user_with_email):
 def test_email_mfa_rate_limit_blocks_resend_within_one_minute(public_user_with_email):
     start_mfa_email_enrollment("viewer")
 
-    with pytest.raises(ValueError, match="wait"):
+    with pytest.raises(ValueError, match="Espera"):
         start_mfa_email_enrollment("viewer")
 
 
@@ -264,7 +264,7 @@ def test_email_mfa_rate_limit_blocks_after_five_in_one_hour(public_user_with_ema
         challenge.created_at = timezone.now() - timedelta(minutes=2 + offset * 10)
         challenge.save(update_fields=["created_at"])
 
-    with pytest.raises(ValueError, match="last hour"):
+    with pytest.raises(ValueError, match="ultima hora"):
         start_mfa_email_enrollment("viewer")
 
 

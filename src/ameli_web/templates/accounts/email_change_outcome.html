@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Cambio de email - {{ app_name }}{% endblock %}
+{% block header_title %}{% if ok %}{{ title }}{% else %}No pudimos completar el cambio{% endif %}{% endblock %}
+{% block header_subtitle %}{% if ok %}Confirmacion de cambio de email{% else %}Pedido invalido o caducado{% endif %}{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="form-card-head">
+    <div class="metric-label">{% if ok %}Listo{% else %}Algo salio mal{% endif %}</div>
+    <p class="panel-copy {% if not ok %}warn-text{% endif %}">{{ message }}</p>
+  </div>
+  <div class="modal-actions-row">
+    <a class="primary" href="/profile/">Volver al perfil</a>
+    <a class="icon-action" href="/">Ir al dashboard</a>
+  </div>
+</section>
+{% endblock %}

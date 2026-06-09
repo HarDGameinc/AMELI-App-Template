@@ -1,0 +1,16 @@
+Hola @{{ username }},
+
+Alguien pidio cambiar el email de tu cuenta en {{ app_name }} a la direccion {{ new_email }}.
+
+El cambio NO se aplica todavia. Necesitamos que el dueño de la nueva direccion confirme el cambio desde un enlace que le mandamos por separado.
+
+Si vos pediste este cambio, no hay nada que hacer aca. Esperamos la confirmacion en la otra casilla.
+
+Si vos NO pediste este cambio, alguien tiene acceso a tu cuenta. Hace click aca para cancelar el pedido y considera cambiar tu contrasena de inmediato:
+
+{{ cancel_url }}
+
+El pedido caduca solo en {{ ttl_hours }} horas.
+
+Saludos,
+{{ app_name }}
