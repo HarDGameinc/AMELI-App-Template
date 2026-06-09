@@ -58,6 +58,23 @@ CSRF_TRUSTED_ORIGINS = [
     if item.strip()
 ]
 
+# Subresource Integrity hashes for third-party JS/CSS we load from a
+# public CDN (Swagger UI + ReDoc, in dashboard/views.py). The dashboard
+# helpers render ``integrity="sha384-..."`` only when a value is set,
+# so the unconfigured baseline still serves the docs pages without
+# hard-failing — pinning the version (above) is the first defence,
+# integrity is the second. Operators can compute hashes once with:
+#
+#   curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+#
+# and paste them into env vars below.
+CDN_SRI_HASHES = {
+    "swagger_ui_css": os.environ.get("AMELI_APP_SRI_SWAGGER_UI_CSS", "").strip(),
+    "swagger_ui_bundle": os.environ.get("AMELI_APP_SRI_SWAGGER_UI_BUNDLE", "").strip(),
+    "swagger_ui_preset": os.environ.get("AMELI_APP_SRI_SWAGGER_UI_PRESET", "").strip(),
+    "redoc_bundle": os.environ.get("AMELI_APP_SRI_REDOC_BUNDLE", "").strip(),
+}
+
 # Operational endpoints (``/health``, ``/api/health``, ``/metrics``) are
 # public by default so probes and Prometheus scrapers reach them without
 # fuss. When this list has at least one entry, the views refuse any

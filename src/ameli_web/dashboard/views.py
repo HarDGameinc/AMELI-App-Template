@@ -117,20 +117,43 @@ def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, st
     return response
 
 
+# Pin exact CDN versions so a silent registry update cannot quietly
+# rotate the bundle our superadmins load. The operator can paste SRI
+# hashes into ``settings.CDN_SRI_HASHES`` to also block the case where
+# the CDN itself is compromised; the helper renders ``integrity=`` only
+# when a hash is provided so an unconfigured deploy keeps working.
+SWAGGER_UI_VERSION = "5.20.0"
+REDOC_VERSION = "2.1.5"
+
+
+def _sri(name: str) -> str:
+    """Return ``integrity="sha384-..." crossorigin="anonymous"`` when the
+    operator has supplied a hash for ``name``, otherwise an empty string.
+    """
+    hashes = getattr(settings, "CDN_SRI_HASHES", {}) or {}
+    digest = (hashes.get(name) or "").strip()
+    if not digest:
+        return ""
+    return f' integrity="{digest}" crossorigin="anonymous"'
+
+
 def _swagger_ui_html() -> str:
     title = f"{settings.CFG.app_name} API Docs"
+    css = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui.css"
+    bundle = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui-bundle.js"
+    preset = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui-standalone-preset.js"
     return f"""<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+    <link rel="stylesheet" href="{css}"{_sri("swagger_ui_css")} />
   </head>
   <body>
     <div id="swagger-ui"></div>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script src="{bundle}"{_sri("swagger_ui_bundle")}></script>
+    <script src="{preset}"{_sri("swagger_ui_preset")}></script>
     <script>
       window.onload = function () {{
         window.ui = SwaggerUIBundle({{
@@ -148,6 +171,8 @@ def _swagger_ui_html() -> str:
 
 def _redoc_html() -> str:
     title = f"{settings.CFG.app_name} API ReDoc"
+    bundle = f"https://cdn.jsdelivr.net/npm/redoc@{REDOC_VERSION}/bundles/redoc.standalone.js"
+    sri = _sri("redoc_bundle")
     return f"""<!DOCTYPE html>
 <html lang="es">
   <head>
@@ -163,7 +188,7 @@ def _redoc_html() -> str:
   </head>
   <body>
     <redoc spec-url="/openapi.json"></redoc>
-    <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+    <script src="{bundle}"{sri}></script>
   </body>
 </html>"""
 

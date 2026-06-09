@@ -53,3 +53,49 @@ def test_health_allowlist_honours_trusted_proxy_forwarded_ip(client, settings):
 
     allowed = client.get("/health", HTTP_X_FORWARDED_FOR="203.0.113.5")
     assert allowed.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# H10 — CDN bundles pinned to an exact version and SRI-aware
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_swagger_html_pins_exact_version(client):
+    """An unversioned ``@5`` URL silently picks up any future release on
+    the CDN. Pin a concrete tag so a compromise window cannot include
+    the docs page in the blast radius."""
+    response = client.get("/docs")
+    body = response.content.decode("utf-8")
+    assert "swagger-ui-dist@5.20.0" in body
+    assert "swagger-ui-dist@5/" not in body  # the floating tag is gone
+
+
+@pytest.mark.django_db
+def test_redoc_html_pins_exact_version(client):
+    response = client.get("/redoc")
+    body = response.content.decode("utf-8")
+    assert "redoc@2.1.5/" in body
+    assert "redoc@next/" not in body
+
+
+@pytest.mark.django_db
+def test_swagger_html_renders_integrity_when_configured(client, settings):
+    settings.CDN_SRI_HASHES = {
+        "swagger_ui_css": "sha384-test-css-hash",
+        "swagger_ui_bundle": "sha384-test-bundle-hash",
+        "swagger_ui_preset": "sha384-test-preset-hash",
+        "redoc_bundle": "",
+    }
+    body = client.get("/docs").content.decode("utf-8")
+    assert 'integrity="sha384-test-css-hash"' in body
+    assert 'integrity="sha384-test-bundle-hash"' in body
+    assert 'integrity="sha384-test-preset-hash"' in body
+    assert body.count('crossorigin="anonymous"') >= 3
+
+
+@pytest.mark.django_db
+def test_swagger_html_omits_integrity_when_unconfigured(client, settings):
+    settings.CDN_SRI_HASHES = {}
+    body = client.get("/docs").content.decode("utf-8")
+    assert "integrity=" not in body
