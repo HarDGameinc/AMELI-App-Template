@@ -129,11 +129,19 @@ REDOC_VERSION = "2.1.5"
 def _sri(name: str) -> str:
     """Return ``integrity="sha384-..." crossorigin="anonymous"`` when the
     operator has supplied a hash for ``name``, otherwise an empty string.
+
+    Operators that paste the raw base64 digest (the natural output of
+    ``openssl dgst -sha384 -binary | openssl base64 -A``) get the
+    ``sha384-`` algorithm prefix added automatically — without it the
+    browser rejects the attribute as malformed and falls back to a
+    no-integrity load, silently defeating the protection.
     """
     hashes = getattr(settings, "CDN_SRI_HASHES", {}) or {}
     digest = (hashes.get(name) or "").strip()
     if not digest:
         return ""
+    if not digest.startswith(("sha256-", "sha384-", "sha512-")):
+        digest = f"sha384-{digest}"
     return f' integrity="{digest}" crossorigin="anonymous"'
 
 

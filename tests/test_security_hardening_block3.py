@@ -101,6 +101,25 @@ def test_swagger_html_omits_integrity_when_unconfigured(client, settings):
     assert "integrity=" not in body
 
 
+@pytest.mark.django_db
+def test_swagger_html_auto_prefixes_sha384_for_raw_base64(client, settings):
+    """Operators normally paste the raw output of ``openssl dgst -sha384
+    -binary | openssl base64 -A`` into the env file. Without the
+    ``sha384-`` algorithm prefix the browser rejects the integrity
+    attribute and downloads the bundle ungated — silently defeating
+    the whole protection. Auto-prefix when missing, pass through
+    already-prefixed values untouched."""
+    settings.CDN_SRI_HASHES = {
+        "swagger_ui_css": "19U5QfIgtj822TyFqWtYKqauOZosmdEalgX8htxti5Pkm6oyuyR9ePwNbSaBclKA",
+        "swagger_ui_bundle": "sha512-already-prefixed",
+        "swagger_ui_preset": "",
+        "redoc_bundle": "",
+    }
+    body = client.get("/docs").content.decode("utf-8")
+    assert 'integrity="sha384-19U5QfIgtj822TyFqWtYKqauOZosmdEalgX8htxti5Pkm6oyuyR9ePwNbSaBclKA"' in body
+    assert 'integrity="sha512-already-prefixed"' in body
+
+
 # ---------------------------------------------------------------------------
 # H7 — HIBP k-anonymity password check (opt-in)
 # ---------------------------------------------------------------------------
