@@ -16,6 +16,30 @@
 {% if current_user.must_change_password %}
 {% include "accounts/_force_password_modal.html" %}
 {% else %}
+{% if security_alerts %}
+<section class="panel" id="profile-security-alerts" style="border-left:4px solid var(--warn-fg, #f5b041); margin-bottom:16px;">
+  <div class="form-card-head">
+    <div class="metric-label warn-text">Alertas de seguridad ({{ security_alerts|length }})</div>
+    <p class="muted panel-copy">Revisar y resolver lo antes posible. Algunos puntos te dejan sin recuperacion de cuenta o te exponen a un robo de sesion.</p>
+  </div>
+  <ul style="list-style:none;padding:0;margin:0;">
+    {% for alert in security_alerts %}
+    <li style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--panel-border, #1f2733);">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true" style="color:var(--warn-fg,#f5b041);">{{ alert.icon }}</span>
+      <div style="flex:1;">
+        <strong>{{ alert.title }}</strong>
+        <p class="muted" style="margin:4px 0 0 0;">{{ alert.detail }}</p>
+      </div>
+      {% if alert.action_label and alert.action_tab %}
+      <button class="icon-action" type="button" data-tab-trigger="{{ alert.action_tab }}" style="flex-shrink:0;">
+        <span>{{ alert.action_label }}</span>
+      </button>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <section class="panel profile-hero">
   <div class="profile-identity">
     <div class="profile-avatar">

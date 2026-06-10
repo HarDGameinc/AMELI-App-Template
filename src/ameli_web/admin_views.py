@@ -651,3 +651,26 @@ def admin_sudo_status(request: HttpRequest) -> JsonResponse:
             },
         }
     )
+
+
+@require_POST
+@superadmin_required
+@sudo_required
+def admin_django_admin_enter(request: HttpRequest) -> JsonResponse:
+    """Sudo-gated jump-off point for the native ``/django-admin/``.
+
+    The panel button posts here; the sudo decorator above produces the
+    standard ``need_sudo`` 401 when the session is not in grace, so the
+    existing modal opens. On success the response carries the
+    redirect URL the frontend uses to navigate, and we audit who jumped
+    in so an attacker who steals a sudo'd session leaves a trace.
+    """
+    from ameli_web.accounts.services import record_audit
+
+    record_audit(
+        "django_admin_entered",
+        actor=request.user,
+        target_username=request.user.username,
+        payload={},
+    )
+    return JsonResponse({"ok": True, "redirect": "/django-admin/"})

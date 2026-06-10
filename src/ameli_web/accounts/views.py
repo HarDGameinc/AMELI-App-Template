@@ -111,6 +111,24 @@ class TemplateLoginView(LoginView):
 
         username = (request.POST.get("username") or "").strip()
         ip = client_ip(request)
+        # Honeypot: the login form ships a hidden ``hp_company`` field
+        # that legitimate users never fill in (it's display:none + tab-
+        # index=-1 + autocomplete=off). Automated scrapers happily fill
+        # every input, so a non-empty value here is a near-certain bot.
+        # Refuse with the SAME 200 + bland error the wrong-password
+        # branch returns so the bot cannot learn the trap exists.
+        if (request.POST.get("hp_company") or "").strip():
+            record_audit(
+                "login_bot_detected",
+                target_username=username or None,
+                payload={"ip": ip, "user_agent": request.META.get("HTTP_USER_AGENT", "")[:256]},
+            )
+            messages.error(
+                request,
+                "Por favor, introduzca un nombre de usuario y clave correctos. "
+                "Observe que ambos campos pueden ser sensibles a mayúsculas.",
+            )
+            return self.render_to_response(self.get_context_data(form=self.get_form()))
         try:
             check_login_throttle(username=username, ip=ip)
         except (LoginThrottled, AccountLocked) as exc:
@@ -160,6 +178,60 @@ def _pending_email_change(user):
     return pending_email_change_for(user)
 
 
+def _security_alerts_for(user) -> list[dict]:
+    """Build the per-user list of security todos shown at the top of
+    ``/profile/``. The intent is a checklist — not a deep audit — so
+    each item points at the tab where the user can fix it.
+
+    Today: MFA not enrolled, no email on file (no password recovery
+    possible), and a password older than 90 days (default; configurable).
+    """
+    from django.conf import settings as django_settings
+
+    alerts: list[dict] = []
+    if not getattr(user, "mfa_enabled", False):
+        alerts.append({
+            "icon": "shield_lock",
+            "title": "2FA no activado",
+            "detail": (
+                "Tu cuenta solo necesita la contrasena para entrar. Activa "
+                "la app de autenticacion o el codigo por email para una "
+                "segunda capa de seguridad."
+            ),
+            "action_label": "Activar",
+            "action_tab": "profile-tab-security",
+        })
+    if not (user.email or "").strip():
+        alerts.append({
+            "icon": "alternate_email",
+            "title": "Sin email registrado",
+            "detail": (
+                "Si olvidas tu contrasena no podemos enviarte el enlace de "
+                "recuperacion. Registra una direccion en la tarjeta de email."
+            ),
+            "action_label": "Agregar",
+            "action_tab": "profile-tab-security",
+        })
+    # Password age — defaults to 90 days; operator can extend via the
+    # PROFILE_PASSWORD_MAX_AGE_DAYS setting.
+    max_age = int(getattr(django_settings, "PROFILE_PASSWORD_MAX_AGE_DAYS", 90))
+    last_change = getattr(user, "password_changed_at", None) or user.date_joined
+    if max_age > 0 and last_change is not None:
+        age_days = (timezone.now() - last_change).days
+        if age_days > max_age:
+            alerts.append({
+                "icon": "schedule",
+                "title": f"Tu contrasena tiene {age_days} dias",
+                "detail": (
+                    f"Recomendamos rotarla cada {max_age} dias. Las claves "
+                    "muy viejas tienen mas chance de haber sido filtradas."
+                ),
+                "action_label": "Cambiar",
+                "action_tab": "profile-tab-security",
+            })
+    return alerts
+
+
 @login_required
 def profile_view(request: HttpRequest) -> HttpResponse:
     from ameli_web.pagination import coerce_page, persist_per_page_cookie, resolve_per_page
@@ -191,6 +263,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
         "preferences_form": ProfilePreferencesForm(instance=request.user),
         "avatar_form": AvatarUploadForm(),
         "password_form": ProfilePasswordForm(request.user),
+        "security_alerts": _security_alerts_for(request.user),
         "mfa_status": serialize_mfa_status(request.user),
         "pending_email_change": _pending_email_change(request.user),
         "display_last_login_at": format_timestamp_ui(request.user.last_login),

@@ -12,6 +12,15 @@
     <p class="muted modal-copy">Usa una cuenta del template para abrir tu perfil y, si corresponde, la administracion. Mantiene el mismo patron de acceso seguro que ya estamos usando en Metro.</p>
     <form class="login-form" method="post" action="">
       {% csrf_token %}
+      {# Honeypot field: pulled off-screen with CSS, ignored by Tab key, #}
+      {# never auto-filled by password managers. Bots scraping every    #}
+      {# <input> happily fill it; the view treats a non-empty value as  #}
+      {# a bot signal and rejects the request with the bland wrong-pass #}
+      {# error so the trap stays invisible.                             #}
+      <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden;">
+        <label for="id_login_hp_company">Company</label>
+        <input type="text" id="id_login_hp_company" name="hp_company" tabindex="-1" autocomplete="off" value="">
+      </div>
       {% if form.non_field_errors %}
       <div class="login-form-error visible">
         {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}

@@ -78,12 +78,37 @@ def test_non_dev_refuses_empty_trusted_proxies(monkeypatch):
                          AMELI_APP_TRUSTED_PROXIES=None)
 
 
+def test_non_dev_refuses_console_email_backend(monkeypatch):
+    """Console backend keeps mail in stdout — password reset and
+    MFA-by-email would silently fail in a real deploy. Refuse to boot."""
+    with pytest.raises(RuntimeError, match="email.backend"):
+        _reload_settings(monkeypatch, env="prod",
+                         AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+                         AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+                         AMELI_APP_DJANGO_DEBUG="false",
+                         AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+                         AMELI_APP_EMAIL_BACKEND="console")
+
+
+def test_non_dev_refuses_smtp_backend_without_host(monkeypatch):
+    """SMTP backend without a host silently no-ops too."""
+    with pytest.raises(RuntimeError, match="email.host"):
+        _reload_settings(monkeypatch, env="prod",
+                         AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+                         AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+                         AMELI_APP_DJANGO_DEBUG="false",
+                         AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+                         AMELI_APP_EMAIL_BACKEND="smtp")
+
+
 def test_non_dev_boots_with_explicit_safe_config(monkeypatch):
     settings = _reload_settings(monkeypatch, env="prod",
                                 AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
                                 AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan,10.0.0.5",
                                 AMELI_APP_DJANGO_DEBUG="false",
-                                AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1")
+                                AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+                                AMELI_APP_EMAIL_BACKEND="smtp",
+                                AMELI_APP_EMAIL_HOST="smtp.example.com")
     assert settings.SECRET_KEY != "ameli-app-dev-secret-key"
     assert settings.DEBUG is False
     assert "metro.lan" in settings.ALLOWED_HOSTS

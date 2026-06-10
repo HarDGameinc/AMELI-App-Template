@@ -42,6 +42,29 @@ def build_csp(nonce: str) -> str:
     )
 
 
+# Modern browsers honour a small fleet of process-isolation headers that
+# defend against speculative execution side-channels (Spectre, Meltdown
+# variants) and against being grouped in the same browsing context group
+# as an attacker page. The values below are safe for an internal app
+# that never embeds third-party iframes and never wants to be embedded.
+#
+# Permissions-Policy turns off feature interfaces we never use, so a
+# future XSS-injected snippet cannot probe the user's microphone,
+# geolocation, etc.
+
+_PERMISSIONS_POLICY = (
+    "accelerometer=(),"
+    "camera=(),"
+    "geolocation=(),"
+    "gyroscope=(),"
+    "magnetometer=(),"
+    "microphone=(),"
+    "payment=(),"
+    "usb=(),"
+    "interest-cohort=()"
+)
+
+
 class SecurityHeadersMiddleware:
     """Attach the project-wide CSP and a couple of supporting headers.
 
@@ -51,7 +74,9 @@ class SecurityHeadersMiddleware:
 
     We mint a fresh ``csp_nonce`` per request, stash it on the request
     object so the context processor can hand it to every template, and
-    bake it into the CSP header before the response leaves.
+    bake it into the CSP header before the response leaves. The same
+    middleware also adds the modern cross-origin isolation trio
+    (COOP/CORP) and a strict ``Permissions-Policy``.
     """
 
     def __init__(self, get_response):
@@ -62,6 +87,15 @@ class SecurityHeadersMiddleware:
         response = self.get_response(request)
         if "Content-Security-Policy" not in response:
             response["Content-Security-Policy"] = build_csp(request.csp_nonce)
+        # Best-effort: if the response already declares one of these, do
+        # not overwrite (some specialised endpoints — e.g. docs — may
+        # need their own value).
+        if "Permissions-Policy" not in response:
+            response["Permissions-Policy"] = _PERMISSIONS_POLICY
+        if "Cross-Origin-Opener-Policy" not in response:
+            response["Cross-Origin-Opener-Policy"] = "same-origin"
+        if "Cross-Origin-Resource-Policy" not in response:
+            response["Cross-Origin-Resource-Policy"] = "same-origin"
         return response
 
 
@@ -166,3 +200,46 @@ class AdminAccessAuditMiddleware:
             messages.warning(request, "Tu cuenta no tiene permisos para acceder al panel de administración.")
             return redirect("accounts:profile")
         return self.get_response(request)
+
+
+class DjangoAdminSudoGateMiddleware:
+    """Require an active sudo grant to reach Django's native ``/django-admin/``.
+
+    The native admin is extremely powerful: a stolen superadmin cookie
+    bypasses every business-logic check there. Our own ``/admin/`` panel
+    already runs every write behind ``@sudo_required``; this middleware
+    extends that protection to the framework's admin, which we expose
+    so operators can use the rich filtering and inline editing it
+    provides without giving up the re-auth gate.
+
+    Unauthenticated users fall through so Django's own login wall keeps
+    firing. Non-staff users fall through and the admin returns a 403 by
+    itself. Only the staff-without-sudo case is short-circuited here.
+    """
+
+    _PREFIX = "/django-admin/"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith(self._PREFIX):
+            return self.get_response(request)
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or not user.is_staff:
+            return self.get_response(request)
+        from .services import session_in_sudo
+
+        if session_in_sudo(request.session):
+            return self.get_response(request)
+        record_audit(
+            "django_admin_blocked_no_sudo",
+            actor=user,
+            target_username=user.username,
+            payload={"path": request.path},
+        )
+        messages.warning(
+            request,
+            "Para entrar al admin nativo necesitas re-autenticarte. Usa el boton 'Admin nativo Django' del panel.",
+        )
+        return redirect("/admin/")

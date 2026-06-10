@@ -277,10 +277,10 @@
           <span class="material-symbols-rounded icon-glyph" aria-hidden="true">person</span>
           <span>Mi perfil</span>
         </a>
-        <a class="icon-action" href="{{ native_admin_url }}">
+        <button class="icon-action" type="button" id="enter-django-admin-btn">
           <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield</span>
           <span>Admin nativo Django</span>
-        </a>
+        </button>
       </div>
     </section>
   </aside>
@@ -909,6 +909,23 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
     }
   });
+
+  // ---- Jump into the native /django-admin/ via the sudo gate ----
+  const enterDjangoAdminBtn = document.getElementById("enter-django-admin-btn");
+  if (enterDjangoAdminBtn) {
+    enterDjangoAdminBtn.addEventListener("click", async () => {
+      try {
+        const data = await requestJson("/admin/django-admin/enter/", { method: "POST" });
+        if (data && data.redirect) {
+          window.location.href = data.redirect;
+        }
+      } catch (error) {
+        // requestJson already opens the sudo modal on a 401; the cancel
+        // path lands here. Surface the same wording as elsewhere.
+        alert(error instanceof Error ? error.message : "Accion cancelada.");
+      }
+    });
+  }
 
 });
 </script>
