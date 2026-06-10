@@ -107,6 +107,36 @@ def _wrap_docs_html(body: bytes | str, *, title: str, back_href: str = "/", back
     return source.replace("<body>", f"<body>{shell}", 1)
 
 
+_DOCS_CDN_ORIGIN = "https://cdn.jsdelivr.net"
+
+
+def _docs_csp() -> str:
+    """Per-page CSP for ``/docs`` and ``/redoc`` that whitelists the
+    jsdelivr origin our Swagger UI / ReDoc bundles live on.
+
+    Keeping the override local to the docs pages means the rest of the
+    site keeps its strict default (``script-src 'self'``) — an XSS in
+    /profile cannot, for example, pull arbitrary code from the CDN.
+
+    Subresource Integrity (the ``integrity=`` attribute the operator
+    configures via ``CDN_SRI_HASHES``) is the orthogonal control: even
+    inside this looser policy, the browser still refuses a bundle whose
+    sha384 does not match the pinned digest.
+    """
+    return (
+        "default-src 'self'; "
+        f"style-src 'self' 'unsafe-inline' {_DOCS_CDN_ORIGIN} https://fonts.googleapis.com; "
+        f"script-src 'self' 'unsafe-inline' {_DOCS_CDN_ORIGIN}; "
+        f"img-src 'self' data: {_DOCS_CDN_ORIGIN}; "
+        f"font-src 'self' {_DOCS_CDN_ORIGIN} https://fonts.gstatic.com; "
+        f"worker-src 'self' blob:; "
+        f"connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+
 def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, str], title: str) -> HttpResponse:
     wrapped = _wrap_docs_html(body, title=title, back_href="/", back_label="Dashboard")
     response = HttpResponse(wrapped, status=status_code)
@@ -114,6 +144,9 @@ def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, st
         if key.lower() in {"content-length", "content-encoding"}:
             continue
         response[key] = value
+    # Override the project-wide CSP for this response only. The middleware
+    # leaves the header alone when we set it here.
+    response["Content-Security-Policy"] = _docs_csp()
     return response
 
 

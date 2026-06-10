@@ -102,6 +102,30 @@ def test_swagger_html_omits_integrity_when_unconfigured(client, settings):
 
 
 @pytest.mark.django_db
+def test_docs_response_relaxes_csp_to_allow_jsdelivr(client):
+    """Without a per-page CSP override, the strict project-wide policy
+    (script-src 'self') blocks Swagger UI / ReDoc bundles before they
+    even reach the SRI check. /docs and /redoc need jsdelivr.net
+    whitelisted just for themselves."""
+    docs = client.get("/docs")
+    assert "cdn.jsdelivr.net" in docs["Content-Security-Policy"]
+    assert "script-src" in docs["Content-Security-Policy"]
+
+    redoc = client.get("/redoc")
+    assert "cdn.jsdelivr.net" in redoc["Content-Security-Policy"]
+
+
+@pytest.mark.django_db
+def test_strict_csp_still_applies_to_other_pages(client):
+    """The CDN whitelist must NOT leak to unrelated pages. A response from
+    the dashboard home should keep the project default that does not
+    mention jsdelivr."""
+    home = client.get("/")
+    csp = home.get("Content-Security-Policy", "")
+    assert "cdn.jsdelivr.net" not in csp
+
+
+@pytest.mark.django_db
 def test_swagger_html_auto_prefixes_sha384_for_raw_base64(client, settings):
     """Operators normally paste the raw output of ``openssl dgst -sha384
     -binary | openssl base64 -A`` into the env file. Without the
