@@ -402,6 +402,129 @@ def admin_user(db):
     return get_user_model().objects.get(username="admin")
 
 
+# ---------------------------------------------------------------------------
+# H6 — Audit log HMAC chain
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_record_audit_skips_hmac_when_key_unset(settings):
+    """The HMAC chain is opt-in. With no key configured, rows still
+    write — just without an integrity stamp — so a deploy that has not
+    set AMELI_APP_AUDIT_HMAC_KEY does not silently fail."""
+    from ameli_web.accounts.services import record_audit
+
+    settings.AUDIT_HMAC_KEY = ""
+    event = record_audit("test_action_unkeyed")
+    assert event.hmac == ""
+    assert event.prev_hmac == ""
+
+
+@pytest.mark.django_db
+def test_record_audit_stamps_hmac_and_chains_when_key_set(settings):
+    from ameli_web.accounts.services import record_audit
+
+    settings.AUDIT_HMAC_KEY = "test-key-secret-do-not-share"
+
+    a = record_audit("test_action_a")
+    b = record_audit("test_action_b")
+    c = record_audit("test_action_c")
+
+    assert a.hmac and b.hmac and c.hmac
+    assert a.prev_hmac == ""
+    assert b.prev_hmac == a.hmac
+    assert c.prev_hmac == b.hmac
+    assert len({a.hmac, b.hmac, c.hmac}) == 3
+
+
+@pytest.mark.django_db
+def test_verify_audit_chain_returns_ok_on_clean_chain(settings):
+    from ameli_web.accounts.services import record_audit, verify_audit_chain
+
+    settings.AUDIT_HMAC_KEY = "chain-key"
+    for action in ("act_a", "act_b", "act_c"):
+        record_audit(action)
+
+    result = verify_audit_chain()
+    assert result["ok"] is True
+    assert result["checked"] == 3
+
+
+@pytest.mark.django_db
+def test_verify_audit_chain_detects_payload_tampering(settings):
+    """Editing a row's payload after the fact must break verification:
+    the stored hmac no longer matches the recomputed one."""
+    from ameli_web.audit.models import AuditEvent
+    from ameli_web.accounts.services import record_audit, verify_audit_chain
+
+    settings.AUDIT_HMAC_KEY = "tamper-key"
+    a = record_audit("safe_action", payload={"v": 1})
+    record_audit("other_action")
+
+    # Quietly rewrite the first row's payload like an attacker with DB
+    # access might. Recompute is not done, so the hmac is now stale.
+    AuditEvent.objects.filter(id=a.id).update(payload={"v": 999})
+
+    result = verify_audit_chain()
+    assert result["ok"] is False
+    assert result["broken_id"] == a.id
+    assert result["broken_reason"] == "hmac mismatch"
+
+
+@pytest.mark.django_db
+def test_verify_audit_chain_detects_deleted_row(settings):
+    """Deleting a row in the middle breaks ``prev_hmac`` on the next
+    surviving row."""
+    from ameli_web.audit.models import AuditEvent
+    from ameli_web.accounts.services import record_audit, verify_audit_chain
+
+    settings.AUDIT_HMAC_KEY = "delete-key"
+    record_audit("act_a")
+    b = record_audit("act_b")
+    c = record_audit("act_c")
+
+    AuditEvent.objects.filter(id=b.id).delete()
+
+    result = verify_audit_chain()
+    assert result["ok"] is False
+    assert result["broken_id"] == c.id
+    assert result["broken_reason"] == "prev_hmac mismatch"
+
+
+@pytest.mark.django_db
+def test_verify_audit_chain_skips_pre_chain_rows(settings):
+    """Rows written before the HMAC key was configured carry empty
+    ``hmac`` and ``prev_hmac``. The verifier must treat them as
+    pre-chain history and resume cleanly from the first chained row,
+    not flag them as tampering."""
+    from ameli_web.accounts.services import record_audit, verify_audit_chain
+
+    settings.AUDIT_HMAC_KEY = ""
+    record_audit("legacy_1")
+    record_audit("legacy_2")
+    settings.AUDIT_HMAC_KEY = "fresh-key"
+    record_audit("chained_1")
+    record_audit("chained_2")
+
+    result = verify_audit_chain()
+    assert result["ok"] is True
+    # Only the two chained rows count toward the verified total.
+    assert result["checked"] == 2
+
+
+@pytest.mark.django_db
+def test_verify_audit_chain_refuses_without_key(settings):
+    """Calling the verifier without a key cannot proceed — there is no
+    secret to verify against — so it returns a clear error rather than
+    a false-positive 'ok'."""
+    from ameli_web.accounts.services import verify_audit_chain
+
+    settings.AUDIT_HMAC_KEY = ""
+    result = verify_audit_chain()
+    assert result["ok"] is False
+    assert "AUDIT_HMAC_KEY" in result["error"]
+
+
 def test_hibp_validator_only_sends_prefix(hibp_validator, monkeypatch):
     """k-anonymity guarantee: the validator must only send the first
     five chars of the hash to HIBP, never the rest of the digest and

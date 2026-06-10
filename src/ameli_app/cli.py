@@ -111,6 +111,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list-users", help="List managed user accounts.")
 
+    verify_audit = sub.add_parser(
+        "verify-audit",
+        help="Walk the audit-log hash chain and report tampering.",
+    )
+    verify_audit.add_argument(
+        "--from-id", type=int, default=None,
+        help="Start verification at this row id (inclusive).",
+    )
+    verify_audit.add_argument(
+        "--to-id", type=int, default=None,
+        help="Stop verification at this row id (inclusive).",
+    )
+
     shell = sub.add_parser(
         "shell",
         help="Open a Django-ready Python shell or run a snippet/script.",
@@ -151,6 +164,17 @@ def _handle_list_users(args) -> int:
 
     _json({"ok": True, "users": list_users()})
     return 0
+
+
+def _handle_verify_audit(args) -> int:
+    _bootstrap_django(args)
+    from ameli_web.accounts.services import verify_audit_chain
+
+    result = verify_audit_chain(start_id=args.from_id, stop_id=args.to_id)
+    _json(result)
+    # Non-zero exit when the chain is broken so an operator running this
+    # from cron / systemd timer can hook an alert.
+    return 0 if result.get("ok") else 1
 
 
 def _shell_namespace() -> dict:
@@ -250,6 +274,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_create_user(args)
     if args.command == "list-users":
         return _handle_list_users(args)
+    if args.command == "verify-audit":
+        return _handle_verify_audit(args)
     if args.command == "shell":
         return _handle_shell(args)
 

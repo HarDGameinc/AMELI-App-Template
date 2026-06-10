@@ -54,13 +54,176 @@ def sync_user_groups(user) -> None:
     user.groups.set(groups.filter(name=desired))
 
 
-def record_audit(action: str, *, actor=None, target_username: str | None = None, payload: dict[str, Any] | None = None) -> AuditEvent:
-    return AuditEvent.objects.create(
-        actor_username=(getattr(actor, "username", None) or ""),
-        target_username=(target_username or ""),
+def _audit_hmac_key() -> bytes:
+    """Resolve the audit HMAC secret. An empty value disables chaining
+    (rows still write, just without an integrity stamp) — useful in
+    dev where the operator may not want to pin a key yet."""
+    from django.conf import settings as django_settings
+
+    raw = getattr(django_settings, "AUDIT_HMAC_KEY", "") or ""
+    return raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
+
+
+def _audit_canonical(*, prev_hmac: str, action: str, actor_username: str,
+                     target_username: str, payload: dict, created_at) -> bytes:
+    """Stable byte serialisation used as input to HMAC. ``sort_keys`` and
+    a fixed separator keep the JSON representation deterministic; the
+    ISO timestamp is normalised to UTC.
+    """
+    import json
+
+    payload_blob = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
+    ts = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+    return "|".join([
+        prev_hmac,
+        action,
+        actor_username,
+        target_username,
+        payload_blob,
+        ts,
+    ]).encode("utf-8")
+
+
+def _audit_hmac(*, key: bytes, prev_hmac: str, action: str, actor_username: str,
+                target_username: str, payload: dict, created_at) -> str:
+    import hashlib
+    import hmac as hmac_lib
+
+    body = _audit_canonical(
+        prev_hmac=prev_hmac,
         action=action,
-        payload=payload or {},
+        actor_username=actor_username,
+        target_username=target_username,
+        payload=payload,
+        created_at=created_at,
     )
+    return hmac_lib.new(key, body, hashlib.sha256).hexdigest()
+
+
+def record_audit(action: str, *, actor=None, target_username: str | None = None, payload: dict[str, Any] | None = None) -> AuditEvent:
+    """Write an audit row, optionally stamped with a per-row HMAC that
+    chains back to the previous row.
+
+    The chain lookup + write happen inside a ``transaction.atomic`` with
+    ``select_for_update`` on the latest row so concurrent writers
+    serialise: every committed row references the correct
+    ``prev_hmac``. When ``AUDIT_HMAC_KEY`` is unset the chain stays
+    empty and the row is written without an integrity stamp, so
+    operators that never pin a key still see the audit log work.
+    """
+    from django.db import transaction
+
+    actor_username = getattr(actor, "username", None) or ""
+    target = target_username or ""
+    payload_dict = payload or {}
+    key = _audit_hmac_key()
+
+    if not key:
+        return AuditEvent.objects.create(
+            actor_username=actor_username,
+            target_username=target,
+            action=action,
+            payload=payload_dict,
+        )
+
+    with transaction.atomic():
+        last = (
+            AuditEvent.objects.select_for_update(skip_locked=False)
+            .order_by("-id")
+            .first()
+        )
+        prev_hmac = (last.hmac if last is not None else "") or ""
+        event = AuditEvent.objects.create(
+            actor_username=actor_username,
+            target_username=target,
+            action=action,
+            payload=payload_dict,
+            prev_hmac=prev_hmac,
+        )
+        # ``auto_now_add`` fills in ``created_at`` on insert; refresh so
+        # the HMAC is computed against the value the DB actually stored.
+        event.refresh_from_db(fields=["created_at"])
+        event.hmac = _audit_hmac(
+            key=key,
+            prev_hmac=prev_hmac,
+            action=event.action,
+            actor_username=event.actor_username,
+            target_username=event.target_username,
+            payload=event.payload,
+            created_at=event.created_at,
+        )
+        event.save(update_fields=["hmac"])
+        return event
+
+
+def verify_audit_chain(*, start_id: int | None = None, stop_id: int | None = None) -> dict[str, Any]:
+    """Walk the audit chain in id order and report tampering.
+
+    Returns a dict ``{ok, checked, first_break, broken_id, broken_reason}``
+    that the ``verify-audit`` CLI surfaces. Rows written before the
+    HMAC key was configured (no stored ``hmac``) are skipped — they are
+    pre-chain history, not corruption.
+    """
+    key = _audit_hmac_key()
+    if not key:
+        return {
+            "ok": False,
+            "error": "AUDIT_HMAC_KEY is not configured; cannot verify chain.",
+        }
+
+    queryset = AuditEvent.objects.order_by("id")
+    if start_id is not None:
+        queryset = queryset.filter(id__gte=start_id)
+    if stop_id is not None:
+        queryset = queryset.filter(id__lte=stop_id)
+
+    expected_prev = ""
+    checked = 0
+    first_break = None
+    for row in queryset.iterator(chunk_size=500):
+        if not row.hmac:
+            # Legacy (pre-chain) row. Reset the expected prev so newer
+            # chained rows aren't blamed for the gap.
+            expected_prev = ""
+            continue
+        if row.prev_hmac != expected_prev:
+            first_break = {
+                "id": row.id,
+                "reason": "prev_hmac mismatch",
+                "expected": expected_prev,
+                "found": row.prev_hmac,
+            }
+            break
+        expected_hmac = _audit_hmac(
+            key=key,
+            prev_hmac=row.prev_hmac,
+            action=row.action,
+            actor_username=row.actor_username,
+            target_username=row.target_username,
+            payload=row.payload,
+            created_at=row.created_at,
+        )
+        if expected_hmac != row.hmac:
+            first_break = {
+                "id": row.id,
+                "reason": "hmac mismatch",
+                "expected": expected_hmac,
+                "found": row.hmac,
+            }
+            break
+        expected_prev = row.hmac
+        checked += 1
+
+    if first_break is None:
+        return {"ok": True, "checked": checked}
+    return {
+        "ok": False,
+        "checked": checked,
+        "broken_id": first_break["id"],
+        "broken_reason": first_break["reason"],
+        "expected": first_break.get("expected", ""),
+        "found": first_break.get("found", ""),
+    }
 
 
 def _trusted_proxies() -> set[str]:

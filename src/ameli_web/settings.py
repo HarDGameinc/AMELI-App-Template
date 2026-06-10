@@ -219,6 +219,19 @@ HIBP_PASSWORD_CHECK = os.environ.get("AMELI_APP_HIBP_PASSWORD_CHECK", "").strip(
     "1", "true", "yes", "on",
 }
 
+# Secret key for the audit-log HMAC chain. When set, every audit row is
+# stamped with HMAC-SHA256 over its canonical payload + the previous
+# row's hmac, so ``ameli-app verify-audit`` can detect tampering after
+# the fact (edited row, deleted row, reordered row). Leave blank to keep
+# the chain off — rows still write, just without an integrity stamp.
+#
+# Generate one with:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+# and paste it into AMELI_APP_AUDIT_HMAC_KEY in the env file. Once set
+# DO NOT rotate without re-anchoring or all historical rows fail
+# verification.
+AUDIT_HMAC_KEY = os.environ.get("AMELI_APP_AUDIT_HMAC_KEY", "").strip()
+
 LANGUAGE_CODE = "es-cl"
 TIME_ZONE = CFG.timezone or "America/Santiago"
 USE_I18N = True
