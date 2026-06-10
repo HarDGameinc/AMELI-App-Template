@@ -16,7 +16,7 @@ con un nivel de hardening serio".
 - Repo: `HarDGameinc/AMELI-App-Template`
 - Rama estable: `main` (post-promocion del dia)
 - Rama de trabajo: `dev` (sincronizada con `main`)
-- **512 tests pasando** (`pytest -v`)
+- **519 tests pasando** (`pytest -v`)
 - **0 regresiones**
 - Nuevos archivos de tests: 3 grandes (`block1`, `block2`, `block3`)
 
@@ -57,6 +57,7 @@ docs (commit `abdaf90`).
 | `script-src 'unsafe-inline'` | Cualquier inline script ejecutaba | Nonce per-request, XSS bloqueada por browser |
 | HIBP password check | No existia | Toggle opcional con k-anonymity |
 | Audit log de actions criticas | Algunas sin actor consistente | Actor uniforme en todas las acciones de admin |
+| Audit log tamper detection | No habia | HMAC chain opcional + `verify-audit` CLI |
 
 ### Bloque 1 — Critico + quick wins (8 commits)
 
@@ -208,7 +209,7 @@ docs (commit `abdaf90`).
 
 ### Numeros del dia
 
-- **22 commits promocionados a `main`**
+- **23 commits promocionados a `main`** (22 del plan + 1 de H6 bonus)
 - **512 tests pasando** (508 al inicio del dia → +120 nuevos tests y
   -116 obsoletos = neto +4 por refactors que consolidan)
 - 13 archivos de tests nuevos o muy modificados
@@ -253,9 +254,66 @@ docs (commit `abdaf90`).
 
 | Item | Razon |
 |---|---|
-| **H6**: Audit log con HMAC por fila | Defensivo para compliance/forensics. No urgente para uso interno casual. Se hace cuando aparezca el caso. |
 | **N3**: Lockout permanente despues de N ventanas consecutivas | Trade-off UX vs seguridad. Para uso interno mejor el lockout temporal actual. |
 | **M5 del 11-jun**: MFA explicito para `/django-admin/` | Sesion ya valida MFA al login. Defense in depth pendiente. |
+
+### Bloque 3-bonus — H6 (audit HMAC chain)
+
+Despues del handoff inicial el usuario pidio cerrar el ultimo item
+del audit del 11-jun. Se agrego en el commit `76c2e8f` (continuacion
+fuera del bloque 3 principal).
+
+**Cambios**:
+
+- `AuditEvent` gana dos campos: `prev_hmac` y `hmac` (ambos
+  `CharField`, blank por default para no romper rows legacy).
+- Migration `audit/0002_auditevent_hmac_auditevent_prev_hmac`.
+- `record_audit` ahora hace lookup-and-lock de la ultima fila con
+  `select_for_update` dentro de `transaction.atomic`, computa HMAC
+  SHA-256 sobre `(prev_hmac, action, actor, target, payload_json,
+  created_at)` con la key del operador, y escribe ambos campos. Cuando
+  no hay key (default) escribe sin chain (compat).
+- `verify_audit_chain(start_id, stop_id)` recorre la chain y reporta
+  el primer break con `{ok, checked, broken_id, broken_reason,
+  expected, found}`. Las filas legacy (`hmac=""`) se skipean — pre-
+  chain history no es tampering.
+- Setting `AUDIT_HMAC_KEY` leida desde `AMELI_APP_AUDIT_HMAC_KEY`.
+  Default vacio.
+- Comando CLI `ameli-app verify-audit --from-id N --to-id M` con exit
+  code 1 cuando hay tampering (utilizable desde cron/systemd).
+
+**Verificado en server dev**:
+
+- Genero key, restart, primer audit row con HMAC valido (id=482).
+- `verify-audit` con chain limpia retorna `{"ok": true, "checked": 1}`.
+- Modificacion directa de payload (`AuditEvent.objects.filter(id=482)
+  .update(payload={'tampered': True})`) detectada como `{"ok": false,
+  "broken_id": 482, "broken_reason": "hmac mismatch", "expected":
+  "67c1...", "found": "c65c..."}` con exit code 1.
+
+7 tests cubren: no-key (rows escriben sin stamp), chain-on,
+verificacion limpia, tampering de payload, fila eliminada, mezcla
+legacy + chained, refuse sin key.
+
+**Setup operativo**:
+
+```bash
+# Generar key
+.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# En /etc/<slug>-<env>/app.env
+AMELI_APP_AUDIT_HMAC_KEY=<la-key>
+
+systemctl restart <service>
+
+# Verificacion periodica
+.venv/bin/ameli-app verify-audit
+```
+
+IMPORTANTE: una vez configurada la key, NO rotarla sin re-anchorar
+(toda la chain post-rotacion fallaria contra la key vieja). Si hay
+que rotar, exportar la chain anterior, archivar, y empezar una nueva
+con la key nueva.
 
 ### Snapshot al cierre — superficie de seguridad
 
@@ -269,7 +327,7 @@ docs (commit `abdaf90`).
 | Password change forgot | Throttle atomico por IP, mensaje en espanol, audit pre-SMTP |
 | **Cambio de email** | **Double-opt-in con confirm + alert + cancel link** |
 | HIBP password check | Opcional via toggle, k-anonymity |
-| Audit log | Actor consistente, throttle counter separado para historico |
+| Audit log | Actor consistente + **HMAC chain opcional + `verify-audit` CLI con tamper detection** |
 | Webhooks | Removidos del Template |
 | API tokens | Removidos del Template |
 | Avatares | Format whitelist + pixel cap + byte cap |
@@ -283,11 +341,12 @@ docs (commit `abdaf90`).
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 1 | **H6**: Audit log con HMAC por fila + comando `verify-audit` | Seguridad/forensics | Medio |
-| 2 | Selector de idioma en header (i18n loop) | UX | Chico |
-| 3 | Retry + queue para emails fallidos | Operativo | Medio |
-| 4 | Banner en `/profile/` cuando MFA no esta enrolado | UX | Chico |
-| 5 | Soporte para Argon2id parameter tuning via env | Seguridad | Chico |
+| 1 | Selector de idioma en header (i18n loop) | UX | Chico |
+| 2 | Retry + queue para emails fallidos | Operativo | Medio |
+| 3 | Banner en `/profile/` cuando MFA no esta enrolado | UX | Chico |
+| 4 | Soporte para Argon2id parameter tuning via env | Seguridad | Chico |
+| 5 | Rotacion de `AUDIT_HMAC_KEY` con re-anchor | Seguridad operativa | Medio |
+| 6 | MFA explicito para `/django-admin/` (M5 del 11-jun) | Seguridad | Chico |
 
 ### Orden recomendado para retomar
 
