@@ -20,4 +20,9 @@ def account_navigation(request):
         "app_name": settings.CFG.app_name,
         "docs_enabled": settings.CFG.docs_enabled,
         "redoc_enabled": settings.CFG.redoc_enabled,
+        # Per-request CSP nonce produced by SecurityHeadersMiddleware.
+        # Templates use this in every inline <script nonce="..."> /
+        # <style nonce="..."> so the browser executes them under the
+        # nonce-based policy.
+        "csp_nonce": getattr(request, "csp_nonce", ""),
     }

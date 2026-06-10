@@ -140,7 +140,7 @@
 </section>
 
 {% if not show_selector and method == "email" %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener("DOMContentLoaded", () => {
   const resendBtn = document.getElementById("verify-mfa-resend");
   const resendFeedback = document.getElementById("verify-mfa-resend-feedback");

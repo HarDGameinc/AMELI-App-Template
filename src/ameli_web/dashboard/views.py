@@ -110,13 +110,16 @@ def _wrap_docs_html(body: bytes | str, *, title: str, back_href: str = "/", back
 _DOCS_CDN_ORIGIN = "https://cdn.jsdelivr.net"
 
 
-def _docs_csp() -> str:
+def _docs_csp(nonce: str) -> str:
     """Per-page CSP for ``/docs`` and ``/redoc`` that whitelists the
-    jsdelivr origin our Swagger UI / ReDoc bundles live on.
+    jsdelivr origin our Swagger UI / ReDoc bundles live on AND threads
+    the per-request CSP nonce through so our own inline boot script
+    (the one that calls ``SwaggerUIBundle(...)``) can execute without
+    re-introducing ``'unsafe-inline'``.
 
     Keeping the override local to the docs pages means the rest of the
-    site keeps its strict default (``script-src 'self'``) — an XSS in
-    /profile cannot, for example, pull arbitrary code from the CDN.
+    site keeps its strict default (no inline scripts at all) — an XSS
+    in /profile cannot, for example, pull arbitrary code from the CDN.
 
     Subresource Integrity (the ``integrity=`` attribute the operator
     configures via ``CDN_SRI_HASHES``) is the orthogonal control: even
@@ -126,7 +129,7 @@ def _docs_csp() -> str:
     return (
         "default-src 'self'; "
         f"style-src 'self' 'unsafe-inline' {_DOCS_CDN_ORIGIN} https://fonts.googleapis.com; "
-        f"script-src 'self' 'unsafe-inline' {_DOCS_CDN_ORIGIN}; "
+        f"script-src 'self' 'nonce-{nonce}' {_DOCS_CDN_ORIGIN}; "
         f"img-src 'self' data: {_DOCS_CDN_ORIGIN}; "
         f"font-src 'self' {_DOCS_CDN_ORIGIN} https://fonts.gstatic.com; "
         f"worker-src 'self' blob:; "
@@ -137,7 +140,7 @@ def _docs_csp() -> str:
     )
 
 
-def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, str], title: str) -> HttpResponse:
+def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, str], title: str, nonce: str = "") -> HttpResponse:
     wrapped = _wrap_docs_html(body, title=title, back_href="/", back_label="Dashboard")
     response = HttpResponse(wrapped, status=status_code)
     for key, value in headers.items():
@@ -146,7 +149,7 @@ def _docs_response(body: bytes | str, *, status_code: int, headers: dict[str, st
         response[key] = value
     # Override the project-wide CSP for this response only. The middleware
     # leaves the header alone when we set it here.
-    response["Content-Security-Policy"] = _docs_csp()
+    response["Content-Security-Policy"] = _docs_csp(nonce)
     return response
 
 
@@ -178,11 +181,12 @@ def _sri(name: str) -> str:
     return f' integrity="{digest}" crossorigin="anonymous"'
 
 
-def _swagger_ui_html() -> str:
+def _swagger_ui_html(nonce: str = "") -> str:
     title = f"{settings.CFG.app_name} API Docs"
     css = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui.css"
     bundle = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui-bundle.js"
     preset = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui-standalone-preset.js"
+    nonce_attr = f' nonce="{nonce}"' if nonce else ""
     return f"""<!DOCTYPE html>
 <html lang="es">
   <head>
@@ -195,7 +199,7 @@ def _swagger_ui_html() -> str:
     <div id="swagger-ui"></div>
     <script src="{bundle}"{_sri("swagger_ui_bundle")}></script>
     <script src="{preset}"{_sri("swagger_ui_preset")}></script>
-    <script>
+    <script{nonce_attr}>
       window.onload = function () {{
         window.ui = SwaggerUIBundle({{
           url: "/openapi.json",
@@ -398,11 +402,13 @@ def openapi_schema(request):
 def docs(request):
     if not settings.CFG.docs_enabled:
         return JsonResponse({"ok": False, "error": "docs disabled"}, status=404)
+    nonce = getattr(request, "csp_nonce", "")
     return _docs_response(
-        _swagger_ui_html(),
+        _swagger_ui_html(nonce=nonce),
         status_code=200,
         headers={"Content-Type": "text/html; charset=utf-8"},
         title=f"{settings.CFG.app_name} API Docs",
+        nonce=nonce,
     )
 
 
@@ -410,9 +416,11 @@ def docs(request):
 def redoc(request):
     if not settings.CFG.redoc_enabled:
         return JsonResponse({"ok": False, "error": "redoc disabled"}, status=404)
+    nonce = getattr(request, "csp_nonce", "")
     return _docs_response(
         _redoc_html(),
         status_code=200,
         headers={"Content-Type": "text/html; charset=utf-8"},
         title=f"{settings.CFG.app_name} API ReDoc",
+        nonce=nonce,
     )

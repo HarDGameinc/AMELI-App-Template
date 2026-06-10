@@ -1,10 +1,45 @@
 from __future__ import annotations
 
+import secrets
+
 from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
 
 from .services import record_audit, sync_request_session
+
+
+def _generate_csp_nonce() -> str:
+    """16 random bytes, url-safe base64. ~22 chars, enough entropy that
+    an attacker cannot guess it inside a single request lifetime."""
+    return secrets.token_urlsafe(16)
+
+
+def build_csp(nonce: str) -> str:
+    """Render the project-wide CSP with a per-request nonce baked in.
+
+    The nonce replaces ``'unsafe-inline'`` in **script-src** so a future
+    XSS reflected into one of our templates cannot execute — an attacker
+    can inject the markup but not the matching nonce only known to the
+    server for this response.
+
+    ``style-src`` keeps ``'unsafe-inline'`` because every layout
+    template still relies on inline ``style=""`` attributes; rewriting
+    them all would be a giant refactor for marginal value. Inline
+    styles cannot execute JavaScript, so the residual risk is cosmetic
+    (an attacker could rewrite layout, never run code).
+    """
+    return (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        f"script-src 'self' 'nonce-{nonce}'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
 
 
 class SecurityHeadersMiddleware:
@@ -13,16 +48,20 @@ class SecurityHeadersMiddleware:
     Django already sets ``X-Content-Type-Options`` and
     ``Referrer-Policy`` from ``SECURE_*`` settings; CSP needs a custom
     middleware. We keep this in-app to avoid adding ``django-csp``.
+
+    We mint a fresh ``csp_nonce`` per request, stash it on the request
+    object so the context processor can hand it to every template, and
+    bake it into the CSP header before the response leaves.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self._policy = getattr(settings, "CONTENT_SECURITY_POLICY", "")
 
     def __call__(self, request):
+        request.csp_nonce = _generate_csp_nonce()
         response = self.get_response(request)
-        if self._policy and "Content-Security-Policy" not in response:
-            response["Content-Security-Policy"] = self._policy
+        if "Content-Security-Policy" not in response:
+            response["Content-Security-Policy"] = build_csp(request.csp_nonce)
         return response
 
 

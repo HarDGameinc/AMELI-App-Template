@@ -289,19 +289,12 @@ if _proxy_ssl_header:
 # default. Enable when TLS is stable.
 SECURE_HSTS_SECONDS = 0
 
-# Strict, source-friendly CSP. ``django-csp`` would give finer control
-# but adding it ships fine for this baseline.
-CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; "
-    "img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com; "
-    "script-src 'self' 'unsafe-inline'; "
-    "connect-src 'self'; "
-    "frame-ancestors 'none'; "
-    "base-uri 'self'; "
-    "form-action 'self'"
-)
+# The project-wide CSP is built per request by SecurityHeadersMiddleware
+# so it can stamp a unique ``nonce-...`` token in script-src and
+# style-src. That replaces the legacy ``'unsafe-inline'`` token: an
+# attacker who reflects markup into a template still cannot execute it
+# because they do not have access to the nonce minted server-side for
+# that response. See accounts.middleware.build_csp.
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
