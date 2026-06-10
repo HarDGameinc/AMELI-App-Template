@@ -42,6 +42,28 @@ def build_csp(nonce: str) -> str:
     )
 
 
+def _django_admin_csp() -> str:
+    """Looser CSP applied only to ``/django-admin/*``.
+
+    The Django admin ships inline scripts that we cannot stamp with our
+    nonce (it's framework code). Without the relaxation theme toggles,
+    autocompletes and sortables silently break. The admin is already
+    behind sudo + MFA + audit, and only the operator ever visits it,
+    so the marginal XSS risk here is the small price for keeping the
+    rest of the site under the strict nonce-based policy.
+    """
+    return (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+
 # Modern browsers honour a small fleet of process-isolation headers that
 # defend against speculative execution side-channels (Spectre, Meltdown
 # variants) and against being grouped in the same browsing context group
@@ -86,7 +108,10 @@ class SecurityHeadersMiddleware:
         request.csp_nonce = _generate_csp_nonce()
         response = self.get_response(request)
         if "Content-Security-Policy" not in response:
-            response["Content-Security-Policy"] = build_csp(request.csp_nonce)
+            if request.path.startswith("/django-admin/"):
+                response["Content-Security-Policy"] = _django_admin_csp()
+            else:
+                response["Content-Security-Policy"] = build_csp(request.csp_nonce)
         # Best-effort: if the response already declares one of these, do
         # not overwrite (some specialised endpoints — e.g. docs — may
         # need their own value).

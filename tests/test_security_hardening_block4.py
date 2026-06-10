@@ -123,6 +123,22 @@ def test_cross_origin_isolation_headers_present(client):
     assert response.get("Cross-Origin-Resource-Policy") == "same-origin"
 
 
+@pytest.mark.django_db
+def test_django_admin_uses_relaxed_csp_for_framework_inline_scripts(client):
+    """The Django admin ships inline scripts we cannot stamp with our
+    nonce. /django-admin/* therefore gets a relaxed CSP with
+    'unsafe-inline' so the theme switcher, autocompletes and sortables
+    keep working. The rest of the site keeps the strict nonce-only
+    policy."""
+    response = client.get("/django-admin/login/")
+    csp = response.get("Content-Security-Policy", "")
+    assert "'unsafe-inline'" in csp.split("script-src", 1)[1].split(";", 1)[0]
+    # Other pages still use the strict nonce variant.
+    home = client.get("/").get("Content-Security-Policy", "")
+    assert "'unsafe-inline'" not in home.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'nonce-" in home
+
+
 # ---------------------------------------------------------------------------
 # Honeypot field on the login form
 # ---------------------------------------------------------------------------
