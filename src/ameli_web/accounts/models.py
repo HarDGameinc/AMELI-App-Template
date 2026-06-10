@@ -168,3 +168,33 @@ class EmailChangeRequest(models.Model):
         from django.utils import timezone
 
         return (at or timezone.now()) >= self.expires_at
+
+
+class ThrottleCounter(models.Model):
+    """Atomic per-(scope, key, window) counter for the rate-limit helpers.
+
+    The login / forgot-password / MFA-resend throttles used to count rows
+    in ``AuditEvent`` with a plain ``COUNT(*)`` and decide based on the
+    result. Two requests racing past the read could both observe the
+    same below-threshold count and slip an extra attempt past the limit
+    (a TOCTOU window). This table replaces the count source with a row
+    we can ``SELECT FOR UPDATE`` so the increment-and-check is serial.
+
+    ``unique_together`` keeps storage bounded: one row per (scope, key,
+    window). Old windows can be pruned by a maintenance job; nothing
+    breaks if they linger.
+    """
+
+    scope = models.CharField(max_length=32, db_index=True)
+    key = models.CharField(max_length=128)
+    window_start = models.DateTimeField()
+    count = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = [("scope", "key", "window_start")]
+        indexes = [
+            models.Index(fields=["scope", "key", "window_start"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.scope}::{self.key}::{self.window_start.isoformat()}={self.count}"

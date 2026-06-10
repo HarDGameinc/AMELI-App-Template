@@ -10,6 +10,7 @@ from ameli_web.accounts.services import (
     bootstrap_superadmin,
     check_login_throttle,
     record_audit,
+    record_login_failure,
 )
 from ameli_web.audit.models import AuditEvent
 
@@ -34,7 +35,7 @@ def test_check_login_throttle_passes_with_no_failures(admin_user):
 @pytest.mark.django_db
 def test_check_login_throttle_blocks_after_many_ip_failures(admin_user):
     for _ in range(15):
-        record_audit("login_failed", target_username="someone", payload={"ip": "10.0.0.5"})
+        record_login_failure(username="someone", ip="10.0.0.5")
 
     with pytest.raises(LoginThrottled):
         check_login_throttle(username="admin", ip="10.0.0.5")
@@ -43,7 +44,7 @@ def test_check_login_throttle_blocks_after_many_ip_failures(admin_user):
 @pytest.mark.django_db
 def test_check_login_throttle_locks_account_after_many_user_failures(admin_user):
     for _ in range(6):
-        record_audit("login_failed", target_username="admin", payload={"ip": "10.0.0.7"})
+        record_login_failure(username="admin", ip="10.0.0.7")
 
     with pytest.raises(AccountLocked):
         check_login_throttle(username="admin", ip="10.0.0.8")
@@ -51,14 +52,22 @@ def test_check_login_throttle_locks_account_after_many_user_failures(admin_user)
 
 @pytest.mark.django_db
 def test_check_login_throttle_old_failures_do_not_count(admin_user):
+    """Counter windows snap to fixed buckets. A failure recorded for an
+    older window does not contribute to the current window's count, so
+    pinning the row's window_start in the past is the cleanest way to
+    pretend those failures expired without time-traveling the clock."""
     from datetime import timedelta
     from django.utils import timezone
 
-    for _ in range(10):
-        event = record_audit("login_failed", target_username="admin", payload={"ip": "10.0.0.1"})
-        # Push the event well past the user window (5 minutes default)
-        event.created_at = timezone.now() - timedelta(hours=2)
-        event.save(update_fields=["created_at"])
+    from ameli_web.accounts.models import ThrottleCounter
+
+    # Direct write to the older window so the snapshot read returns 0.
+    ThrottleCounter.objects.create(
+        scope="login_fail_user",
+        key="admin",
+        window_start=timezone.now() - timedelta(hours=2),
+        count=10,
+    )
 
     # Should not raise — all failures are out of window.
     check_login_throttle(username="admin", ip="10.0.0.1")
@@ -68,7 +77,7 @@ def test_check_login_throttle_old_failures_do_not_count(admin_user):
 @override_settings(LOGIN_LOCKOUT_USER_MAX=2)
 def test_check_login_throttle_respects_django_settings_override(admin_user):
     for _ in range(2):
-        record_audit("login_failed", target_username="admin", payload={"ip": "10.0.0.1"})
+        record_login_failure(username="admin", ip="10.0.0.1")
 
     with pytest.raises(AccountLocked):
         check_login_throttle(username="admin", ip="10.0.0.1")
@@ -78,10 +87,10 @@ def test_check_login_throttle_respects_django_settings_override(admin_user):
 def test_check_login_throttle_only_counts_failures_for_that_username(admin_user):
     # Many failures against ``other``, none against ``admin``
     for _ in range(20):
-        record_audit("login_failed", target_username="other", payload={"ip": "10.0.0.1"})
+        record_login_failure(username="other", ip="10.0.0.1")
 
     # ``admin`` should still be allowed by the user-level check
-    # (but the IP-level check will trigger; use a different IP)
+    # (the IP-level check will trigger; use a different IP)
     check_login_throttle(username="admin", ip="10.0.0.99")
 
 

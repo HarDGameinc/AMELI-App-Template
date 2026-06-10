@@ -34,11 +34,11 @@ def test_locale_middleware_is_registered():
 def test_throttle_message_is_english_when_locale_is_en(admin_user):
     """When the active locale is ``en``, the LoginThrottled message should
     be translated to English from the compiled catalog."""
-    from ameli_web.accounts.services import LoginThrottled, record_audit
+    from ameli_web.accounts.services import LoginThrottled, record_login_failure
 
     # Push enough failures to trip the IP throttle
     for _ in range(20):
-        record_audit("login_failed", target_username="x", payload={"ip": "9.9.9.9"})
+        record_login_failure(username="x", ip="9.9.9.9")
 
     with translation.override("en"):
         try:
@@ -51,10 +51,10 @@ def test_throttle_message_is_english_when_locale_is_en(admin_user):
 
 @pytest.mark.django_db
 def test_throttle_message_is_spanish_by_default(admin_user):
-    from ameli_web.accounts.services import LoginThrottled, record_audit
+    from ameli_web.accounts.services import LoginThrottled, record_login_failure
 
     for _ in range(20):
-        record_audit("login_failed", target_username="x", payload={"ip": "9.9.9.9"})
+        record_login_failure(username="x", ip="9.9.9.9")
 
     with translation.override("es"):
         try:

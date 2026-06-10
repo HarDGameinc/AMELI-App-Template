@@ -55,7 +55,14 @@ def _record_logout(sender, request, user, **kwargs):
 
 @receiver(user_login_failed)
 def _record_login_failed(sender, credentials, request, **kwargs):
+    from .services import record_login_failure
+
     username = str((credentials or {}).get("username") or "")
+    ip = client_ip(request) if request else ""
+    # Bump the atomic throttle counters first so a concurrent burst
+    # observes the increment immediately; the audit row that follows is
+    # for the historical view in the admin and does not gate anything.
+    record_login_failure(username=username, ip=ip)
     record_audit(
         "login_failed",
         actor=None,
@@ -63,7 +70,7 @@ def _record_login_failed(sender, credentials, request, **kwargs):
         payload={
             "path": getattr(request, "path", "/login/") if request else "/login/",
             "reason": "invalid-credentials",
-            "ip_address": client_ip(request) if request else "",
+            "ip_address": ip,
             "user_agent": request.META.get("HTTP_USER_AGENT", "")[:256] if request else "",
         },
     )

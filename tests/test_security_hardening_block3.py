@@ -214,6 +214,105 @@ def test_hibp_validator_fails_open_on_network_error(hibp_validator, monkeypatch)
     hibp_validator.HIBPPasswordValidator().validate("AnyValidPass!12?")
 
 
+# ---------------------------------------------------------------------------
+# #4 — Atomic throttle counters replace the AuditEvent COUNT(*) TOCTOU
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_throttle_counter_bump_is_atomic_and_serialised(admin_user):
+    """The bump helper increments via select_for_update + F('count')+1,
+    so even repeated calls produce a strictly monotonic count."""
+    from ameli_web.accounts.services import _bump_throttle_counter
+
+    counts = [
+        _bump_throttle_counter(scope="t-test", key="10.0.0.1", window_seconds=60)
+        for _ in range(5)
+    ]
+    assert counts == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.django_db
+def test_throttle_counter_window_snaps_to_buckets(admin_user):
+    """Bumps inside the same window share one row; the next window owns
+    its own row so old counts do not leak across the boundary."""
+    from datetime import timedelta
+    from django.utils import timezone
+
+    from ameli_web.accounts.models import ThrottleCounter
+    from ameli_web.accounts.services import _bump_throttle_counter
+
+    _bump_throttle_counter(scope="t-bucket", key="k", window_seconds=60)
+    _bump_throttle_counter(scope="t-bucket", key="k", window_seconds=60)
+
+    # Drop a historical row to simulate an older bucket; the helper must
+    # NOT touch it.
+    ThrottleCounter.objects.create(
+        scope="t-bucket",
+        key="k",
+        window_start=timezone.now() - timedelta(hours=3),
+        count=999,
+    )
+
+    rows = list(ThrottleCounter.objects.filter(scope="t-bucket", key="k").order_by("window_start"))
+    assert len(rows) == 2
+    assert rows[0].count == 999  # untouched legacy row
+    assert rows[1].count == 2    # the current-bucket row
+
+
+@pytest.mark.django_db
+def test_throttle_counter_separates_scopes_and_keys(admin_user):
+    """The bump key includes scope and identity so an IP-level burst
+    does not consume a per-user budget for an unrelated account."""
+    from ameli_web.accounts.services import _bump_throttle_counter, _read_throttle_counter
+
+    _bump_throttle_counter(scope="login_fail_ip", key="10.0.0.1", window_seconds=60)
+    _bump_throttle_counter(scope="login_fail_user", key="alice", window_seconds=60)
+
+    assert _read_throttle_counter(scope="login_fail_ip", key="10.0.0.1", window_seconds=60) == 1
+    assert _read_throttle_counter(scope="login_fail_user", key="alice", window_seconds=60) == 1
+    assert _read_throttle_counter(scope="login_fail_ip", key="10.0.0.2", window_seconds=60) == 0
+    assert _read_throttle_counter(scope="login_fail_user", key="bob", window_seconds=60) == 0
+
+
+@pytest.mark.django_db
+def test_forgot_password_throttle_uses_atomic_counter(admin_user, settings):
+    """Each call to the gate bumps the counter once; the (N+1)-th call
+    crosses the threshold and raises, even if the audit log is empty."""
+    from ameli_web.accounts.services import LoginThrottled, check_forgot_password_throttle
+
+    settings.FORGOT_PASSWORD_IP_MAX = 3
+    settings.FORGOT_PASSWORD_IP_WINDOW = 600
+
+    for _ in range(3):
+        check_forgot_password_throttle(ip="198.51.100.7")
+    with pytest.raises(LoginThrottled):
+        check_forgot_password_throttle(ip="198.51.100.7")
+
+
+@pytest.mark.django_db
+def test_mfa_resend_throttle_uses_atomic_counter(admin_user, settings):
+    from ameli_web.accounts.services import LoginThrottled, check_mfa_resend_throttle
+
+    settings.MFA_RESEND_IP_MAX = 2
+    settings.MFA_RESEND_IP_WINDOW = 300
+
+    for _ in range(2):
+        check_mfa_resend_throttle(ip="198.51.100.8")
+    with pytest.raises(LoginThrottled):
+        check_mfa_resend_throttle(ip="198.51.100.8")
+
+
+@pytest.fixture()
+def admin_user(db):
+    from django.contrib.auth import get_user_model
+
+    from ameli_web.accounts.services import bootstrap_superadmin
+
+    bootstrap_superadmin(username="admin", password="AdminPass!12?Secure")
+    return get_user_model().objects.get(username="admin")
+
+
 def test_hibp_validator_only_sends_prefix(hibp_validator, monkeypatch):
     """k-anonymity guarantee: the validator must only send the first
     five chars of the hash to HIBP, never the rest of the digest and

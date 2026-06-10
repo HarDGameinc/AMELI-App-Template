@@ -1487,6 +1487,83 @@ def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[
 
 
 # ============================ Login throttle ============================
+#
+# All three rate-limit helpers below (login, forgot-password, mfa-resend)
+# back onto an atomic counter table — see :class:`ThrottleCounter`. The
+# previous implementation counted rows in :class:`AuditEvent` with a
+# plain ``COUNT(*)`` and decided based on the result; two workers racing
+# past the read could both observe "below threshold" and slip an extra
+# attempt past the limit (a TOCTOU window). Routing every check through
+# the same ``select_for_update`` + ``F("count") + 1`` pattern means the
+# increment and the threshold comparison run inside a single transaction
+# that the database serialises for us.
+#
+# Audit rows still fire on every relevant action so the historical view
+# in the admin keeps working; they are no longer the source of truth for
+# whether a request gets blocked.
+
+
+def _window_start_for(seconds: int, now=None):
+    """Snap ``now`` to the start of its ``seconds``-wide window so all
+    requests inside the same bucket hit the same counter row."""
+    from datetime import datetime, timezone as dt_timezone
+
+    now = now or timezone.now()
+    epoch = int(now.timestamp())
+    bucket = (epoch // max(1, seconds)) * max(1, seconds)
+    return datetime.fromtimestamp(bucket, tz=dt_timezone.utc)
+
+
+def _bump_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
+    """Atomically increment the counter row for (scope, key, current
+    window) and return the new count. Used by every gate that has to
+    react to "this happened, now decide" — the increment and the read
+    are inside one transaction so a concurrent caller cannot observe a
+    stale value.
+    """
+    from django.db import transaction
+    from django.db.models import F
+
+    from .models import ThrottleCounter
+
+    window_start = _window_start_for(window_seconds)
+    with transaction.atomic():
+        row, _created = ThrottleCounter.objects.select_for_update().get_or_create(
+            scope=scope, key=key, window_start=window_start, defaults={"count": 0}
+        )
+        ThrottleCounter.objects.filter(pk=row.pk).update(count=F("count") + 1)
+        row.refresh_from_db(fields=["count"])
+        return row.count
+
+
+def _read_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
+    """Snapshot read of the current window's counter; returns 0 when no
+    row exists yet."""
+    from .models import ThrottleCounter
+
+    window_start = _window_start_for(window_seconds)
+    row = ThrottleCounter.objects.filter(
+        scope=scope, key=key, window_start=window_start
+    ).first()
+    return row.count if row else 0
+
+
+def record_login_failure(*, username: str = "", ip: str = "") -> None:
+    """Increment the failure counters that :func:`check_login_throttle`
+    reads. Both keys (IP and username) get their own row so a brute
+    force against a single account does not consume the per-IP budget
+    for unrelated users sharing a network, and vice versa.
+    """
+    cfg = _throttle_settings()
+    if ip:
+        _bump_throttle_counter(scope="login_fail_ip", key=ip, window_seconds=cfg["ip_window"])
+    if username:
+        _bump_throttle_counter(
+            scope="login_fail_user",
+            key=username.lower(),
+            window_seconds=cfg["user_window"],
+        )
+
 
 # Defaults tuned so an attacker brute-forcing a single username gets
 # stopped within a minute; a sloppy operator typing their own password
@@ -1599,23 +1676,25 @@ def _count_recent_audit_by_action(
 
 def check_forgot_password_throttle(*, ip: str) -> None:
     """Refuse a ``/login/forgot/`` request when the IP has already asked
-    for too many resets in the window. Raises :class:`LoginThrottled` so
-    the existing handler can react like it does for login throttling.
+    for too many resets in the window. The bump happens atomically: each
+    call counts as one attempt regardless of whether the downstream SMTP
+    succeeds, so a hostile IP cannot drain the budget on a broken
+    upstream and then retry for free.
     """
     if not ip:
         return
     from django.conf import settings as django_settings
 
-    ip_max = getattr(
+    ip_max = int(getattr(
         django_settings, "FORGOT_PASSWORD_IP_MAX", FORGOT_PASSWORD_IP_MAX_DEFAULT
-    )
-    ip_window = getattr(
+    ))
+    ip_window = int(getattr(
         django_settings, "FORGOT_PASSWORD_IP_WINDOW", FORGOT_PASSWORD_IP_WINDOW_DEFAULT
+    ))
+    new_count = _bump_throttle_counter(
+        scope="forgot_password_ip", key=ip, window_seconds=ip_window
     )
-    recent = _count_recent_audit_by_action(
-        action="password_reset_requested", ip=ip, seconds=ip_window
-    )
-    if recent >= ip_max:
+    if new_count > ip_max:
         raise LoginThrottled(
             _(
                 "Demasiados pedidos de recuperacion desde esta direccion. "
@@ -1627,22 +1706,21 @@ def check_forgot_password_throttle(*, ip: str) -> None:
 
 def check_mfa_resend_throttle(*, ip: str) -> None:
     """Refuse a ``/login/verify-mfa/resend/`` when the IP has triggered
-    too many resends already. Complements the per-user limit inside
-    :func:`_check_email_mfa_rate_limit` so an attacker rotating usernames
-    cannot bypass the per-account cap.
+    too many resends already. Same atomic-bump semantics as
+    :func:`check_forgot_password_throttle`.
     """
     if not ip:
         return
     from django.conf import settings as django_settings
 
-    ip_max = getattr(django_settings, "MFA_RESEND_IP_MAX", MFA_RESEND_IP_MAX_DEFAULT)
-    ip_window = getattr(
+    ip_max = int(getattr(django_settings, "MFA_RESEND_IP_MAX", MFA_RESEND_IP_MAX_DEFAULT))
+    ip_window = int(getattr(
         django_settings, "MFA_RESEND_IP_WINDOW", MFA_RESEND_IP_WINDOW_DEFAULT
+    ))
+    new_count = _bump_throttle_counter(
+        scope="mfa_resend_ip", key=ip, window_seconds=ip_window
     )
-    recent = _count_recent_audit_by_action(
-        action="mfa_email_resend_requested", ip=ip, seconds=ip_window
-    )
-    if recent >= ip_max:
+    if new_count > ip_max:
         raise LoginThrottled(
             _(
                 "Demasiados reenvios desde esta direccion. "
@@ -1653,17 +1731,19 @@ def check_mfa_resend_throttle(*, ip: str) -> None:
 
 
 def check_login_throttle(*, username: str, ip: str) -> None:
-    """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should be
-    refused. Returns silently if the login may proceed.
+    """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should
+    be refused. Returns silently if the login may proceed.
 
-    The IP check runs first (it protects everyone), the user check second
-    (it protects the specific account). Both fail open if there are no
-    recent audit events.
+    Reads the atomic counter that :func:`record_login_failure` writes;
+    the snapshot is consistent with the latest committed increment so a
+    concurrent burst cannot slip past the cap.
     """
     cfg = _throttle_settings()
 
     if ip:
-        ip_fails = _count_recent_login_failures(ip=ip, seconds=cfg["ip_window"])
+        ip_fails = _read_throttle_counter(
+            scope="login_fail_ip", key=ip, window_seconds=cfg["ip_window"]
+        )
         if ip_fails >= cfg["ip_max"]:
             raise LoginThrottled(
                 _("Demasiados intentos desde esta direccion. Espera unos segundos."),
@@ -1671,8 +1751,10 @@ def check_login_throttle(*, username: str, ip: str) -> None:
             )
 
     if username:
-        user_fails = _count_recent_login_failures(
-            username=username, seconds=cfg["user_window"]
+        user_fails = _read_throttle_counter(
+            scope="login_fail_user",
+            key=username.lower(),
+            window_seconds=cfg["user_window"],
         )
         if user_fails >= cfg["user_max"]:
             raise AccountLocked(
