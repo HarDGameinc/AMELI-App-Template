@@ -1893,6 +1893,105 @@ def check_mfa_resend_throttle(*, ip: str) -> None:
         )
 
 
+LOCKOUT_PERMANENT_CONSECUTIVE_DEFAULT = 3
+"""How many lockout windows a username may consume in a row before the
+account flips to ``locked_at`` and requires an admin to unlock it.
+Three feels right: a real user who genuinely forgot their password runs
+into one window, maybe two, but a sustained brute-force hits it
+repeatedly."""
+
+
+def _consecutive_lockouts_for(username: str, *, window: int) -> int:
+    """Return how many lockout windows in a row the user has tripped.
+
+    We look at the audit history rather than the throttle counter:
+    counters reset every window, but the audit row ``login_locked_out``
+    is a permanent record of "this window was completely consumed".
+    """
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=max(1, window) * 6)
+    rows = (
+        AuditEvent.objects.filter(
+            action="login_locked_out",
+            target_username__iexact=username,
+            created_at__gte=cutoff,
+        )
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)[:10]
+    )
+    rows = list(rows)
+    if len(rows) < 2:
+        return len(rows)
+    # Count groups whose timestamps fall in distinct windows (gap >= window/2)
+    distinct = 1
+    last = rows[0]
+    for ts in rows[1:]:
+        if (last - ts).total_seconds() >= window * 0.5:
+            distinct += 1
+            last = ts
+    return distinct
+
+
+def maybe_permanently_lock(username: str) -> bool:
+    """Flip the account to ``locked_at`` when the threshold is reached.
+
+    Returns True when the lock was applied (or was already applied).
+    Idempotent — calling it twice is safe.
+    """
+    from django.conf import settings as django_settings
+
+    if not username:
+        return False
+    threshold = int(getattr(
+        django_settings,
+        "LOCKOUT_PERMANENT_CONSECUTIVE",
+        LOCKOUT_PERMANENT_CONSECUTIVE_DEFAULT,
+    ))
+    if threshold <= 0:
+        return False
+    user = User.objects.filter(username__iexact=username).first()
+    if user is None:
+        return False
+    if user.locked_at is not None:
+        return True
+    cfg = _throttle_settings()
+    consecutive = _consecutive_lockouts_for(username, window=cfg["user_window"])
+    if consecutive < threshold:
+        return False
+    user.locked_at = timezone.now()
+    user.locked_reason = f"throttle:{consecutive}_consecutive_lockouts"
+    user.save(update_fields=["locked_at", "locked_reason", "updated_at"])
+    record_audit(
+        "user_locked_permanently",
+        target_username=user.username,
+        payload={"reason": user.locked_reason, "consecutive": consecutive},
+    )
+    return True
+
+
+def admin_unlock_user(*, actor_username: str, username: str) -> dict[str, Any]:
+    """Clear ``locked_at`` so the user can attempt to log in again."""
+    if not username:
+        raise ValueError("usuario requerido")
+    user = User.objects.filter(username__iexact=username).first()
+    if user is None:
+        raise ValueError("user not found")
+    if user.locked_at is None:
+        return {"ok": True, "status": "not-locked"}
+    user.locked_at = None
+    user.locked_reason = ""
+    user.save(update_fields=["locked_at", "locked_reason", "updated_at"])
+    actor = User.objects.filter(username__iexact=actor_username).first()
+    record_audit(
+        "user_unlocked_by_admin",
+        actor=actor,
+        target_username=user.username,
+        payload={},
+    )
+    return {"ok": True, "status": "unlocked"}
+
+
 def check_login_throttle(*, username: str, ip: str) -> None:
     """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should
     be refused. Returns silently if the login may proceed.
@@ -1900,8 +1999,23 @@ def check_login_throttle(*, username: str, ip: str) -> None:
     Reads the atomic counter that :func:`record_login_failure` writes;
     the snapshot is consistent with the latest committed increment so a
     concurrent burst cannot slip past the cap.
+
+    Hard-locked accounts (``locked_at`` set by the permanent-lockout
+    promotion) are always refused regardless of throttle counters until
+    an admin clears the flag.
     """
     cfg = _throttle_settings()
+
+    if username:
+        user = User.objects.filter(username__iexact=username).first()
+        if user is not None and user.locked_at is not None:
+            raise AccountLocked(
+                _(
+                    "Esta cuenta esta bloqueada por seguridad. Contacta a un "
+                    "administrador para desbloquearla."
+                ),
+                retry_after=0,
+            )
 
     if ip:
         ip_fails = _read_throttle_counter(

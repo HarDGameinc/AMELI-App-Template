@@ -1,0 +1,13 @@
+[Unit]
+Description=Run __APP_NAME__ [__APP_ENV__] audit chain verification hourly
+
+[Timer]
+# Every hour at minute 7 — staggered off the top of the hour to avoid
+# colliding with maintenance runs and metric scrapers.
+OnCalendar=*-*-* *:07:00
+# If the host was off when a tick was due, fire the missed run on boot.
+Persistent=true
+Unit=__UNIT_PREFIX__-verify-audit.service
+
+[Install]
+WantedBy=timers.target

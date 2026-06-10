@@ -40,6 +40,12 @@ class User(AbstractUser):
     theme_preference = models.CharField(max_length=10, choices=THEME_CHOICES, default=THEME_AUTO)
     avatar = models.ImageField(upload_to=avatar_upload_to, blank=True, null=True)
     must_change_password = models.BooleanField(default=False)
+    # Hard lock applied by ``check_login_throttle`` after too many
+    # consecutive lockout windows. Cleared by an admin via the
+    # ``admin_unlock_user`` service — never time-based, so a sustained
+    # brute-force attempt cannot eventually wait it out.
+    locked_at = models.DateTimeField(blank=True, null=True)
+    locked_reason = models.CharField(max_length=64, blank=True, default="")
     mfa_secret = models.CharField(max_length=64, blank=True, default="")
     mfa_enabled = models.BooleanField(default=False)
     mfa_required = models.BooleanField(default=False)

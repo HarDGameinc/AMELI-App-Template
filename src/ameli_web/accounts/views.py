@@ -132,11 +132,19 @@ class TemplateLoginView(LoginView):
         try:
             check_login_throttle(username=username, ip=ip)
         except (LoginThrottled, AccountLocked) as exc:
+            from .services import maybe_permanently_lock
+
             record_audit(
                 "login_throttled" if isinstance(exc, LoginThrottled) else "login_locked_out",
                 target_username=username,
                 payload={"ip": ip, "retry_after": exc.retry_after},
             )
+            # An account that has just been locked-out one more time
+            # may have crossed the consecutive-windows threshold; flip
+            # ``locked_at`` if it has so the next attempt gets the
+            # hard-lock message instead of waiting out the window.
+            if isinstance(exc, AccountLocked):
+                maybe_permanently_lock(username)
             messages.error(request, str(exc))
             return self.render_to_response(self.get_context_data(form=self.get_form()))
         return super().post(request, *args, **kwargs)

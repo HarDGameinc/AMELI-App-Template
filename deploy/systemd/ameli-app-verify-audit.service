@@ -1,0 +1,24 @@
+[Unit]
+Description=__APP_NAME__ [__APP_ENV__] Audit chain verification
+Documentation=file:__APP_DIR__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_GROUP__
+WorkingDirectory=__APP_DIR__
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-__ENV_FILE__
+Environment=APP_CONFIG=__CONFIG_FILE__
+# verify-audit exits non-zero when the chain is broken; systemd records
+# the failure so an OnFailure= hook on this unit (or a Nagios/Prometheus
+# scrape of `systemctl status`) can fire an alert. Non-failure runs
+# emit a one-line JSON to journal which is greppable for trend data.
+ExecStart=__APP_DIR__/.venv/bin/python -m __APP_PACKAGE__.cli --config __CONFIG_FILE__ verify-audit
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadOnlyPaths=__APP_DIR__

@@ -674,3 +674,18 @@ def admin_django_admin_enter(request: HttpRequest) -> JsonResponse:
         payload={},
     )
     return JsonResponse({"ok": True, "redirect": "/django-admin/"})
+
+
+@require_POST
+@superadmin_required
+@sudo_required
+def admin_unlock_user(request: HttpRequest, username: str) -> JsonResponse:
+    """Clear the ``locked_at`` flag for a user that hit the permanent-
+    lockout threshold. Sudo-gated like every other write."""
+    from ameli_web.accounts.services import admin_unlock_user as _unlock
+
+    try:
+        result = _unlock(actor_username=request.user.username, username=username)
+    except ValueError as exc:
+        return _json_error(str(exc), status=404)
+    return JsonResponse(result)

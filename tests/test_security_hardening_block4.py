@@ -238,3 +238,74 @@ def test_profile_shows_email_alert_when_email_missing(client, admin_user):
     client.force_login(admin_user)
     body = client.get("/profile/").content.decode("utf-8")
     assert "Sin email registrado" in body
+
+
+# ---------------------------------------------------------------------------
+# N3 — Permanent lockout after N consecutive lockout windows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_locked_user_cannot_log_in_even_with_right_password(client, admin_user):
+    """An admin-set ``locked_at`` is an absolute refusal that does not
+    expire. Even the correct password gets the hard-lock message."""
+    from django.utils import timezone
+
+    admin_user.locked_at = timezone.now()
+    admin_user.locked_reason = "test"
+    admin_user.save()
+
+    response = client.post(
+        "/login/",
+        data={"username": "admin", "password": ADMIN_PASSWORD},
+        follow=False,
+    )
+    # Login did NOT proceed.
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    assert "Esta cuenta esta bloqueada" in body
+
+
+@pytest.mark.django_db
+def test_admin_unlock_user_clears_locked_at(admin_user, settings):
+    from ameli_web.accounts.services import admin_unlock_user as _unlock
+    from django.utils import timezone
+
+    admin_user.locked_at = timezone.now()
+    admin_user.locked_reason = "throttle:3_consecutive_lockouts"
+    admin_user.save()
+
+    result = _unlock(actor_username="admin", username="admin")
+    assert result["status"] == "unlocked"
+    admin_user.refresh_from_db()
+    assert admin_user.locked_at is None
+    assert admin_user.locked_reason == ""
+
+
+@pytest.mark.django_db
+def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
+    """When the audit log records enough consecutive ``login_locked_out``
+    rows for the same username, the next ``maybe_permanently_lock``
+    call flips ``locked_at`` and the account becomes admin-unlock only."""
+    from ameli_web.accounts.services import maybe_permanently_lock, record_audit
+
+    settings.LOCKOUT_PERMANENT_CONSECUTIVE = 3
+
+    # Three distinct lockout windows
+    from django.utils import timezone
+    from datetime import timedelta
+
+    for offset in (600, 300, 30):
+        ev = record_audit(
+            "login_locked_out",
+            target_username="admin",
+            payload={"ip": "10.0.0.1"},
+        )
+        ev.created_at = timezone.now() - timedelta(seconds=offset)
+        ev.save(update_fields=["created_at"])
+
+    locked = maybe_permanently_lock("admin")
+    assert locked is True
+    admin_user.refresh_from_db()
+    assert admin_user.locked_at is not None
+    assert "consecutive" in admin_user.locked_reason

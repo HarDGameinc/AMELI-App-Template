@@ -42,6 +42,11 @@ urlpatterns = [
         admin_views.admin_disable_user_mfa,
         name="admin-disable-user-mfa",
     ),
+    path(
+        "admin/users/<str:username>/unlock",
+        admin_views.admin_unlock_user,
+        name="admin-unlock-user",
+    ),
     path("admin/change-password", admin_views.admin_change_password, name="admin-change-password"),
     path("admin/sudo/", admin_views.admin_sudo, name="admin-sudo"),
     path("admin/sudo", admin_views.admin_sudo),
