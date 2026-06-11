@@ -836,7 +836,20 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
     }
 
     if request.method == "POST":
+        import random
+        import time
+
         from .services import LoginThrottled, check_forgot_password_throttle, client_ip
+
+        # Timing-pad: the response body is already identical for found vs
+        # not-found, but the SMTP send (when the user exists) takes
+        # appreciably longer than the no-op "user not found" branch.
+        # That gap is enough to enumerate registered accounts from
+        # offsite. Hold every response to at least
+        # ``FORGOT_PASSWORD_MIN_RESPONSE_MS`` so the timing channel
+        # collapses. Default 1000ms with a tiny jitter to avoid pinning
+        # to a single value (which itself would be a fingerprint).
+        start = time.monotonic()
 
         identifier = str(request.POST.get("identifier") or "").strip()
         if not identifier:
@@ -863,6 +876,17 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
             request_password_reset(identifier, base_url=_build_public_base_url(request))
         except Exception:  # noqa: BLE001 - never leak sending errors to the form
             pass
+
+        from django.conf import settings as django_settings
+
+        target_ms = int(getattr(django_settings, "FORGOT_PASSWORD_MIN_RESPONSE_MS", 1000))
+        if target_ms > 0:
+            target = target_ms / 1000.0 + random.uniform(0, 0.08)
+            elapsed = time.monotonic() - start
+            remaining = target - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+
         context["submitted"] = True
         context["identifier_echo"] = identifier
         return render(request, "accounts/forgot_password.html", context)

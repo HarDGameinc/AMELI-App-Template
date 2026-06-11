@@ -429,6 +429,95 @@ def test_admin_unlock_user_endpoint_clears_flag(client, admin_user):
     assert locked.locked_reason == ""
 
 
+# ---------------------------------------------------------------------------
+# #5 — Configurable Argon2 work factors
+# ---------------------------------------------------------------------------
+
+
+def test_configurable_argon2_reads_settings(settings):
+    """Bumping the env-driven settings must propagate to the live hasher
+    instance so a deploy can tune the cost without rebuilding the
+    container."""
+    from ameli_web.accounts.hashers import ConfigurableArgon2Hasher
+
+    settings.ARGON2_TIME_COST = 7
+    settings.ARGON2_MEMORY_COST = 65536
+    settings.ARGON2_PARALLELISM = 4
+
+    h = ConfigurableArgon2Hasher()
+    assert h.time_cost == 7
+    assert h.memory_cost == 65536
+    assert h.parallelism == 4
+
+
+def test_configurable_argon2_falls_back_to_django_defaults(settings):
+    """A deploy that never sets the env vars keeps Django's defaults."""
+    from ameli_web.accounts.hashers import ConfigurableArgon2Hasher
+
+    for attr in ("ARGON2_TIME_COST", "ARGON2_MEMORY_COST", "ARGON2_PARALLELISM"):
+        if hasattr(settings, attr):
+            delattr(settings, attr)
+
+    h = ConfigurableArgon2Hasher()
+    assert h.time_cost == 2
+    assert h.memory_cost == 102400
+    assert h.parallelism == 8
+
+
+@pytest.mark.django_db
+def test_password_hash_uses_configurable_argon2(admin_user, settings):
+    """The user's stored hash must come out of the configurable hasher
+    (algorithm = 'argon2'), not the bundled one."""
+    from django.contrib.auth.hashers import identify_hasher
+
+    admin_user.set_password("FreshPass!12?Secure")
+    admin_user.save()
+    hasher = identify_hasher(admin_user.password)
+    assert hasher.algorithm == "argon2"
+
+
+# ---------------------------------------------------------------------------
+# #7 — Forgot-password timing pad anti-enumeration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_forgot_password_response_takes_at_least_the_target(client, settings):
+    """The pad makes every response (found or not-found) hit a minimum
+    elapsed time so an attacker cannot tell registered accounts apart
+    from random gibberish via wall-clock measurement."""
+    import time
+
+    settings.FORGOT_PASSWORD_MIN_RESPONSE_MS = 600
+    settings.FORGOT_PASSWORD_IP_MAX = 100  # prevent throttle from skewing the timing
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    settings.AMELI_APP_PUBLIC_URL_BASE = "http://localhost:8080"
+
+    t0 = time.monotonic()
+    response = client.post("/login/forgot/", data={"identifier": "definitely-not-a-user"})
+    elapsed = time.monotonic() - t0
+    assert response.status_code == 200
+    # Pad target plus a generous slack to absorb test-runner noise.
+    assert elapsed >= 0.55, f"expected >=0.55s, got {elapsed:.3f}s"
+
+
+@pytest.mark.django_db
+def test_forgot_password_pad_disabled_when_setting_is_zero(client, settings):
+    import time
+
+    settings.FORGOT_PASSWORD_MIN_RESPONSE_MS = 0
+    settings.FORGOT_PASSWORD_IP_MAX = 100
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    settings.AMELI_APP_PUBLIC_URL_BASE = "http://localhost:8080"
+
+    t0 = time.monotonic()
+    response = client.post("/login/forgot/", data={"identifier": "nope"})
+    elapsed = time.monotonic() - t0
+    assert response.status_code == 200
+    # With the pad off we should be well below the default 1s floor.
+    assert elapsed < 0.5, f"expected <0.5s, got {elapsed:.3f}s"
+
+
 @pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``

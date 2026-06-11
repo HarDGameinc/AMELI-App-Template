@@ -192,16 +192,28 @@ ASGI_APPLICATION = "ameli_web.asgi.application"
 DATABASES = {"default": _database_settings()}
 
 # Argon2id is the OWASP-recommended hasher and resists GPU attacks better
-# than PBKDF2-SHA256. We keep PBKDF2 as a fallback so existing hashes keep
-# verifying; Django re-encodes them with Argon2 on the next successful
-# login (``UPDATE_LAST_LOGIN_ENCODING`` behaviour).
+# than PBKDF2-SHA256. We use a custom subclass that reads its work
+# factors from settings so an operator can tune them per deploy without
+# touching the source. PBKDF2 stays as a fallback so existing hashes
+# keep verifying; Django re-encodes them with Argon2 on the next
+# successful login (``UPDATE_LAST_LOGIN_ENCODING`` behaviour) — and the
+# same re-encode kicks in when an operator bumps a work factor.
 PASSWORD_HASHERS = [
-    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "ameli_web.accounts.hashers.ConfigurableArgon2Hasher",
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
     "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
     "django.contrib.auth.hashers.ScryptPasswordHasher",
 ]
+
+# Argon2id work factors. Defaults match Django's bundled hasher; the
+# operator can raise them on beefier hardware to push back against an
+# offline GPU-cluster cracker without forking Django. See
+# ``accounts/hashers.py`` for the OWASP reference and the live-rehash
+# semantics.
+ARGON2_TIME_COST = int(os.environ.get("AMELI_APP_ARGON2_TIME_COST", "2"))
+ARGON2_MEMORY_COST = int(os.environ.get("AMELI_APP_ARGON2_MEMORY_COST", "102400"))
+ARGON2_PARALLELISM = int(os.environ.get("AMELI_APP_ARGON2_PARALLELISM", "8"))
 
 AUTH_PASSWORD_VALIDATORS = [
     {
