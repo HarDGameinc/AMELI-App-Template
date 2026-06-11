@@ -904,6 +904,20 @@ document.addEventListener("DOMContentLoaded", () => {
           })();
         }
         break;
+      case "unlock":
+        if (confirm(`Desbloquear la cuenta de @${username}? Va a poder volver a intentar iniciar sesion.`)) {
+          (async () => {
+            button.disabled = true;
+            try {
+              await requestJson(`/admin/users/${encodeURIComponent(username)}/unlock`, { method: "POST" });
+              window.location.reload();
+            } catch (error) {
+              alert(error instanceof Error ? error.message : "Error inesperado.");
+              button.disabled = false;
+            }
+          })();
+        }
+        break;
       case "delete":
         openDeleteUserModal(username);
         break;

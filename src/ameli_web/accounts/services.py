@@ -336,6 +336,14 @@ def serialize_user(user) -> dict[str, Any]:
         "display_updated_at": format_timestamp_ui(getattr(user, "updated_at", None)),
         "display_last_login_at": format_timestamp_ui(user.last_login),
         "last_login_at": user.last_login.isoformat() if user.last_login else None,
+        # Permanent-lockout state (N3). When ``locked_at`` is set,
+        # ``check_login_throttle`` refuses every attempt regardless of
+        # password; the admin panel surfaces an "Desbloquear" button so
+        # the operator can clear the flag.
+        "locked": getattr(user, "locked_at", None) is not None,
+        "locked_at": user.locked_at.isoformat() if getattr(user, "locked_at", None) else None,
+        "display_locked_at": format_timestamp_ui(getattr(user, "locked_at", None)),
+        "locked_reason": getattr(user, "locked_reason", "") or "",
     }
 
 

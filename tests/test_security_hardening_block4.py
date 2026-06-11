@@ -318,6 +318,117 @@ def test_static_missing_path_returns_404(client):
     assert response.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# N3 UI — admin panel surfaces the lock state and the unlock button
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_serialize_user_exposes_locked_state(admin_user):
+    """The serializer is the single source of truth for the admin
+    template; without these fields the panel cannot render either
+    the badge or the conditional unlock button."""
+    from django.utils import timezone
+
+    from ameli_web.accounts.services import serialize_user
+
+    admin_user.locked_at = timezone.now()
+    admin_user.locked_reason = "throttle:3_consecutive_lockouts"
+    admin_user.save()
+    payload = serialize_user(admin_user)
+    assert payload["locked"] is True
+    assert payload["locked_reason"] == "throttle:3_consecutive_lockouts"
+    assert payload["locked_at"] is not None
+
+
+@pytest.mark.django_db
+def test_admin_panel_shows_unlock_button_for_locked_users(client, admin_user):
+    """When the operator opens /admin/, a user with locked_at gets the
+    'Bloqueado' badge and a per-row 'Desbloquear' action."""
+    from django.utils import timezone
+
+    from ameli_web.accounts.services import bootstrap_superadmin, create_user_account, grant_sudo
+
+    # Need a second user — the panel hides actions on the operator's own row.
+    create_user_account(
+        actor_username="admin",
+        username="tester",
+        password="TesterPass!12?Secure",
+        role="public",
+    )
+    User_ = type(admin_user)
+    locked = User_.objects.get(username="tester")
+    locked.locked_at = timezone.now()
+    locked.locked_reason = "manual"
+    locked.save()
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    body = client.get("/admin/").content.decode("utf-8")
+    assert ">Bloqueado<" in body
+    assert 'data-user-action="unlock"' in body
+    assert 'data-username="tester"' in body
+
+
+@pytest.mark.django_db
+def test_admin_panel_hides_unlock_button_for_unlocked_users(client, admin_user):
+    from ameli_web.accounts.services import create_user_account, grant_sudo
+
+    create_user_account(
+        actor_username="admin",
+        username="happy",
+        password="HappyPass!12?Secure",
+        role="public",
+    )
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    body = client.get("/admin/").content.decode("utf-8")
+    # The 'happy' user must NOT carry an unlock button.
+    assert 'data-username="happy"' in body  # row is rendered
+    # And no unlock action targets 'happy'.
+    happy_block = body.split('data-username="happy"', 1)[1].split('admin-user-actions', 1)[1].split('</div>', 1)[0]
+    assert 'data-user-action="unlock"' not in happy_block
+
+
+@pytest.mark.django_db
+def test_admin_unlock_user_endpoint_clears_flag(client, admin_user):
+    from django.utils import timezone
+
+    from ameli_web.accounts.services import create_user_account, grant_sudo
+
+    create_user_account(
+        actor_username="admin",
+        username="tester2",
+        password="TesterPass!12?Secure",
+        role="public",
+    )
+    User_ = type(admin_user)
+    locked = User_.objects.get(username="tester2")
+    locked.locked_at = timezone.now()
+    locked.locked_reason = "throttle:3"
+    locked.save()
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    response = client.post(
+        "/admin/users/tester2/unlock",
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    locked.refresh_from_db()
+    assert locked.locked_at is None
+    assert locked.locked_reason == ""
+
+
 @pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``

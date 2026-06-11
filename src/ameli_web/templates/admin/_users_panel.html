@@ -74,6 +74,9 @@ helper can swap just this fragment without reloading the whole admin page.
       {% if user_item.must_change_password %}
       <span class="session-state-badge warning">Cambio pendiente</span>
       {% endif %}
+      {% if user_item.locked %}
+      <span class="session-state-badge revoked" title="{{ user_item.locked_reason }}">Bloqueado</span>
+      {% endif %}
       {% if user_item.mfa_enabled %}
         {% if user_item.mfa_totp_enabled and user_item.mfa_email_enabled %}
         <span class="session-state-badge active">2FA TOTP+Email</span>
@@ -120,6 +123,12 @@ helper can swap just this fragment without reloading the whole admin page.
       <button class="icon-action" type="button" data-user-action="disable-mfa" data-username="{{ user_item.username }}">
         <span class="material-symbols-rounded icon-glyph" aria-hidden="true">shield_lock</span>
         <span>Desactivar 2FA del usuario</span>
+      </button>
+      {% endif %}
+      {% if user_item.locked %}
+      <button class="icon-action" type="button" data-user-action="unlock" data-username="{{ user_item.username }}">
+        <span class="material-symbols-rounded icon-glyph" aria-hidden="true">lock_open</span>
+        <span>Desbloquear</span>
       </button>
       {% endif %}
       <button class="icon-action danger" type="button" data-user-action="delete" data-username="{{ user_item.username }}">
