@@ -402,16 +402,135 @@ audit-of-audit emitido, identical-keys rechazado.
 | /health /metrics | Allowlist IP opcional |
 | Config | Boot guards (SECRET_KEY, ALLOWED_HOSTS, DEBUG, TRUSTED_PROXIES, **email.backend**) |
 
+### Lecciones de la verificacion operativa de #6 (rotacion HMAC)
+
+Durante la verificacion del recipe documentado en `OPERATIONS.md` el
+operador llego a un estado donde `AUDIT_HMAC_KEY` quedo vacio en el
+env file y la chain dejo de verificar. Reproducimos el desglose para
+que el proximo agente / operador entienda los hallazgos y los items
+de mejora pendientes.
+
+#### Lo que paso (cronologia)
+
+1. `verify-audit` inicial devolvio `{"ok": false, "broken_id": 482,
+   "broken_reason": "hmac mismatch"}`. La chain ya estaba rota desde
+   la prueba de tampering del **H6** al cierre del bloque 3 (esa
+   prueba modifico el payload del row 482 a proposito y nunca se
+   limpio). El operador NO advirtio esto y siguio al paso 2.
+
+2. **Typo critico al copy-pastear**: el operador tipeo `EW_KEY=$(...)`
+   en lugar de `NEW_KEY=$(...)`. La variable `$NEW_KEY` quedo vacia.
+   `echo "Nueva key: $NEW_KEY"` imprimio vacio pero no se chequeo.
+
+3. `rotate-audit-key --to-key "$NEW_KEY"` rechazo correctamente con
+   `{"error": "to_key is required", "ok": false}`. **El helper se
+   defendio**, no creo una chain con key vacia. Pero el operador
+   tampoco se detuvo aca.
+
+4. `sed -i "...AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY..."` se ejecuto con
+   `$NEW_KEY` vacio. El env file quedo con la linea
+   `AMELI_APP_AUDIT_HMAC_KEY=` (sin valor).
+
+5. Restart del service. `verify-audit` post-restart devolvio
+   `{"error": "AUDIT_HMAC_KEY is not configured; cannot verify
+   chain.", "ok": false}` — la app esta corriendo sin chain
+   activa (escribiendo audit rows sin hmac, las nuevas se vuelven
+   "legacy" rows).
+
+#### Hallazgos operativos
+
+- **El helper de rotacion hizo lo correcto**: defendio contra
+  `to_key` vacio y contra chain rota como pre-condicion. Si el
+  operador hubiera tipeado `$NEW_KEY` con valor real, el rotate
+  habria igual rechazado porque el chain bajo `from_key` ya estaba
+  roto en row 482 (precondicion documentada).
+
+- **El recipe del `OPERATIONS.md` no defiende contra `$NEW_KEY`
+  vacio en el paso 4** (el sed). La rotacion fallida es transparente,
+  pero el cambio del env file es "fire-and-forget". El recipe debe
+  imponer un check explicito entre el rotate y el sed, y no seguir
+  hasta que el operador confirme.
+
+- **La regla "verify antes de cualquier cosa" no se aplico**. El
+  recipe dice "verify the chain is clean first", pero un operador
+  apurado puede saltearlo. El comando `rotate-audit-key` es el que
+  defiende; el wrapper de shell del operador no.
+
+#### Items para una proxima sesion (mejora del recipe + helper)
+
+1. **`rotate-audit-key` debe imprimir un mensaje claro sobre el
+   `env` file**: hoy retorna OK silencioso. Conviene que diga
+   explicitamente "now update AMELI_APP_AUDIT_HMAC_KEY in the env
+   file to the new value and restart".
+
+2. **Snippet defensivo en `OPERATIONS.md`**: agregar guards bash
+   tipo `[ -n "$NEW_KEY" ] || { echo "ABORT: NEW_KEY is empty"; exit
+   1; }` antes del sed. Tambien chequear el exit code del
+   `rotate-audit-key`:
+   ```bash
+   .venv/bin/ameli-app rotate-audit-key --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
+     echo "ABORT: rotation failed; do NOT touch the env file"
+     exit 1
+   }
+   ```
+
+3. **Sub-comando `rotate-audit-key --apply-env <path>`**: variante
+   opcional que despues de rotar exitoso, escribe el nuevo valor al
+   env file (atomicamente). Asi el operador no tiene que coordinar
+   manual entre la rotacion y el sed.
+
+4. **`verify-audit` deberia exponer un flag `--strict-precondition`
+   que aborte con exit code distinto cuando el chain este roto** —
+   util para encadenarlo antes de rotaciones automatizadas:
+   ```bash
+   .venv/bin/ameli-app verify-audit --strict-precondition && \
+     .venv/bin/ameli-app rotate-audit-key --from-key ... --to-key ...
+   ```
+
+5. **Limpieza del chain roto del H6**: el row 482 sigue con el
+   payload tampered. Cuando se restaure la key vieja y se quiera
+   tener un chain verificable end-to-end, hay que ejecutar el
+   wipe-and-restart documentado (el que limpia `hmac` y `prev_hmac`)
+   o restaurar el payload original si se conoce.
+
+#### Como devolver el server dev al estado anterior (sin re-desplegar)
+
+```bash
+# Restaurar la key vieja en el env file
+sudo sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$OLD_KEY|" \
+  /etc/ameli-app-template-dev/app.env
+systemctl restart ameli-app-template-dev-api.service
+
+# verificar — sigue saliendo "broken_id: 482" por el tampering
+# original del H6, pero la chain al menos esta activa
+.venv/bin/ameli-app verify-audit
+```
+
+Para limpiar el row 482 (opcional, descarta verificabilidad del
+historial anterior a esa row):
+
+```bash
+.venv/bin/ameli-app shell -c "
+from ameli_web.audit.models import AuditEvent
+AuditEvent.objects.filter(id__lte=482).update(hmac='', prev_hmac='')
+"
+.venv/bin/ameli-app verify-audit
+# ahora deberia decir ok: true sobre los rows post-482
+```
+
 ### Proximos bloques abiertos
 
 Items 1, 4, 5, 6 y 7 del backlog del bloque 4 quedaron resueltos en el
 4C (ver arriba). Lo que queda son items operativo/UX que no afectan la
-postura de seguridad:
+postura de seguridad, mas las mejoras al recipe de rotacion que
+aparecieron al verificarlo en el server:
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
 | 3 | Retry + queue para emails fallidos | Operativo | Medio |
 | 2 | Selector de idioma en header (i18n loop) | UX | Chico |
+| **8** | **Endurecer recipe + helper de rotacion HMAC** (guards bash, mensaje explicito post-rotacion, opcional `--apply-env`, `verify-audit --strict-precondition`) — ver seccion "Lecciones de la verificacion operativa" arriba | Seguridad operativa | Chico |
+| **9** | **Limpieza del chain roto del row 482** en server dev (legacy del tampering del H6) — runbook ya escrito, no requiere desarrollo | Operativo | Trivial |
 
 ### Orden recomendado para retomar
 
