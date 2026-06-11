@@ -92,17 +92,68 @@ critical alerts (Slack webhook, email, PagerDuty, etc.).
 
 ### Rotating the HMAC key
 
-Don't, if possible. Rotating breaks every historical row's
-verification (they were stamped with the old key). If you must:
+Use case: the key was leaked, or your security policy mandates periodic
+rotation. The chain stays verifiable after rotation — the helper
+re-stamps every chained row with the new key while preserving the
+prev_hmac sequence.
 
-1. Export the audit table to cold storage.
-2. Clear the existing `hmac` and `prev_hmac` columns on the live rows
-   (they become legacy entries the verifier skips):
+1. **Verify the chain is clean first.** Rotation refuses to run when
+   the source chain is broken (it would paper over tampering).
    ```bash
-   .venv/bin/ameli-app shell -c "
-   from ameli_web.audit.models import AuditEvent
-   AuditEvent.objects.update(hmac='', prev_hmac='')
-   "
+   .venv/bin/ameli-app verify-audit
    ```
-3. Replace `AMELI_APP_AUDIT_HMAC_KEY` and restart the service.
-4. New rows pick up the new chain from there.
+   Must print `{"ok": true, ...}`.
+
+2. **Generate the new key.**
+   ```bash
+   NEW_KEY=$(.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))")
+   echo $NEW_KEY  # save it; you also need the OLD key for the next step
+   ```
+
+3. **Run the rotation.** This re-stamps every chained row in one
+   transaction and writes an `audit_key_rotated` row as the new tail
+   of the chain. The running service still uses the old in-memory
+   key — we only re-stamp the DB rows here.
+   ```bash
+   .venv/bin/ameli-app rotate-audit-key \
+     --from-key "$OLD_KEY" \
+     --to-key "$NEW_KEY"
+   ```
+   On success the response contains `{"ok": true, "rotated": N, ...}`.
+
+4. **Update the env file and restart.** Now the running process
+   adopts the new key and starts chaining new rows from the rotation
+   row.
+   ```bash
+   sudo sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
+     /etc/ameli-app-template-<env>/app.env
+   sudo systemctl restart ameli-app-template-<env>-api.service
+   ```
+
+5. **Sanity-check the post-rotation chain.**
+   ```bash
+   .venv/bin/ameli-app verify-audit
+   ```
+   Must again print `{"ok": true, ...}` with the new tally including
+   the rotation row.
+
+**Caveats**:
+
+- The OLD key cannot verify the chain anymore after step 3. Keep an
+  offline copy if you need to retain "history was signed under that
+  key" as evidence — anyone with the old key can verify against a
+  point-in-time export from before step 3.
+- If step 3 fails mid-walk for any reason, the transaction rolls back
+  and the chain stays under the old key. You can retry.
+
+If you'd rather wipe and start fresh (e.g. after an irrecoverable
+break), use this older recipe instead — it discards verifiability of
+the historical rows:
+
+```bash
+.venv/bin/ameli-app shell -c "
+from ameli_web.audit.models import AuditEvent
+AuditEvent.objects.update(hmac='', prev_hmac='')
+"
+# then update AMELI_APP_AUDIT_HMAC_KEY and restart
+```

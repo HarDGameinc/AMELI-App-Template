@@ -156,15 +156,28 @@ def record_audit(action: str, *, actor=None, target_username: str | None = None,
         return event
 
 
-def verify_audit_chain(*, start_id: int | None = None, stop_id: int | None = None) -> dict[str, Any]:
+def verify_audit_chain(
+    *,
+    start_id: int | None = None,
+    stop_id: int | None = None,
+    key_override: bytes | str | None = None,
+) -> dict[str, Any]:
     """Walk the audit chain in id order and report tampering.
 
     Returns a dict ``{ok, checked, first_break, broken_id, broken_reason}``
     that the ``verify-audit`` CLI surfaces. Rows written before the
     HMAC key was configured (no stored ``hmac``) are skipped — they are
     pre-chain history, not corruption.
+
+    ``key_override`` lets callers (notably the rotation flow) verify a
+    chain against a key that is not the one currently in settings.
     """
-    key = _audit_hmac_key()
+    if key_override is None:
+        key = _audit_hmac_key()
+    elif isinstance(key_override, str):
+        key = key_override.encode("utf-8")
+    else:
+        key = bytes(key_override)
     if not key:
         return {
             "ok": False,
@@ -223,6 +236,114 @@ def verify_audit_chain(*, start_id: int | None = None, stop_id: int | None = Non
         "broken_reason": first_break["reason"],
         "expected": first_break.get("expected", ""),
         "found": first_break.get("found", ""),
+    }
+
+
+def rotate_audit_key(*, from_key: str, to_key: str) -> dict[str, Any]:
+    """Re-stamp the audit chain with a fresh HMAC key.
+
+    Use case: the old key was compromised, or an operator wants to
+    rotate per policy. The naive approach (just change the env var)
+    would invalidate every historical hmac. This helper preserves
+    verifiability by:
+
+    1. Verifying the chain end-to-end with the OLD key. Refuse to
+       rotate if the chain is already broken — we'd be papering over
+       tampering, not rotating cleanly.
+    2. Walking every chained row in id order, recomputing the hmac
+       with the NEW key, and chaining each new value through
+       ``prev_hmac``. Legacy rows (hmac="") are skipped.
+    3. Writing a final ``audit_key_rotated`` row that pins the
+       transition (audit-of-audit) — it carries the NEW key already,
+       so it's the first row of the post-rotation chain.
+
+    All of step 2 happens inside one ``transaction.atomic`` so a
+    failure mid-walk leaves the chain in its original state.
+
+    The operator still has to update ``AMELI_APP_AUDIT_HMAC_KEY`` in
+    the env file and restart the service AFTER calling this — the
+    rotation re-stamps the database; the running process keeps its
+    in-memory key until restart.
+    """
+    from django.db import transaction
+
+    if not from_key:
+        return {"ok": False, "error": "from_key is required"}
+    if not to_key:
+        return {"ok": False, "error": "to_key is required"}
+    if from_key == to_key:
+        return {"ok": False, "error": "to_key must differ from from_key"}
+
+    # Step 1: verify the chain still walks under the old key.
+    pre = verify_audit_chain(key_override=from_key)
+    if not pre.get("ok"):
+        return {
+            "ok": False,
+            "error": (
+                "refuse to rotate: chain under from_key is already broken "
+                "(verify it manually before rotating)"
+            ),
+            "verify_result": pre,
+        }
+
+    old_key_bytes = from_key.encode("utf-8") if isinstance(from_key, str) else bytes(from_key)
+    new_key_bytes = to_key.encode("utf-8") if isinstance(to_key, str) else bytes(to_key)
+
+    with transaction.atomic():
+        # Re-stamp each chained row with the new key, preserving the
+        # canonical (action, actor, target, payload, created_at) tuple
+        # but flowing the new hmacs through prev_hmac.
+        queryset = AuditEvent.objects.order_by("id")
+        new_prev = ""
+        rotated = 0
+        for row in queryset.iterator(chunk_size=500):
+            if not row.hmac:
+                # Legacy (pre-chain) row. Leave it alone and reset prev
+                # so the next chained row starts fresh.
+                new_prev = ""
+                continue
+            new_hmac = _audit_hmac(
+                key=new_key_bytes,
+                prev_hmac=new_prev,
+                action=row.action,
+                actor_username=row.actor_username,
+                target_username=row.target_username,
+                payload=row.payload,
+                created_at=row.created_at,
+            )
+            AuditEvent.objects.filter(pk=row.pk).update(
+                prev_hmac=new_prev, hmac=new_hmac,
+            )
+            new_prev = new_hmac
+            rotated += 1
+        # Audit-of-audit: write the rotation event using the NEW key so
+        # it becomes the next link of the post-rotation chain.
+        from django.utils import timezone
+
+        rotation_event = AuditEvent.objects.create(
+            action="audit_key_rotated",
+            target_username="",
+            payload={"rotated_rows": rotated},
+            prev_hmac=new_prev,
+        )
+        rotation_event.refresh_from_db(fields=["created_at"])
+        rotation_event.hmac = _audit_hmac(
+            key=new_key_bytes,
+            prev_hmac=new_prev,
+            action=rotation_event.action,
+            actor_username=rotation_event.actor_username,
+            target_username=rotation_event.target_username,
+            payload=rotation_event.payload,
+            created_at=rotation_event.created_at,
+        )
+        rotation_event.save(update_fields=["hmac"])
+
+    # Step 3: confirm the chain verifies under the new key.
+    post = verify_audit_chain(key_override=to_key)
+    return {
+        "ok": bool(post.get("ok")),
+        "rotated": rotated + 1,
+        "verify_result": post,
     }
 
 

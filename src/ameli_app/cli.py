@@ -124,6 +124,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop verification at this row id (inclusive).",
     )
 
+    rotate_audit_key = sub.add_parser(
+        "rotate-audit-key",
+        help=(
+            "Re-stamp the audit hash chain with a fresh HMAC key. "
+            "Refuses to run if the chain under --from-key is already broken."
+        ),
+    )
+    rotate_audit_key.add_argument(
+        "--from-key", required=True,
+        help="The current AMELI_APP_AUDIT_HMAC_KEY value (the one the chain was signed with).",
+    )
+    rotate_audit_key.add_argument(
+        "--to-key", required=True,
+        help="The new key the chain will be re-signed with.",
+    )
+
     shell = sub.add_parser(
         "shell",
         help="Open a Django-ready Python shell or run a snippet/script.",
@@ -175,6 +191,15 @@ def _handle_verify_audit(args) -> int:
     # Non-zero exit when the chain is broken so an operator running this
     # from cron / systemd timer can hook an alert.
     return 0 if result.get("ok") else 1
+
+
+def _handle_rotate_audit_key(args) -> int:
+    _bootstrap_django(args)
+    from ameli_web.accounts.services import rotate_audit_key
+
+    result = rotate_audit_key(from_key=args.from_key, to_key=args.to_key)
+    _json(result)
+    return 0 if result.get("ok") else 2
 
 
 def _shell_namespace() -> dict:
@@ -276,6 +301,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_list_users(args)
     if args.command == "verify-audit":
         return _handle_verify_audit(args)
+    if args.command == "rotate-audit-key":
+        return _handle_rotate_audit_key(args)
     if args.command == "shell":
         return _handle_shell(args)
 

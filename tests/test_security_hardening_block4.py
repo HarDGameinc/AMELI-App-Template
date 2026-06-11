@@ -518,6 +518,81 @@ def test_forgot_password_pad_disabled_when_setting_is_zero(client, settings):
     assert elapsed < 0.5, f"expected <0.5s, got {elapsed:.3f}s"
 
 
+# ---------------------------------------------------------------------------
+# #6 — Audit HMAC key rotation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_rotate_audit_key_walks_chain_under_new_key(settings):
+    from ameli_web.accounts.services import (
+        record_audit,
+        rotate_audit_key,
+        verify_audit_chain,
+    )
+
+    settings.AUDIT_HMAC_KEY = "old-key-secret"
+    record_audit("act_a")
+    record_audit("act_b")
+    record_audit("act_c")
+    assert verify_audit_chain(key_override="old-key-secret")["ok"] is True
+
+    result = rotate_audit_key(from_key="old-key-secret", to_key="new-key-secret")
+    assert result["ok"] is True
+    assert result["rotated"] == 4  # three originals + the rotation event
+
+    # Old key no longer verifies (because the stored hmac is the new
+    # one). New key does.
+    assert verify_audit_chain(key_override="old-key-secret")["ok"] is False
+    assert verify_audit_chain(key_override="new-key-secret")["ok"] is True
+
+
+@pytest.mark.django_db
+def test_rotate_audit_key_refuses_when_chain_already_broken(settings):
+    """If the source chain is already broken (tampered or wrong key),
+    rotation refuses — papering over a broken chain with a new key
+    would be a forensics disaster."""
+    from ameli_web.accounts.models import User  # noqa: F401 (force app load)
+    from ameli_web.accounts.services import (
+        record_audit,
+        rotate_audit_key,
+    )
+    from ameli_web.audit.models import AuditEvent
+
+    settings.AUDIT_HMAC_KEY = "real-key"
+    a = record_audit("act_a")
+    record_audit("act_b")
+    # Tamper the first row.
+    AuditEvent.objects.filter(id=a.id).update(payload={"tampered": True})
+
+    result = rotate_audit_key(from_key="real-key", to_key="rotated-key")
+    assert result["ok"] is False
+    assert "broken" in result["error"]
+
+
+@pytest.mark.django_db
+def test_rotate_audit_key_emits_rotation_audit_row(settings):
+    from ameli_web.accounts.services import record_audit, rotate_audit_key
+    from ameli_web.audit.models import AuditEvent
+
+    settings.AUDIT_HMAC_KEY = "k1"
+    record_audit("first")
+    rotate_audit_key(from_key="k1", to_key="k2")
+    rotation_row = AuditEvent.objects.filter(action="audit_key_rotated").last()
+    assert rotation_row is not None
+    assert rotation_row.hmac != ""
+    assert rotation_row.payload.get("rotated_rows") == 1
+
+
+@pytest.mark.django_db
+def test_rotate_audit_key_rejects_identical_keys():
+    from ameli_web.accounts.services import rotate_audit_key
+
+    result = rotate_audit_key(from_key="same", to_key="same")
+    assert result["ok"] is False
+    assert "differ" in result["error"]
+
+
 @pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``
