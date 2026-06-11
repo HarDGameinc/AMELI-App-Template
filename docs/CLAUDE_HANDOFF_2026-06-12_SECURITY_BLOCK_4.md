@@ -188,17 +188,132 @@ Nueva seccion "Audit chain verification (H6)" con:
 - Como agendar el timer + hook de alerta (`OnFailure=`).
 - Recipe (con caveats) para rotar la key.
 
+### Bloque 4C — Bug fix de static + backlog post-bloque (5 commits)
+
+Despues del 4B aparecieron tres situaciones a resolver: un bug visual
+en el django admin nativo, y cuatro items del backlog que el usuario
+pidio cerrar para "dejar el template lo mas solido posible".
+
+| Commit | Item |
+|---|---|
+| `ce55160` | Bug fix: `/static/` ahora usa el finder pipeline (admin assets cargan) |
+| `144792d` | Backlog #1: UI unlock en `/admin/` |
+| `34a972d` | Backlog #5 + #7: Argon2 tuning + timing pad forgot-password |
+| `f6a601a` | Backlog #4: Suite e2e de seguridad (14 tests) |
+
+#### Bug fix `/static/` finder pipeline
+
+Verificacion del fix CSP de django-admin destapo un segundo problema:
+los assets del admin nativo (`/static/admin/css/*.css`, `/static/admin/
+js/*.js`) devolvian 404 HTML, y `X-Content-Type-Options: nosniff`
+bloqueaba el render porque el MIME no matcheaba. La pagina del django
+admin se veia "rota" — sin estilos, sin theme switcher.
+
+Causa: `django.views.static.serve` solo mira `STATICFILES_DIRS[0]`. El
+admin nativo trae sus assets en `django/contrib/admin/static/admin/`,
+que ese serve no consulta.
+
+Fix: `_serve_static` ahora usa `staticfiles.finders.find(path)` que
+recorre tanto `STATICFILES_DIRS` como cada app instalada. Asi el admin
+resuelve sin necesidad de `collectstatic`. Production con Caddy/nginx
+delante no toca este handler.
+
+3 tests pinean el bug-fix: admin css resuelve, app.css del proyecto
+sigue, paths inexistentes 404.
+
+#### Backlog #1 — UI unlock en `/admin/`
+
+El backend de N3 ya estaba (`POST /admin/users/<username>/unlock`),
+pero faltaba la UI. Cambios:
+
+- `serialize_user` ahora expone `locked`, `locked_at`,
+  `display_locked_at`, `locked_reason`.
+- `_users_panel.html` muestra badge **"Bloqueado"** (rojo) junto a los
+  otros badges del user, con `title=` apuntando al `locked_reason`.
+- Boton **"Desbloquear"** condicional, solo aparece cuando
+  `user_item.locked` es true. Reusa el `requestJson` wrapper asi que
+  abre el modal sudo automaticamente si el grace expiro.
+- 4 tests pinean: serializer, render del badge, render del boton solo
+  en locked, endpoint clearing the flag.
+
+#### Backlog #5 — Argon2 tuning configurable
+
+`ConfigurableArgon2Hasher` subclasses el bundled de Django y lee
+`time_cost` / `memory_cost` / `parallelism` desde settings, alimentados
+desde env vars `AMELI_APP_ARGON2_*`. Defaults igualan los de Django
+(no cambia nada para deploys actuales).
+
+El operador puede bumpear cualquier factor en hardware mas potente
+sin tocar codigo; Django re-encodea cada hash en el siguiente login
+exitoso (`UPDATE_LAST_LOGIN_ENCODING`), asi el bump aplica
+opportunisticamente sin downtime.
+
+3 tests: settings propagate, defaults fallback, password hash sigue
+saliendo argon2.
+
+#### Backlog #7 — Timing pad forgot-password
+
+Antes el response body era identico para found vs not-found pero el
+flow de SMTP tomaba mas tiempo en el found case, dejando un canal de
+enumeracion via wall-clock.
+
+`forgot_password_view` ahora mide el tiempo total y holda hasta
+`FORGOT_PASSWORD_MIN_RESPONSE_MS` (default 1000) + jitter `~80ms`.
+Verificado en server dev: tanto `identifier=admin` como
+`identifier=nada` retornan en ~1.03s con la diferencia bien por
+debajo del umbral medible offsite.
+
+`FORGOT_PASSWORD_MIN_RESPONSE_MS=0` desactiva el pad (para tests que
+necesitan medir velocidad).
+
+2 tests: pad enforces the floor, pad respeta el disable a 0.
+
+#### Backlog #4 — Suite e2e de seguridad (14 tests)
+
+Donde los tests por-bloque pinean una feature aislada, esta suite
+camina escenarios de atacante completos y pinea invariantes
+observables — sobrevive a refactors porque no esta atada a la
+implementacion.
+
+Tests del archivo `tests/test_security_e2e.py`:
+
+1. **Headers**: CSP + X-Frame + nosniff + Referrer + Permissions +
+   COOP + CORP en toda response.
+2. **CSP nonce**: script-src tiene nonce-, no tiene 'unsafe-inline'.
+3. **Session cookie**: HttpOnly + SameSite=Lax post-login.
+4. **CSRF cookie**: HttpOnly + SameSite=Lax.
+5. **CSRF middleware**: POST sin token = 403.
+6. **Session rotation**: session_key cambia post-login (anti-fixation).
+7. **Honeypot**: bot con hp_company filled = wrong-credentials +
+   audit `login_bot_detected`.
+8. **N3 lockout**: user locked no autentica.
+9. **Sudo escape**: cambio de password evapora el sudo de la sesion
+   (joya de la corona del diseño sudo).
+10. **`/django-admin/` gate**: staff sin sudo = redirect a `/admin/`.
+11. **`must_change_password` trap**: flag intercepta `/admin/`,
+    preferences, MFA start, session revoke.
+12. **Anti-enumeration**: forgot-password body identico para found vs
+    not-found (descontando el identifier echo).
+13. **Audit chain**: trafico normal = OK, tampering = falla con
+    `broken_id` correcto.
+14. **Health/metrics allowlist**: off-list = 403, forwarded-for
+    correcta = 200.
+
+La suite corre en ~2 segundos y queda como **smoke test de seguridad
+post-deploy** — green = invariantes preservadas.
+
 ### Numeros del bloque
 
-- **3 commits promocionados a `main`** (4A + CSP fix + 4B)
-- **539 tests pasando** (525 al inicio del bloque -> +20 nuevos
-  tests y -6 actualizados por refactors del banner de seguridad =
-  neto +14, mas 4 chequeos nuevos sobre las 18 tests de block4)
-- 1 archivo de tests nuevo (`test_security_hardening_block4.py`)
+- **8 commits promocionados a `main`** (3 del 4A/4B + 5 del 4C)
+- **565 tests pasando** (525 al inicio del bloque -> +40 nuevos
+  tests netos)
+- 2 archivos de tests nuevos
+  (`test_security_hardening_block4.py` + `test_security_e2e.py`)
 - 1 migracion nueva: `accounts/0008_user_locked_at_user_locked_reason`
 - 0 deps Python nuevas
 - 2 systemd units nuevas
-- ~850 lineas netas agregadas
+- 1 modulo nuevo: `accounts/hashers.py`
+- ~1500 lineas netas agregadas
 
 ### Decisiones tomadas (no re-discutirlas)
 
@@ -250,15 +365,14 @@ Nueva seccion "Audit chain verification (H6)" con:
 
 ### Proximos bloques abiertos
 
+Items 1, 4, 5 y 7 quedaron resueltos en el 4C (ver arriba). Lo que
+queda:
+
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 1 | UI en `/admin/` para desbloquear users con `locked_at` set (boton + endpoint ya hechos, falta cablearlo en el panel) | UX | Chico |
-| 2 | Selector de idioma en header (i18n loop) | UX | Chico |
+| 6 | Rotacion de `AUDIT_HMAC_KEY` con re-anchor (CLI `rotate-audit-key`) | Seguridad operativa | Medio |
 | 3 | Retry + queue para emails fallidos | Operativo | Medio |
-| 4 | Suite de tests e2e de seguridad (XSS bloqueada, CSRF, session fixation) | Tests | Medio |
-| 5 | Soporte para Argon2id parameter tuning via env | Seguridad | Chico |
-| 6 | Rotacion de `AUDIT_HMAC_KEY` con re-anchor | Seguridad operativa | Medio |
-| 7 | Timing-pad del forgot-password para no filtrar via timing | Seguridad | Chico |
+| 2 | Selector de idioma en header (i18n loop) | UX | Chico |
 
 ### Orden recomendado para retomar
 
