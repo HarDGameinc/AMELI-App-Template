@@ -60,6 +60,32 @@ static_root = Path(settings.STATICFILES_DIRS[0])
 media_root = Path(settings.MEDIA_ROOT)
 
 
+def _serve_static(request, path):
+    """Resolve a ``/static/<path>`` request via Django's finder pipeline.
+
+    The default ``django.views.static.serve`` only looks at one
+    directory, which means ``/static/admin/js/nav_sidebar.js`` (shipped
+    inside ``django/contrib/admin/static/``) is never found and the
+    browser receives an HTML 404. That, combined with
+    ``X-Content-Type-Options: nosniff``, breaks the entire Django admin
+    UI under our deploy because every asset gets refused for MIME
+    mismatch.
+
+    Walking ``staticfiles.finders.find`` instead pulls in our own
+    ``STATICFILES_DIRS`` plus every installed app's ``static/`` folder,
+    so the admin's bundled CSS/JS resolves naturally without requiring
+    ``collectstatic`` at deploy time. Production deploys behind Caddy
+    or nginx never hit this handler — the proxy intercepts ``/static/``
+    first.
+    """
+    from django.contrib.staticfiles import finders
+
+    absolute = finders.find(path)
+    if not absolute:
+        raise Http404(f"static file not found: {path}")
+    return serve(request, Path(absolute).name, document_root=str(Path(absolute).parent))
+
+
 def _authenticated_media(request, path):
     """Gate ``/media/`` behind login.
 
@@ -86,6 +112,6 @@ def _authenticated_media(request, path):
 # ``/media/`` always goes through the auth gate as defence in depth even
 # when a reverse proxy is present.
 urlpatterns += [
-    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": str(static_root)}),
+    re_path(r"^static/(?P<path>.*)$", _serve_static),
     re_path(r"^media/(?P<path>.*)$", _authenticated_media),
 ]

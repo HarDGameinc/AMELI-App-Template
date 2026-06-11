@@ -282,6 +282,42 @@ def test_admin_unlock_user_clears_locked_at(admin_user, settings):
     assert admin_user.locked_reason == ""
 
 
+# ---------------------------------------------------------------------------
+# /static/ finder pipeline (Django admin assets)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_static_serves_django_admin_assets(client):
+    """The default ``django.views.static.serve`` only looks at
+    STATICFILES_DIRS[0] and misses the admin CSS/JS bundled inside
+    ``django/contrib/admin/static/``. Without this fix the framework
+    admin renders without styles and JS, which is exactly what we saw
+    on the dev server screenshot."""
+    response = client.get("/static/admin/css/base.css")
+    assert response.status_code == 200, (
+        "Django admin CSS must resolve via the staticfiles finders"
+    )
+    content_type = response.get("Content-Type", "")
+    assert "css" in content_type.lower(), (
+        f"expected text/css, got {content_type!r}"
+    )
+
+
+@pytest.mark.django_db
+def test_static_serves_project_own_assets(client):
+    """The project's own CSS (under src/ameli_app/static/css/app.css)
+    must keep working after the finder switch."""
+    response = client.get("/static/css/app.css")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_static_missing_path_returns_404(client):
+    response = client.get("/static/does/not/exist.css")
+    assert response.status_code == 404
+
+
 @pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``
