@@ -188,10 +188,10 @@ Nueva seccion "Audit chain verification (H6)" con:
 - Como agendar el timer + hook de alerta (`OnFailure=`).
 - Recipe (con caveats) para rotar la key.
 
-### Bloque 4C — Bug fix de static + backlog post-bloque (5 commits)
+### Bloque 4C — Bug fix de static + backlog post-bloque (6 commits)
 
 Despues del 4B aparecieron tres situaciones a resolver: un bug visual
-en el django admin nativo, y cuatro items del backlog que el usuario
+en el django admin nativo, y cinco items del backlog que el usuario
 pidio cerrar para "dejar el template lo mas solido posible".
 
 | Commit | Item |
@@ -200,6 +200,7 @@ pidio cerrar para "dejar el template lo mas solido posible".
 | `144792d` | Backlog #1: UI unlock en `/admin/` |
 | `34a972d` | Backlog #5 + #7: Argon2 tuning + timing pad forgot-password |
 | `f6a601a` | Backlog #4: Suite e2e de seguridad (14 tests) |
+| `403c69f` | Backlog #6: `rotate-audit-key` CLI + recipe operativo |
 
 #### Bug fix `/static/` finder pipeline
 
@@ -302,10 +303,48 @@ Tests del archivo `tests/test_security_e2e.py`:
 La suite corre en ~2 segundos y queda como **smoke test de seguridad
 post-deploy** — green = invariantes preservadas.
 
+#### Backlog #6 — Rotacion segura de `AUDIT_HMAC_KEY`
+
+Antes la doc decia "no rotes" porque rotar invalidaba la chain
+historica. Si la key se comprometia o la policy pedia rotacion
+periodica, el operador tenia que descartar la verificabilidad del
+historial. Ahora hay un path limpio.
+
+`rotate_audit_key(from_key, to_key)`:
+
+1. **Refuse si el chain bajo `from_key` ya esta roto**. No es
+   defensa contra tampering — la rotacion no debe enmascarar
+   un audit corrupto.
+2. **Re-stampar cada fila chained** en orden de id dentro de un
+   `transaction.atomic`. Recomputa el HMAC con la key nueva
+   preservando la secuencia `prev_hmac`. Filas legacy
+   (`hmac=""`) se dejan intactas.
+3. **Audit-of-audit**: escribe un `audit_key_rotated` como cola
+   nueva, ya firmado con la key nueva (primera fila del chain
+   post-rotacion).
+4. **Re-verifica** bajo la nueva key antes de retornar el
+   resultado.
+
+Si algo falla mid-walk, el `transaction.atomic` rollbackea — el
+chain queda intacto bajo la key vieja.
+
+`verify_audit_chain` ahora acepta un kwarg `key_override=` para
+verificar bajo una key arbitraria sin tocar settings (lo usa el
+rotate flow internamente).
+
+Comando CLI nuevo: `ameli-app rotate-audit-key --from-key OLD
+--to-key NEW`. Exit 0 si rotacion OK, exit 2 si falla. Documentado
+en `OPERATIONS.md` con el recipe completo de 5 pasos (verify ->
+generate -> rotate -> restart -> verify) y el caveat sobre
+guardar la key vieja para verificar exportaciones historicas.
+
+4 tests: walk limpio bajo nueva key, refuse en chain rota,
+audit-of-audit emitido, identical-keys rechazado.
+
 ### Numeros del bloque
 
-- **8 commits promocionados a `main`** (3 del 4A/4B + 5 del 4C)
-- **565 tests pasando** (525 al inicio del bloque -> +40 nuevos
+- **9 commits promocionados a `main`** (3 del 4A/4B + 6 del 4C)
+- **569 tests pasando** (525 al inicio del bloque -> +44 nuevos
   tests netos)
 - 2 archivos de tests nuevos
   (`test_security_hardening_block4.py` + `test_security_e2e.py`)
@@ -365,12 +404,12 @@ post-deploy** — green = invariantes preservadas.
 
 ### Proximos bloques abiertos
 
-Items 1, 4, 5 y 7 quedaron resueltos en el 4C (ver arriba). Lo que
-queda:
+Items 1, 4, 5, 6 y 7 del backlog del bloque 4 quedaron resueltos en el
+4C (ver arriba). Lo que queda son items operativo/UX que no afectan la
+postura de seguridad:
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 6 | Rotacion de `AUDIT_HMAC_KEY` con re-anchor (CLI `rotate-audit-key`) | Seguridad operativa | Medio |
 | 3 | Retry + queue para emails fallidos | Operativo | Medio |
 | 2 | Selector de idioma en header (i18n loop) | UX | Chico |
 
