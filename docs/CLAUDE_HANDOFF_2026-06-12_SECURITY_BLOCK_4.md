@@ -718,6 +718,44 @@ tecnico post-revision):
 
 Tests post-hardening: **589 verde** (1 deselected pre-existente).
 
+#### Verificacion operativa del hardening en server dev (2026-06-12)
+
+Server: `ha-report2`, commit `9754351`, migracion
+`accounts.0010_outboundemail_audit_payload` aplicada.
+
+```text
+# 1. Refuses validados en apply_audit_key_to_env_file:
+'ok\nAMELI_APP_DEBUG=true'  -> ok:false, error: "newline/.../'='"
+'foo=bar'                   -> ok:false, error: "newline/.../'='"
+ln -s real /tmp/linked      -> ok:false, error: "refusing to write through symlink"
+env file real intacto.
+
+# 2. verify-audit --strict-precondition con chain limpia:
+{checked: 7, ok: true}, exit=0   # (exit=3 reservado para chain rota)
+
+# 3. Ciclo SMTP-malo -> queue -> notify-once:
+Audit row email_queued_for_retry payload:
+  { queue_id: 2, error_class: 'gaierror',
+    audit_action: 'password_reset_email_delivered',
+    recipient_count: 1 }
+  (sin "Name or service not known" — no leak verbatim al chain)
+
+OutboundEmail.last_error en la row:
+  "gaierror: [Errno -2] Name or service not known"   # solo aqui
+
+# 4. Restaurar SMTP + drenar:
+notify-once -> { considered:1, sent:1, requeued:0, failed:0 }
+
+# 5. Body purge confirmado post-delivery:
+OutboundEmail row 2 -> status=sent, body_len=0, to_emails=[]
+verify-audit -> { checked: 10, ok: true }
+
+Mail real con link de reset entregado a la inbox.
+```
+
+Cierre del bloque 4: 0 hallazgos abiertos de severidad media-alta, 5
+items diferidos al backlog tecnico (sin impacto de seguridad).
+
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash `5286ed1`
