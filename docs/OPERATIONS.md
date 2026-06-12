@@ -93,6 +93,14 @@ OutboundEmail.objects.filter(status='pending').update(next_retry_at=timezone.now
 .venv/bin/ameli-app notify-once
 ```
 
+Or use the Django admin: navigate to **Outbound emails** under the
+*Accounts* section in `/django-admin/`, filter by `status=pending`,
+select the rows you care about and run the **Reintentar ahora**
+action. The page is read-only by design (no edit/delete) so the
+queue stays driven by the worker. Reaching `/django-admin/`
+requires sudo mode — see "Sudo mode" in `docs/SECURITY.md` if you
+need a refresher.
+
 Flows that need the user to see a failure immediately (the profile
 test-email button, MFA codes during login) keep using
 `.send(fail_silently=False)` and surface the exception to the

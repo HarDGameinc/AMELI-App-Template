@@ -756,6 +756,40 @@ Mail real con link de reset entregado a la inbox.
 Cierre del bloque 4: 0 hallazgos abiertos de severidad media-alta, 5
 items diferidos al backlog tecnico (sin impacto de seguridad).
 
+### Backlog tecnico diferido — progreso post-cierre
+
+| # | Item | Estado | Commit |
+|---|---|---|---|
+| Keys via stdin/env | listo, verificado en server | `8c21d75` + `c4fa660` |
+| Admin UI para `OutboundEmail` | listo (este commit), pendiente verificacion en server |  |
+| Structured logging del worker | pendiente |  |
+| Tests adicionales (unicode/concurrencia/tz naive) | pendiente |  |
+| O_NOFOLLOW + dir fsync | pendiente |  |
+
+### Admin UI para `OutboundEmail`
+
+Operadores ahora ven la cola desde `/django-admin/accounts/outboundemail/`
+(requiere sudo). La view es solo-lectura por diseno:
+
+- list_display: id, status, attempts/max, audit_action,
+  target_username, subject, next_retry_at, created_at
+- list_filter por `status` / `audit_action` / `use_ascii_passthrough`
+- search en `subject`, `target_username`, `audit_action`, `last_error`
+- Accion "Reintentar ahora" — setea `next_retry_at = now()` en las
+  filas seleccionadas con `status=pending`; ignora sent/failed y
+  reporta cuantas filtro
+- `has_add_permission` y `has_delete_permission` retornan False
+  para que la UI no pueda crear/borrar filas (la cola la maneja el
+  worker; borrar romperia el contexto de audit)
+
+Tests nuevos (3):
+- list view renderiza una fila persistida
+- accion `retry_now` actualiza solo pending; ignora sent
+- add/delete URLs devuelven 403/302
+
+OPERATIONS.md "Outbound email retry queue" actualizado con
+referencia al admin.
+
 ### Hardening operativo adicional: rotacion sin keys en argv
 
 Tras el cierre del bloque, atendimos el primero de los items

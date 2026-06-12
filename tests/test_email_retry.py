@@ -12,8 +12,17 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.mail import EmailMessage
 from django.utils import timezone
+
+
+@pytest.fixture()
+def admin_user(db):
+    from ameli_web.accounts.services import bootstrap_superadmin
+
+    bootstrap_superadmin(username="admin", password="AdminPass!12?")
+    return get_user_model().objects.get(username="admin")
 
 
 @pytest.mark.django_db
@@ -270,6 +279,91 @@ def test_send_with_retry_audit_uses_exception_class_not_raw_message(settings):
     assert "550" not in payload_text
     assert "leak@example.com" not in payload_text
     assert "gory details" not in payload_text
+
+
+@pytest.mark.django_db
+def test_admin_lists_outbound_email_rows(client, admin_user):
+    """The Django admin exposes a read-only list view of the queue
+    so operators can inspect it without shell access."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import grant_sudo
+
+    OutboundEmail.objects.create(
+        subject="visible-in-admin", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now() + timedelta(minutes=1),
+    )
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    response = client.get("/django-admin/accounts/outboundemail/")
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    assert "visible-in-admin" in body
+
+
+@pytest.mark.django_db
+def test_admin_retry_now_action_forces_pending_rows_due(client, admin_user):
+    """The 'retry now' action sets next_retry_at on pending rows so
+    the next worker tick picks them up."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import grant_sudo
+
+    pending = OutboundEmail.objects.create(
+        subject="p", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now() + timedelta(hours=1),
+    )
+    sent = OutboundEmail.objects.create(
+        subject="s", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_SENT,
+        next_retry_at=timezone.now() + timedelta(hours=1),
+    )
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    response = client.post(
+        "/django-admin/accounts/outboundemail/",
+        {
+            "action": "retry_now",
+            "_selected_action": [str(pending.pk), str(sent.pk)],
+        },
+    )
+    assert response.status_code in {200, 302}
+
+    pending.refresh_from_db()
+    sent.refresh_from_db()
+    # Pending row pushed to "now", sent row untouched.
+    assert pending.next_retry_at <= timezone.now() + timedelta(seconds=2)
+    assert sent.next_retry_at > timezone.now() + timedelta(minutes=30)
+
+
+@pytest.mark.django_db
+def test_admin_outbound_email_is_read_only(client, admin_user):
+    """No add, no delete. The queue is operator-visibility-only —
+    edits/deletes from the UI would bypass audit hooks and risk
+    inconsistent state."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import grant_sudo
+
+    row = OutboundEmail.objects.create(
+        subject="r", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now(),
+    )
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    add_response = client.get("/django-admin/accounts/outboundemail/add/")
+    # Django returns 403 when add is denied via has_add_permission.
+    assert add_response.status_code in {403, 302}
+
+    delete_response = client.get(f"/django-admin/accounts/outboundemail/{row.pk}/delete/")
+    assert delete_response.status_code in {403, 302}
 
 
 @pytest.mark.django_db
