@@ -693,6 +693,55 @@ def test_apply_audit_key_to_env_file_missing_file(tmp_path):
     assert "not found" in result["error"]
 
 
+def test_apply_audit_key_to_env_file_rejects_symlink_at_syscall_level(tmp_path):
+    """O_NOFOLLOW makes the kernel reject a symlink at the final path
+    component — closes the TOCTOU window between os.path.islink and
+    the actual read."""
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    real_file = tmp_path / "real.env"
+    real_file.write_text("AMELI_APP_AUDIT_HMAC_KEY=x\n", encoding="utf-8")
+    symlink = tmp_path / "linked.env"
+    symlink.symlink_to(real_file)
+    result = apply_audit_key_to_env_file(str(symlink), "newvalue")
+    assert result["ok"] is False
+    assert "symlink" in result["error"]
+    # Real file untouched.
+    assert real_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=x\n"
+
+
+def test_apply_audit_key_to_env_file_fsyncs_parent_dir(tmp_path, monkeypatch):
+    """After os.replace we fsync the parent directory so the rename
+    survives a power loss. Mock os.fsync to count calls and assert at
+    least one of them targets the env_dir's fd."""
+    import os
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text("AMELI_APP_AUDIT_HMAC_KEY=old\n", encoding="utf-8")
+
+    real_fsync = os.fsync
+    real_fstat = os.fstat
+    env_dir = str(tmp_path)
+    env_dir_st = os.stat(env_dir)
+    dir_fsync_calls: list[int] = []
+
+    def _spy_fsync(fd: int) -> None:
+        try:
+            st = real_fstat(fd)
+            if (st.st_dev, st.st_ino) == (env_dir_st.st_dev, env_dir_st.st_ino):
+                dir_fsync_calls.append(fd)
+        except OSError:
+            pass
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", _spy_fsync)
+    result = apply_audit_key_to_env_file(str(env_file), "newvalue")
+    assert result["ok"] is True
+    assert len(dir_fsync_calls) >= 1, "parent directory was not fsynced after rename"
+    assert env_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=newvalue\n"
+
+
 @pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``

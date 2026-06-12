@@ -382,7 +382,14 @@ def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
     Used by ``rotate-audit-key --apply-env`` so the post-rotation env
     update is not a manual ``sed`` the operator can typo. Writes a temp
     file in the same directory then renames, so a crash mid-write never
-    leaves the env file truncated.
+    leaves the env file truncated. After the rename the parent
+    directory is fsynced so the rename hits stable storage — without
+    that, a power loss between the rename and the next sync can lose
+    the new content even though the file system reported success.
+
+    Symlinks at the target path are rejected at the syscall level
+    (``O_NOFOLLOW``) — no TOCTOU window between an ``islink`` check
+    and the read.
 
     Preserves file mode if the target already exists. Refuses to run if
     ``new_key`` is empty (defense against the exact bug observed during
@@ -390,6 +397,8 @@ def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
     contains a newline or carriage return (would inject extra env
     variables), or contains an ``=`` (would corrupt the line shape).
     """
+    import errno
+
     if not new_key:
         return {"ok": False, "error": "new_key is empty; refusing to write env file"}
     if any(ch in new_key for ch in ("\n", "\r", "=")):
@@ -397,16 +406,24 @@ def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
             "ok": False,
             "error": "new_key contains newline/carriage-return/'='; refusing to write env file",
         }
-    # Defensive: refuse symlinks at the target path. Mostly cosmetic
-    # because the env file lives in a root-owned directory, but cheap
-    # defense-in-depth against a symlink-swap by a compromised role.
-    if os.path.islink(env_path):
-        return {"ok": False, "error": f"refusing to write through symlink: {env_path}"}
+
+    # O_NOFOLLOW makes the kernel reject a symlink at the final path
+    # component. Combined with the same-directory tempfile + rename
+    # pattern below, an attacker who plants a symlink at env_path
+    # cannot redirect the write — neither the read nor the rename
+    # will traverse it.
     try:
-        with open(env_path, encoding="utf-8") as fh:
-            lines = fh.readlines()
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(env_path, os.O_RDONLY | nofollow)
     except FileNotFoundError:
         return {"ok": False, "error": f"env file not found: {env_path}"}
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return {"ok": False, "error": f"refusing to write through symlink: {env_path}"}
+        return {"ok": False, "error": f"cannot read env file: {exc}"}
+    try:
+        with os.fdopen(fd, encoding="utf-8") as fh:
+            lines = fh.readlines()
     except OSError as exc:
         return {"ok": False, "error": f"cannot read env file: {exc}"}
 
@@ -436,6 +453,19 @@ def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
             os.fsync(fh.fileno())
         os.chmod(tmp_path, original_mode)
         os.replace(tmp_path, env_path)
+        # fsync the parent directory so the rename is durable across
+        # a power loss. Only meaningful on platforms with O_DIRECTORY;
+        # silently skipped on others (Windows, etc.).
+        if hasattr(os, "O_DIRECTORY"):
+            try:
+                dir_fd = os.open(env_dir, os.O_DIRECTORY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except OSError:
+                # Best-effort: the rename already succeeded.
+                pass
     except OSError as exc:
         try:
             os.unlink(tmp_path)
