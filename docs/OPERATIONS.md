@@ -51,6 +51,53 @@ Use the full first-install walkthrough in:
 sudo APP_ENV=prod bash scripts/backup.sh
 ```
 
+## Outbound email retry queue (#3)
+
+Flows that can tolerate eventual delivery (password reset emails,
+admin-initiated MFA-disabled notifications) use
+`services.send_with_retry`. On transient SMTP failure the message
+is persisted to `accounts_outboundemail` instead of bubbling the
+exception up to the request handler.
+
+The `notify-once` worker drains the queue using an exponential
+backoff (1 min → 5 min → 15 min → 1 h → 6 h) and gives up after
+5 attempts, recording an `email_failed_permanent` audit row for
+the operator to investigate. Rows carrying an `expires_at` (e.g.
+a password-reset URL whose token TTL elapsed) are dropped without
+an SMTP attempt — better than shipping a dead link.
+
+Schedule it via systemd timer alongside the other workers:
+
+```bash
+.venv/bin/ameli-app notify-once
+```
+
+Inspect the queue:
+
+```bash
+.venv/bin/ameli-app shell -c "
+from ameli_web.accounts.models import OutboundEmail
+for row in OutboundEmail.objects.exclude(status='sent').order_by('next_retry_at'):
+    print(row.pk, row.status, row.attempts, row.next_retry_at.isoformat(), row.subject, row.to_emails)
+"
+```
+
+Force a retry now (move the next_retry_at backwards):
+
+```bash
+.venv/bin/ameli-app shell -c "
+from django.utils import timezone
+from ameli_web.accounts.models import OutboundEmail
+OutboundEmail.objects.filter(status='pending').update(next_retry_at=timezone.now())
+"
+.venv/bin/ameli-app notify-once
+```
+
+Flows that need the user to see a failure immediately (the profile
+test-email button, MFA codes during login) keep using
+`.send(fail_silently=False)` and surface the exception to the
+caller — the queue is opt-in.
+
 ## Audit chain verification (H6)
 
 Enable the HMAC chain by setting `AMELI_APP_AUDIT_HMAC_KEY` in the env

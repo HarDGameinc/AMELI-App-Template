@@ -597,8 +597,7 @@ aparecieron al verificarlo en el server:
 
 | # | Item | Tipo | Tamaño |
 |---|---|---|---|
-| 3 | Retry + queue para emails fallidos | Operativo | Medio |
-| 2 | Selector de idioma en header (i18n loop) | UX | Chico |
+| 2 | Selector de idioma en header (i18n loop) — descartado por el usuario | UX | — |
 
 Items cerrados en esta sesion:
 - **Item 8** — endurecer recipe + helper de rotacion HMAC:
@@ -609,6 +608,17 @@ Items cerrados en esta sesion:
   ejecutado durante la verificacion del #8 (la `OLD_KEY` se habia
   perdido, asi que no quedaba mejor camino). Chain ahora firmada
   bajo una nueva key con 2 rows verificables.
+- **Item 3** — retry queue para emails fallidos. Nuevo modelo
+  `OutboundEmail`, helper `services.send_with_retry`, worker
+  `notify-once` que procesa la cola con backoff exponencial
+  (1m, 5m, 15m, 1h, 6h; max 5 intentos), drop de filas
+  expiradas (token de reset vencido), audits
+  `email_queued_for_retry` + `email_failed_permanent`.
+  Migrados a la cola: password reset y notificacion de
+  `mfa_disabled_by_admin`. Los flujos que necesitan
+  retroalimentacion inmediata al usuario (profile test email,
+  codigos MFA durante login) siguen con `.send(fail_silently=False)`.
+  Documentacion en `OPERATIONS.md` -> "Outbound email retry queue".
 
 ### Orden recomendado para retomar
 

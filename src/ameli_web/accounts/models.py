@@ -204,3 +204,55 @@ class ThrottleCounter(models.Model):
 
     def __str__(self) -> str:
         return f"{self.scope}::{self.key}::{self.window_start.isoformat()}={self.count}"
+
+
+class OutboundEmail(models.Model):
+    """Retry queue for emails whose inline send failed.
+
+    Services that can tolerate eventual delivery (password reset,
+    admin notifications) call ``services.send_with_retry`` which tries
+    inline first and persists a row here only when the send raises.
+    The ``notify`` worker processes pending rows on its tick using
+    exponential backoff. After ``max_attempts`` the row is marked
+    failed and audited so the operator can investigate.
+
+    Bodies may contain time-limited tokens (reset URLs). The
+    ``expires_at`` column lets us drop rows whose token won't be
+    accepted anymore — better to fail loudly than ship a dead link.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_SENT = "sent"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "pending"),
+        (STATUS_SENT, "sent"),
+        (STATUS_FAILED, "failed"),
+    ]
+
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    from_email = models.CharField(max_length=255, blank=True, default="")
+    to_emails = models.JSONField(default=list)
+    use_ascii_passthrough = models.BooleanField(default=False)
+    audit_action = models.CharField(max_length=80, blank=True, default="")
+    target_username = models.CharField(max_length=150, blank=True, default="")
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True,
+    )
+    attempts = models.IntegerField(default=0)
+    max_attempts = models.IntegerField(default=5)
+    next_retry_at = models.DateTimeField(db_index=True)
+    last_error = models.TextField(blank=True, default="")
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "next_retry_at"]),
+        ]
+        ordering = ["next_retry_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.status}::{self.subject}->{self.to_emails}"

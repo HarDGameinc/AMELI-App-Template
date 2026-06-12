@@ -31,7 +31,10 @@ def test_cli_worker_once(config_path, capsys):
     assert '"worker": "capture"' in capsys.readouterr().out
 
 
+@pytest.mark.django_db
 def test_cli_notify_once(config_path, capsys):
+    # As of #3 the notify worker drains the OutboundEmail retry queue,
+    # which requires DB access.
     result = main(["--config", str(config_path), "notify-once"])
 
     assert result == 0
