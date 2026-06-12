@@ -690,10 +690,32 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         chosen = request.POST["choose_method"]
         request.session[PENDING_MFA_METHOD_KEY] = chosen
         if chosen == "email":
+            # The SMTP path can fail for reasons outside the user's
+            # control (Errno 101 "Network is unreachable" was observed
+            # in dev on a transient connectivity blip to office365).
+            # ``verify_mfa_resend_view`` already catches the broad
+            # exception and returns 502; this view used to only catch
+            # ValueError and 500'd. Mirror the resend handling so the
+            # operator sees the audit row and the user still gets a
+            # usable page (they can try TOTP or hit "Reenviar codigo").
             try:
                 send_mfa_email_login_code(user)
             except ValueError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "login mfa email send failed during choose for %s", user.username,
+                )
+                record_audit(
+                    "mfa_email_login_send_failed",
+                    target_username=user.username,
+                    payload={"error_class": exc.__class__.__name__, "phase": "choose"},
+                )
+                messages.error(
+                    request,
+                    "No pudimos enviar el codigo por email ahora mismo. "
+                    "Probá con tu app de autenticacion o tocá 'Reenviar codigo' en unos segundos.",
+                )
         return redirect("accounts:verify-mfa")
 
     if chosen is None and len(available_methods) >= 2:
@@ -737,6 +759,24 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
                     # Rate-limited at this very moment; user can hit
                     # "Reenviar codigo" once the cooldown expires.
                     pass
+                except Exception as exc:  # noqa: BLE001
+                    # Same reasoning as the choose-method handler
+                    # above: a transient SMTP/network error must not
+                    # 500 the page. Audit + flash and keep rendering
+                    # so the user can switch to TOTP or retry.
+                    logger.exception(
+                        "login mfa email send failed on GET for %s", user.username,
+                    )
+                    record_audit(
+                        "mfa_email_login_send_failed",
+                        target_username=user.username,
+                        payload={"error_class": exc.__class__.__name__, "phase": "render"},
+                    )
+                    messages.error(
+                        request,
+                        "No pudimos enviar el codigo por email ahora mismo. "
+                        "Probá con tu app de autenticacion o tocá 'Reenviar codigo' en unos segundos.",
+                    )
         return render(request, "accounts/verify_mfa.html", context)
 
     candidate = str(request.POST.get("code") or "").strip()
