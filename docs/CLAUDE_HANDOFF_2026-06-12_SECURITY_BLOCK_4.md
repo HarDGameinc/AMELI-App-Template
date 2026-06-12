@@ -768,6 +768,24 @@ items diferidos al backlog tecnico (sin impacto de seguridad).
 
 Backlog del post-cierre **cerrado por completo y verificado**.
 
+### Metrics widget para `OutboundEmail` en el portal admin
+
+- Endpoint `/admin/metrics/email-queue` (superadmin, GET, sin
+  sudo — misma postura que `admin_audit`/`admin_sessions`).
+- Service `summarize_email_queue()` agrega: `pending`, `sent_last_24h`,
+  `failed_last_24h`, `expired_last_24h`, `oldest_pending_age_seconds`,
+  `next_retry_at_iso`, `top_error_classes` (excluyendo el bucket
+  "expired before delivery" que tiene su propio contador).
+- Widget "Cola de email saliente" en `admin/panel.html` con 4
+  summary cards + tira de detalle (oldest pending + errores top).
+  Refresca cada 30 s vía fetch; fallback "Sin conexion" en el
+  label cuando el endpoint falla.
+- 4 tests nuevos (service aggregation, endpoint response, auth
+  gating, panel rendering).
+
+`OPERATIONS.md` -> "Email queue dashboard widget" con el flujo
+operativo (visibilidad live + acciones en `/django-admin/`).
+
 Verificacion operativa del cierre (commit `3dff8e6` en `ha-report2`):
 - Symlink rejection via O_NOFOLLOW: `{ok: false, error: 'refusing to write through symlink: ...'}` (kernel ELOOP, no Python pre-check)
 - Rotacion full con `--from-key-env / --to-key-env / --apply-env`:

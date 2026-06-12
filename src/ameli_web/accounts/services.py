@@ -726,6 +726,74 @@ def summarize_users() -> dict[str, int]:
     }
 
 
+def summarize_email_queue() -> dict[str, Any]:
+    """Operator-facing snapshot of the outbound retry queue.
+
+    Fields:
+      pending          — current rows waiting for a worker tick
+      sent_last_24h    — successfully delivered in the last 24 h
+      failed_last_24h  — permanently failed in the last 24 h
+      expired_last_24h — dropped before delivery in the last 24 h
+      oldest_pending_age_seconds — how long the oldest pending row
+                                   has been waiting (None when the
+                                   queue is empty)
+      next_retry_at_iso — ISO timestamp of the soonest pending row
+                          (None when empty)
+      top_error_classes — list of {error_class, count} for failed +
+                          permanently-failed rows in the last 24 h
+                          so the operator sees the dominant cause
+    """
+    now = timezone.now()
+    cutoff = now - timedelta(hours=24)
+    qs = OutboundEmail.objects
+
+    counts_by_status = dict(
+        qs.values_list("status").annotate(n=Count("id")).values_list("status", "n")
+    )
+    pending = counts_by_status.get(OutboundEmail.STATUS_PENDING, 0)
+    sent_last_24h = qs.filter(
+        status=OutboundEmail.STATUS_SENT, updated_at__gte=cutoff,
+    ).count()
+    failed_qs = qs.filter(
+        status=OutboundEmail.STATUS_FAILED, updated_at__gte=cutoff,
+    )
+    failed_last_24h = failed_qs.exclude(last_error="expired before delivery").count()
+    expired_last_24h = failed_qs.filter(last_error="expired before delivery").count()
+
+    oldest = qs.filter(status=OutboundEmail.STATUS_PENDING).order_by("created_at").first()
+    soonest = qs.filter(status=OutboundEmail.STATUS_PENDING).order_by("next_retry_at").first()
+
+    # Group failed-row error_class (excluding the "expired" bucket
+    # since that lives in its own metric). ``last_error`` is the
+    # operational detail; the class prefix before the colon is what's
+    # safe to surface to the widget.
+    top_error_classes: list[dict[str, Any]] = []
+    error_buckets: dict[str, int] = {}
+    real_failures = failed_qs.exclude(last_error="expired before delivery")
+    for row in real_failures.only("last_error").iterator(chunk_size=500):
+        first = (row.last_error or "").split(":", 1)[0].strip() or "unknown"
+        error_buckets[first] = error_buckets.get(first, 0) + 1
+    for cls, count in sorted(
+        error_buckets.items(), key=lambda kv: kv[1], reverse=True,
+    )[:5]:
+        top_error_classes.append({"error_class": cls, "count": count})
+
+    return {
+        "pending": pending,
+        "sent_last_24h": sent_last_24h,
+        "failed_last_24h": failed_last_24h,
+        "expired_last_24h": expired_last_24h,
+        "oldest_pending_age_seconds": (
+            int((now - oldest.created_at).total_seconds()) if oldest else None
+        ),
+        "next_retry_at_iso": (
+            soonest.next_retry_at.isoformat() if soonest else None
+        ),
+        "top_error_classes": top_error_classes,
+        "generated_at_iso": now.isoformat(),
+    }
+
+
 def _display_tone_for_action(action: str) -> str:
     if action.endswith("_failed") or action in {"admin_access_denied"}:
         return "FALLA"

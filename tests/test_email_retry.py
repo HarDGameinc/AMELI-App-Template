@@ -564,6 +564,107 @@ def test_queue_does_not_double_deliver_same_row_in_two_passes(settings):
 
 
 @pytest.mark.django_db
+def test_summarize_email_queue_counts_by_status_and_window():
+    """summarize_email_queue must split current pending from the
+    24h aggregates (sent/failed/expired) and surface a top-N of
+    error classes from the recent failures."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import summarize_email_queue
+
+    OutboundEmail.objects.create(
+        subject="p", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_PENDING,
+        next_retry_at=timezone.now() + timedelta(minutes=5),
+    )
+    OutboundEmail.objects.create(
+        subject="p2", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_PENDING,
+        next_retry_at=timezone.now() + timedelta(minutes=1),
+    )
+    OutboundEmail.objects.create(
+        subject="s", body="", to_emails=[],
+        status=OutboundEmail.STATUS_SENT,
+        next_retry_at=timezone.now() - timedelta(hours=1),
+    )
+    OutboundEmail.objects.create(
+        subject="f1", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_FAILED,
+        last_error="ConnectionError: dead",
+        next_retry_at=timezone.now() - timedelta(hours=2),
+    )
+    OutboundEmail.objects.create(
+        subject="f2", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_FAILED,
+        last_error="ConnectionError: still dead",
+        next_retry_at=timezone.now() - timedelta(hours=2),
+    )
+    OutboundEmail.objects.create(
+        subject="e", body="b", to_emails=["a@x"],
+        status=OutboundEmail.STATUS_FAILED,
+        last_error="expired before delivery",
+        next_retry_at=timezone.now() - timedelta(hours=3),
+    )
+
+    summary = summarize_email_queue()
+    assert summary["pending"] == 2
+    assert summary["sent_last_24h"] == 1
+    assert summary["failed_last_24h"] == 2
+    assert summary["expired_last_24h"] == 1
+    assert summary["oldest_pending_age_seconds"] is not None
+    assert summary["next_retry_at_iso"] is not None
+    # Top error_classes derives from ``last_error`` split on the colon.
+    classes = {entry["error_class"]: entry["count"] for entry in summary["top_error_classes"]}
+    assert classes.get("ConnectionError") == 2
+    assert "expired before delivery" not in classes
+
+
+@pytest.mark.django_db
+def test_admin_email_queue_metrics_endpoint(client, admin_user):
+    """The admin widget polls /admin/metrics/email-queue. Superadmin
+    only, returns JSON with the summary."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import grant_sudo
+
+    OutboundEmail.objects.create(
+        subject="p", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now() + timedelta(minutes=1),
+    )
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    response = client.get("/admin/metrics/email-queue")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["summary"]["pending"] == 1
+
+
+@pytest.mark.django_db
+def test_admin_email_queue_metrics_requires_superadmin(client):
+    response = client.get("/admin/metrics/email-queue")
+    assert response.status_code in {302, 401, 403}
+
+
+@pytest.mark.django_db
+def test_admin_panel_renders_email_queue_card(client, admin_user):
+    from ameli_web.accounts.services import grant_sudo
+
+    client.force_login(admin_user)
+    session = client.session
+    grant_sudo(session)
+    session.save()
+
+    response = client.get("/admin/")
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    assert "admin-email-queue-card" in body
+    assert 'data-eq-pending' in body
+
+
+@pytest.mark.django_db
 def test_notify_worker_processes_queue(config_path):
     """The notify-once CLI command now drains the queue."""
     from ameli_app.cli import main

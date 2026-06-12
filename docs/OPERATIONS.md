@@ -93,6 +93,23 @@ OutboundEmail.objects.filter(status='pending').update(next_retry_at=timezone.now
 .venv/bin/ameli-app notify-once
 ```
 
+### Email queue dashboard widget
+
+The custom `/admin/` panel renders a "Cola de email saliente" card
+that polls `/admin/metrics/email-queue` every 30 s and shows live:
+
+- pending rows (waiting for a worker tick)
+- delivered in the last 24 h
+- permanently failed in the last 24 h (after `max_attempts`)
+- expired in the last 24 h (`expires_at` elapsed)
+- oldest pending row age (when there is one)
+- top error_classes among recent failures
+
+Same auth posture as the audit / sessions listings — superadmin
+visibility, no sudo prompt — so operators can keep the tab open
+while monitoring. Acciones puntuales (forzar reintento, ver
+detalle por fila) viven en `/django-admin/accounts/outboundemail/`.
+
 Or use the Django admin: navigate to **Outbound emails** under the
 *Accounts* section in `/django-admin/`, filter by `status=pending`,
 select the rows you care about and run the **Reintentar ahora**

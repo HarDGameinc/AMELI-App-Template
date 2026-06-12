@@ -28,6 +28,7 @@ from ameli_web.accounts.services import (
     reset_user_password,
     revoke_session_record,
     serialize_user,
+    summarize_email_queue,
     summarize_users,
     update_user_account,
 )
@@ -181,6 +182,7 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "audit_filters": audit_filters,
         "current_user": serialize_user(request.user),
         "user_summary": summarize_users(),
+        "email_queue_summary": summarize_email_queue(),
         "recent_sessions": sessions_page.items,
         "sessions_pagination": sessions_page.as_context(
             page_param="admin_sessions_page",
@@ -250,6 +252,19 @@ def admin_audit(request: HttpRequest) -> JsonResponse:
             "items": list_recent_audit_entries(limit=limit, actor_username=actor, target_username=target),
         }
     )
+
+
+@require_GET
+@superadmin_required
+def admin_email_queue_metrics(request: HttpRequest) -> JsonResponse:
+    """Snapshot of the OutboundEmail retry queue for the admin widget.
+
+    Read-only and not gated behind sudo — same posture as the audit
+    and sessions listings, which the operator already polls to keep
+    an eye on the system without re-confirming credentials every
+    refresh.
+    """
+    return JsonResponse({"ok": True, "summary": summarize_email_queue()})
 
 
 @require_GET

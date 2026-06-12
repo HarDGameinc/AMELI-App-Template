@@ -83,6 +83,55 @@
   </article>
 </section>
 
+<section class="panel" id="admin-email-queue-card"
+         data-refresh-url="/admin/metrics/email-queue"
+         style="margin-bottom:16px;">
+  <div class="panel-header">
+    <div>
+      <div class="metric-label">Cola de email saliente</div>
+      <p class="muted panel-copy">Estado en vivo del retry queue. Se refresca cada 30s; mira <a href="/django-admin/accounts/outboundemail/">Outbound emails</a> para acciones puntuales.</p>
+    </div>
+    <span class="muted" data-email-queue-updated>Actualizando…</span>
+  </div>
+  <div class="summary-cards-compact" style="margin-top:8px;">
+    <article class="summary-card-compact">
+      <span class="metric-label">Pendientes</span>
+      <strong data-eq-pending>{{ email_queue_summary.pending }}</strong>
+      <span class="muted">esperan al worker</span>
+    </article>
+    <article class="summary-card-compact">
+      <span class="metric-label">Enviados (24h)</span>
+      <strong data-eq-sent>{{ email_queue_summary.sent_last_24h }}</strong>
+      <span class="muted">entregas exitosas</span>
+    </article>
+    <article class="summary-card-compact">
+      <span class="metric-label">Fallidos (24h)</span>
+      <strong data-eq-failed>{{ email_queue_summary.failed_last_24h }}</strong>
+      <span class="muted">tras max attempts</span>
+    </article>
+    <article class="summary-card-compact">
+      <span class="metric-label">Expirados (24h)</span>
+      <strong data-eq-expired>{{ email_queue_summary.expired_last_24h }}</strong>
+      <span class="muted">TTL vencido</span>
+    </article>
+  </div>
+  <div class="muted panel-copy" style="margin-top:8px;">
+    <span data-eq-oldest>
+      {% if email_queue_summary.oldest_pending_age_seconds %}
+        Mas vieja pendiente: {{ email_queue_summary.oldest_pending_age_seconds }}s.
+      {% else %}
+        Sin filas pendientes.
+      {% endif %}
+    </span>
+    <span data-eq-errors>
+      {% if email_queue_summary.top_error_classes %}
+        Errores top:
+        {% for entry in email_queue_summary.top_error_classes %}{{ entry.error_class }} ({{ entry.count }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+      {% endif %}
+    </span>
+  </div>
+</section>
+
 <section class="admin-layout">
   <div class="admin-layout-main">
     <section class="panel">
@@ -448,6 +497,57 @@
 <script nonce="{{ csp_nonce }}">
 document.addEventListener("DOMContentLoaded", () => {
   const csrfToken = "{{ csrf_token }}";
+
+  // ---- Email queue widget refresh ----
+  // Polls /admin/metrics/email-queue every 30 s. Best-effort: a
+  // failure leaves the previous numbers in place and updates the
+  // "actualizando" label so the operator can see staleness.
+  const eqCard = document.getElementById("admin-email-queue-card");
+  if (eqCard) {
+    const eqUrl = eqCard.dataset.refreshUrl;
+    const eqUpdated = eqCard.querySelector("[data-email-queue-updated]");
+    const setText = (sel, value) => {
+      const el = eqCard.querySelector(sel);
+      if (el) el.textContent = String(value);
+    };
+    const refresh = async () => {
+      try {
+        const response = await fetch(eqUrl, {
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" },
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const data = await response.json();
+        const s = data.summary || {};
+        setText("[data-eq-pending]", s.pending ?? 0);
+        setText("[data-eq-sent]", s.sent_last_24h ?? 0);
+        setText("[data-eq-failed]", s.failed_last_24h ?? 0);
+        setText("[data-eq-expired]", s.expired_last_24h ?? 0);
+        const oldest = s.oldest_pending_age_seconds;
+        setText(
+          "[data-eq-oldest]",
+          oldest != null
+            ? "Mas vieja pendiente: " + oldest + "s."
+            : "Sin filas pendientes.",
+        );
+        const errs = Array.isArray(s.top_error_classes) ? s.top_error_classes : [];
+        setText(
+          "[data-eq-errors]",
+          errs.length
+            ? "Errores top: " + errs.map((e) => e.error_class + " (" + e.count + ")").join(", ") + "."
+            : "",
+        );
+        if (eqUpdated) {
+          const ts = new Date();
+          eqUpdated.textContent = "Actualizado " + ts.toLocaleTimeString();
+        }
+      } catch (err) {
+        if (eqUpdated) eqUpdated.textContent = "Sin conexion (reintenta en 30s)";
+      }
+    };
+    refresh();
+    setInterval(refresh, 30000);
+  }
 
   // ---- Sudo prompt ----
   // ``requestJson`` retries once after a successful sudo grant. We keep
