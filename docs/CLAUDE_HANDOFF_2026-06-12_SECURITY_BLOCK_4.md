@@ -620,6 +620,69 @@ Items cerrados en esta sesion:
   codigos MFA durante login) siguen con `.send(fail_silently=False)`.
   Documentacion en `OPERATIONS.md` -> "Outbound email retry queue".
 
+#### Verificacion operativa de #3 en server dev (2026-06-12)
+
+Server: `ha-report2`, commit `b066ce5`, migracion
+`accounts.0009_outboundemail` aplicada.
+
+```text
+# 1. Migracion OK
+Applying accounts.0009_outboundemail... OK
+OutboundEmail.objects.count() = 0
+
+# 2. Inline success (SMTP smtp.office365.com OK)
+request_password_reset('admin') -> {'ok': True, 'status': 'requested'}
+queue: pendientes=0, enviados_via_cola=0   (envio inline, no toca cola)
+
+# 3. Forzar failure: AMELI_APP_EMAIL_HOST=smtp.invalid.local
+request_password_reset('admin') -> {'ok': True, 'status': 'requested'}
+OutboundEmail row 1:
+  status=pending, attempts=1,
+  to=['hardgameinc@gmail.com'],
+  last_error='gaierror: [Errno -2] Name or service not known',
+  next_retry +60s
+
+AuditEvent 527 email_queued_for_retry admin
+  payload: { queue_id: 1, audit_action: password_reset_email_delivered,
+             to: [hardgameinc@gmail.com], reason: 'gaierror...' }
+AuditEvent 528 password_reset_requested admin
+  payload: { status: 'email-sent' }   # respuesta al usuario sin alarmas
+
+# 4. Restaurar SMTP + force next_retry=now + notify-once
+notify-once -> queue: { considered:1, sent:1, requeued:0, failed:0, expired:0 }
+OutboundEmail row 1 -> status=sent, attempts=1
+AuditEvent 529 password_reset_email_delivered admin
+  payload: { queue_id: 1, delivered_after_attempts: 2 }
+verify-audit -> { checked: 7, ok: true }
+
+Mail real con link de reset entregado a la inbox.
+
+# 5. Programacion permanente: notifier.service
+El install.sh ya renderiza ameli-app-template-dev-notifier.service
+(no se enable por default — el profile dev es 'api-worker-maintenance').
+Habilitado a mano:
+  systemctl enable --now ameli-app-template-dev-notifier.service
+
+Status:
+  Active: active (running)
+  Tasks: 2 (bash loop + sleep 30)
+  journal: notify-once cada 30s con queue:{considered:0, sent:0}
+```
+
+Hallazgos:
+- helper inline-then-queue funciona end-to-end con un fallo de DNS
+  real (`gaierror` desde el resolver del SMTP backend);
+- la respuesta al usuario nunca cambia (`status: requested`), la
+  cola es completamente invisible al flow web;
+- el unit notifier persistente (loop con `AMELI_APP_NOTIFIER_INTERVAL=30`)
+  es la programacion recomendada — mas barato que un timer porque
+  Python ya esta cacheado entre iteraciones;
+- el chain audit sigue verificable post-rotate y post-drenado:
+  `{ checked: 7, ok: true }`.
+
+Considera enable-by-default del notifier en futuros installs (item
+operativo, no de seguridad).
+
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash `5286ed1`
