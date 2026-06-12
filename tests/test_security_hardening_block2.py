@@ -140,7 +140,12 @@ def test_mfa_resend_throttle_after_too_many_resends(client, tester, settings):
     tester.save(update_fields=["mfa_enabled", "mfa_email_enabled"])
     session = client.session
     session["pending_mfa_user_id"] = tester.pk
-    session["pending_mfa_started_at"] = "2026-06-12T12:00:00+00:00"
+    # Use ``timezone.now()`` instead of a hardcoded timestamp — the
+    # pending-MFA session has a 10-minute TTL, so a literal date in
+    # the test breaks the moment we run it later than that.
+    from django.utils import timezone
+
+    session["pending_mfa_started_at"] = timezone.now().isoformat()
     session["pending_mfa_method"] = "email"
     session.save()
 
