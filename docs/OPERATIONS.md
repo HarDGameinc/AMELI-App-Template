@@ -158,15 +158,22 @@ exact failure mode the #6 verification hit on dev.
    ```
    Must print `{"ok": true, ...}`.
 
-2. **Capture the current key and generate the new one.** The guards
-   abort the session if either variable ends up empty.
+2. **Capture the current key and generate the new one into env
+   vars (not argv).** Passing keys as `--from-key/--to-key` puts
+   them in `ps`/`/proc/<pid>/cmdline` and shell history. Read them
+   into env vars with `read -s` (silent) and use `--from-key-env`
+   / `--to-key-env` instead. The guards below abort if either is
+   empty.
    ```bash
    OLD_KEY=$(grep '^AMELI_APP_AUDIT_HMAC_KEY=' /etc/ameli-app-template-<env>/app.env | cut -d= -f2-)
    NEW_KEY=$(.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))")
+   export OLD_KEY NEW_KEY
    [ -n "$OLD_KEY" ] || { echo "ABORT: OLD_KEY is empty"; return 1 2>/dev/null || exit 1; }
    [ -n "$NEW_KEY" ] || { echo "ABORT: NEW_KEY is empty"; return 1 2>/dev/null || exit 1; }
    [ "$OLD_KEY" != "$NEW_KEY" ] || { echo "ABORT: keys are identical"; return 1 2>/dev/null || exit 1; }
    ```
+   If you'd rather not have the new key in your environment at all,
+   skip the `export` and use `--to-key-stdin` in step 3.
 
 3. **Run the rotation in one go (recommended).** `--apply-env` makes
    the helper atomically rewrite the env file after the DB is
@@ -174,24 +181,37 @@ exact failure mode the #6 verification hit on dev.
    file (or worse, a blanked env file from a typo'd `sed`). Then
    restart the service.
    ```bash
-   sudo .venv/bin/ameli-app rotate-audit-key \
-     --from-key "$OLD_KEY" \
-     --to-key "$NEW_KEY" \
+   sudo -E .venv/bin/ameli-app rotate-audit-key \
+     --from-key-env OLD_KEY \
+     --to-key-env NEW_KEY \
      --apply-env /etc/ameli-app-template-<env>/app.env || {
        echo "ABORT: rotation failed; env file untouched"
        return 1 2>/dev/null || exit 1
    }
    sudo systemctl restart ameli-app-template-<env>-api.service
+   unset OLD_KEY NEW_KEY   # keep them out of the shell after rotation
    ```
    Exit codes: `0` = full success, `2` = rotation refused (chain
-   broken / bad args), `4` = DB rotated but env-file write failed
-   (in-memory key still mismatches; investigate before restarting).
+   broken / bad args / unresolvable key), `4` = DB rotated but
+   env-file write failed (in-memory key still mismatches;
+   investigate before restarting).
 
    On success the JSON response contains a `next_steps` array and
-   `rotated: N`. If you prefer the two-step variant, drop
-   `--apply-env` and update the env file yourself — but keep the
-   guards:
+   `rotated: N`.
+
+   **stdin variant** (when you cannot or don't want to export the
+   keys): pipe two lines, from-key first.
    ```bash
+   { printf '%s\n%s\n' "$OLD_KEY" "$NEW_KEY"; } | sudo .venv/bin/ameli-app \
+     rotate-audit-key --from-key-stdin --to-key-stdin \
+     --apply-env /etc/ameli-app-template-<env>/app.env
+   ```
+
+   **Legacy two-step variant with raw argv keys** is still
+   supported but **discouraged** — the keys are visible in
+   `ps`/history:
+   ```bash
+   # NOT RECOMMENDED: keys land in /proc/<pid>/cmdline
    sudo .venv/bin/ameli-app rotate-audit-key \
      --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
        echo "ABORT: rotation failed; do NOT touch the env file"

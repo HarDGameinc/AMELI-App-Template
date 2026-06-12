@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 
 import pytest
@@ -132,6 +133,87 @@ def test_cli_verify_audit_strict_precondition_exits_three_on_break(
     # Without the flag the legacy exit code (1) is preserved.
     result = main(["--config", str(config_path), "verify-audit"])
     assert result == 1
+
+
+@pytest.mark.django_db
+def test_cli_rotate_audit_key_reads_keys_from_env_vars(
+    config_path, capsys, tmp_path, settings, monkeypatch
+):
+    """Operator can avoid putting keys on argv (visible in ps/history)
+    by exporting env vars and passing --from-key-env / --to-key-env."""
+    monkeypatch.setenv("AMELI_APP_AUDIT_HMAC_KEY", "kfrom")
+    settings.AUDIT_HMAC_KEY = "kfrom"
+    monkeypatch.setenv("HOLD_FROM", "kfrom")
+    monkeypatch.setenv("HOLD_TO", "newkey_xyz")
+    from ameli_web.accounts.services import record_audit
+
+    record_audit("x")
+
+    result = main([
+        "--config", str(config_path),
+        "rotate-audit-key",
+        "--from-key-env", "HOLD_FROM",
+        "--to-key-env", "HOLD_TO",
+    ])
+    assert result == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+
+
+@pytest.mark.django_db
+def test_cli_rotate_audit_key_refuses_unset_env_var(
+    config_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("NEVERSET", raising=False)
+    monkeypatch.setenv("AMELI_APP_AUDIT_HMAC_KEY", "k")
+
+    result = main([
+        "--config", str(config_path),
+        "rotate-audit-key",
+        "--from-key-env", "NEVERSET",
+        "--to-key", "doesntmatter",
+    ])
+    assert result == 2  # EXIT_ROTATION_REFUSED
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert "NEVERSET" in payload["error"]
+
+
+@pytest.mark.django_db
+def test_cli_rotate_audit_key_reads_keys_from_stdin(
+    config_path, capsys, settings, monkeypatch
+):
+    """When --from-key-stdin and --to-key-stdin are both set, the
+    from-key is read first so the pipe is deterministic."""
+    monkeypatch.setenv("AMELI_APP_AUDIT_HMAC_KEY", "fromstdin")
+    settings.AUDIT_HMAC_KEY = "fromstdin"
+    from ameli_web.accounts.services import record_audit
+
+    record_audit("x")
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("fromstdin\ntostdin\n"))
+    result = main([
+        "--config", str(config_path),
+        "rotate-audit-key",
+        "--from-key-stdin",
+        "--to-key-stdin",
+    ])
+    assert result == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+
+
+def test_cli_rotate_audit_key_requires_one_source_per_side(config_path):
+    """argparse mutually-exclusive group rejects two sources for the
+    same side (--from-key + --from-key-env)."""
+    with pytest.raises(SystemExit):
+        main([
+            "--config", str(config_path),
+            "rotate-audit-key",
+            "--from-key", "a",
+            "--from-key-env", "X",
+            "--to-key", "b",
+        ])
 
 
 @pytest.mark.django_db

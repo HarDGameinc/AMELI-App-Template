@@ -756,6 +756,34 @@ Mail real con link de reset entregado a la inbox.
 Cierre del bloque 4: 0 hallazgos abiertos de severidad media-alta, 5
 items diferidos al backlog tecnico (sin impacto de seguridad).
 
+### Hardening operativo adicional: rotacion sin keys en argv
+
+Tras el cierre del bloque, atendimos el primero de los items
+diferidos: las keys ya no necesitan pasarse por argv (donde quedan
+visibles en `ps` y el shell history). Nuevos flags en
+`rotate-audit-key`:
+
+- `--from-key-env VARNAME` / `--to-key-env VARNAME` — lee la key
+  desde la variable de entorno indicada (combina bien con `read -s`
+  + `export`).
+- `--from-key-stdin` / `--to-key-stdin` — lee una linea de stdin.
+  Si los dos estan seteados, primero `from`, despues `to`.
+- Mutuamente excluyentes con `--from-key` / `--to-key` (legacy,
+  documentado como inseguro en el help).
+
+`OPERATIONS.md` actualizado: la receta principal ahora usa
+`read -s` + `--from-key-env`/`--to-key-env`. La variante legacy
+queda como referencia con disclaimer explicito.
+
+Tests nuevos (4):
+- `--from-key-env` / `--to-key-env` rotan OK contra una chain
+  preparada
+- env var sin setear -> `EXIT_ROTATION_REFUSED` (2)
+- `--from-key-stdin` + `--to-key-stdin` rotan OK leyendo en
+  orden determinista
+- mutual-exclusion: `--from-key` + `--from-key-env` -> SystemExit
+  del argparse
+
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash `5286ed1`

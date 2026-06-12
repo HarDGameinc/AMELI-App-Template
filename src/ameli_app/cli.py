@@ -146,13 +146,43 @@ def build_parser() -> argparse.ArgumentParser:
             "Refuses to run if the chain under --from-key is already broken."
         ),
     )
-    rotate_audit_key.add_argument(
-        "--from-key", required=True,
-        help="The current AMELI_APP_AUDIT_HMAC_KEY value (the one the chain was signed with).",
+    from_group = rotate_audit_key.add_mutually_exclusive_group(required=True)
+    from_group.add_argument(
+        "--from-key",
+        help=(
+            "Current AMELI_APP_AUDIT_HMAC_KEY (insecure: visible in "
+            "`ps`/shell history). Prefer --from-key-env or --from-key-stdin."
+        ),
     )
-    rotate_audit_key.add_argument(
-        "--to-key", required=True,
-        help="The new key the chain will be re-signed with.",
+    from_group.add_argument(
+        "--from-key-env", metavar="VARNAME",
+        help="Read the current key from environment variable VARNAME.",
+    )
+    from_group.add_argument(
+        "--from-key-stdin", action="store_true",
+        help=(
+            "Read the current key from stdin (first line). If "
+            "--to-key-stdin is also set, the from-key is read first."
+        ),
+    )
+    to_group = rotate_audit_key.add_mutually_exclusive_group(required=True)
+    to_group.add_argument(
+        "--to-key",
+        help=(
+            "New key (insecure: visible in `ps`/shell history). "
+            "Prefer --to-key-env or --to-key-stdin."
+        ),
+    )
+    to_group.add_argument(
+        "--to-key-env", metavar="VARNAME",
+        help="Read the new key from environment variable VARNAME.",
+    )
+    to_group.add_argument(
+        "--to-key-stdin", action="store_true",
+        help=(
+            "Read the new key from stdin. When both --from-key-stdin "
+            "and --to-key-stdin are set, the from-key is read first."
+        ),
     )
     rotate_audit_key.add_argument(
         "--apply-env",
@@ -224,6 +254,48 @@ def _handle_verify_audit(args) -> int:
     return EXIT_CHAIN_BROKEN_STRICT if args.strict_precondition else EXIT_GENERIC_ERROR
 
 
+def _resolve_rotation_keys(args) -> tuple[str | None, str | None, str | None]:
+    """Resolve from_key/to_key from argv/env/stdin sources.
+
+    Returns ``(from_key, to_key, error)``. When ``error`` is set, the
+    caller surfaces it as ``{ok: false, error}`` and aborts with
+    EXIT_ROTATION_REFUSED — same shape the service layer uses on
+    refusal so the CLI behavior stays consistent.
+
+    Stdin reads consume one line each. When both ``--from-key-stdin``
+    and ``--to-key-stdin`` are set, the from-key is read first so the
+    operator can pipe ``{ echo "$OLD"; echo "$NEW"; }`` deterministically.
+    """
+    stdin_lines: list[str] = []
+    want_stdin = bool(args.from_key_stdin) + bool(args.to_key_stdin)
+    if want_stdin:
+        for _ in range(want_stdin):
+            line = sys.stdin.readline()
+            if line == "":
+                return None, None, "stdin closed before all keys were provided"
+            stdin_lines.append(line.rstrip("\n").rstrip("\r"))
+
+    if args.from_key is not None:
+        from_key = args.from_key
+    elif args.from_key_env:
+        from_key = os.environ.get(args.from_key_env, "")
+        if not from_key:
+            return None, None, f"env var {args.from_key_env!r} is empty or unset"
+    else:
+        from_key = stdin_lines.pop(0)
+
+    if args.to_key is not None:
+        to_key = args.to_key
+    elif args.to_key_env:
+        to_key = os.environ.get(args.to_key_env, "")
+        if not to_key:
+            return None, None, f"env var {args.to_key_env!r} is empty or unset"
+    else:
+        to_key = stdin_lines.pop(0)
+
+    return from_key, to_key, None
+
+
 def _handle_rotate_audit_key(args) -> int:
     _bootstrap_django(args)
     from ameli_web.accounts.services import (
@@ -231,9 +303,14 @@ def _handle_rotate_audit_key(args) -> int:
         rotate_audit_key,
     )
 
-    result = rotate_audit_key(from_key=args.from_key, to_key=args.to_key)
+    from_key, to_key, err = _resolve_rotation_keys(args)
+    if err is not None:
+        _json({"ok": False, "error": err})
+        return EXIT_ROTATION_REFUSED
+
+    result = rotate_audit_key(from_key=from_key, to_key=to_key)
     if result.get("ok") and args.apply_env:
-        env_result = apply_audit_key_to_env_file(args.apply_env, args.to_key)
+        env_result = apply_audit_key_to_env_file(args.apply_env, to_key)
         result["env_file"] = env_result
         if not env_result.get("ok"):
             # The DB was rotated successfully but we failed to update the
