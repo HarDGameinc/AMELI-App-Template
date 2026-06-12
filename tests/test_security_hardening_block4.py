@@ -642,6 +642,35 @@ def test_apply_audit_key_to_env_file_appends_when_missing(tmp_path):
     assert contents.endswith("AMELI_APP_AUDIT_HMAC_KEY=freshkey\n")
 
 
+def test_apply_audit_key_to_env_file_refuses_newline_injection(tmp_path):
+    """A to_key with embedded newlines would inject extra env vars."""
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text("AMELI_APP_AUDIT_HMAC_KEY=original\n", encoding="utf-8")
+    for poison in ("ok\nAMELI_APP_DEBUG=true", "ok\rextra", "ok=value"):
+        result = apply_audit_key_to_env_file(str(env_file), poison)
+        assert result["ok"] is False
+        assert "newline" in result["error"] or "=" in result["error"]
+    assert env_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=original\n"
+
+
+def test_apply_audit_key_to_env_file_refuses_symlink(tmp_path):
+    """Symlink at the env path could redirect the write to /etc/passwd
+    on a compromised host. Refuse it preemptively."""
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    real_file = tmp_path / "real.env"
+    real_file.write_text("AMELI_APP_AUDIT_HMAC_KEY=x\n", encoding="utf-8")
+    symlink = tmp_path / "linked.env"
+    symlink.symlink_to(real_file)
+    result = apply_audit_key_to_env_file(str(symlink), "newvalue")
+    assert result["ok"] is False
+    assert "symlink" in result["error"]
+    # Real file untouched.
+    assert real_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=x\n"
+
+
 def test_apply_audit_key_to_env_file_refuses_empty_key(tmp_path):
     """Defends against the exact failure mode of the #6 verification:
     a typo'd shell variable would otherwise blank the env file."""

@@ -15,6 +15,14 @@ from .workers.capture import run_once as run_worker_once
 from .workers.maintenance import run_once as run_maintenance_once
 from .workers.notify import run_once as run_notify_once
 
+# Exit codes for the audit-key subcommands. Documented in
+# docs/OPERATIONS.md so a pipeline can branch on them deterministically.
+EXIT_OK = 0
+EXIT_GENERIC_ERROR = 1
+EXIT_ROTATION_REFUSED = 2
+EXIT_CHAIN_BROKEN_STRICT = 3
+EXIT_ENV_WRITE_FAILED = 4
+
 
 def _json(data: object) -> None:
     print(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False))
@@ -207,13 +215,13 @@ def _handle_verify_audit(args) -> int:
     result = verify_audit_chain(start_id=args.from_id, stop_id=args.to_id)
     _json(result)
     if result.get("ok"):
-        return 0
+        return EXIT_OK
     # Non-zero exit when the chain is broken so an operator running this
     # from cron / systemd timer can hook an alert. With
-    # --strict-precondition we return a distinct code (3) so a pipeline
+    # --strict-precondition we return a distinct code so a pipeline
     # like `verify-audit --strict-precondition && rotate-audit-key`
     # can detect "you can't rotate yet" specifically.
-    return 3 if args.strict_precondition else 1
+    return EXIT_CHAIN_BROKEN_STRICT if args.strict_precondition else EXIT_GENERIC_ERROR
 
 
 def _handle_rotate_audit_key(args) -> int:
@@ -232,9 +240,9 @@ def _handle_rotate_audit_key(args) -> int:
             # env file. Surface the failure loudly with a distinct exit
             # code so the operator knows the in-memory key still mismatches.
             _json(result)
-            return 4
+            return EXIT_ENV_WRITE_FAILED
     _json(result)
-    return 0 if result.get("ok") else 2
+    return EXIT_OK if result.get("ok") else EXIT_ROTATION_REFUSED
 
 
 def _shell_namespace() -> dict:

@@ -196,6 +196,83 @@ def test_password_reset_queues_on_smtp_failure(settings):
 
 
 @pytest.mark.django_db
+def test_process_email_queue_purges_body_on_delivery():
+    """The body holds a one-time password-reset token. Once delivered
+    there is no reason to keep it — limits blast radius of a DB read."""
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue
+
+    row = OutboundEmail.objects.create(
+        subject="reset", body="https://x/login/reset/MQ/xxxxx-token/",
+        to_emails=["a@x.example"],
+        next_retry_at=timezone.now() - timedelta(seconds=1),
+    )
+    with patch.object(EmailMessage, "send", return_value=1):
+        process_email_queue()
+    row.refresh_from_db()
+    assert row.status == OutboundEmail.STATUS_SENT
+    assert row.body == ""
+    assert row.to_emails == []
+
+
+@pytest.mark.django_db
+def test_send_with_retry_preserves_audit_payload_to_worker(settings):
+    """The mfa_disabled_by_admin notification passes {actor, email} so
+    the audit row written when the worker eventually delivers carries
+    the same context as the inline-success path."""
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue, send_with_retry
+    from ameli_web.audit.models import AuditEvent
+
+    msg = EmailMessage("subj", "body", "from@x", ["to@x"])
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("smtp")):
+        result = send_with_retry(
+            msg,
+            audit_action="mfa_disabled_notify_sent",
+            target_username="victim",
+            audit_payload={"actor": "admin", "email": "to@x"},
+        )
+    row = OutboundEmail.objects.get(pk=result["queue_id"])
+    assert row.audit_payload == {"actor": "admin", "email": "to@x"}
+    # Worker eventually delivers, audit_payload merges through.
+    row.next_retry_at = timezone.now() - timedelta(seconds=1)
+    row.save(update_fields=["next_retry_at"])
+    with patch.object(EmailMessage, "send", return_value=1):
+        process_email_queue()
+    audit = AuditEvent.objects.filter(action="mfa_disabled_notify_sent").last()
+    assert audit is not None
+    assert audit.payload.get("actor") == "admin"
+    assert audit.payload.get("email") == "to@x"
+    assert audit.payload.get("queue_id") == row.pk
+
+
+@pytest.mark.django_db
+def test_send_with_retry_audit_uses_exception_class_not_raw_message(settings):
+    """Raw SMTP exception text can contain PII (recipients, message
+    snippets). The immutable audit chain only gets the class name; the
+    full text stays on OutboundEmail.last_error for operators."""
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.services import send_with_retry
+    from ameli_web.audit.models import AuditEvent
+
+    msg = EmailMessage("subj", "body", "from@x", ["leak@example.com"])
+    with patch.object(
+        EmailMessage, "send",
+        side_effect=ConnectionError("550 leak@example.com bounced: gory details"),
+    ):
+        send_with_retry(msg, audit_action="x", target_username="u")
+    audit = AuditEvent.objects.filter(action="email_queued_for_retry").last()
+    assert audit is not None
+    assert audit.payload.get("error_class") == "ConnectionError"
+    # The verbatim message must NOT appear in the audit payload.
+    payload_text = str(audit.payload)
+    assert "550" not in payload_text
+    assert "leak@example.com" not in payload_text
+    assert "gory details" not in payload_text
+
+
+@pytest.mark.django_db
 def test_notify_worker_processes_queue(config_path):
     """The notify-once CLI command now drains the queue."""
     from ameli_app.cli import main

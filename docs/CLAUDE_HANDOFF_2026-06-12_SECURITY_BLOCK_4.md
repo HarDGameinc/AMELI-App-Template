@@ -683,6 +683,41 @@ Hallazgos:
 Considera enable-by-default del notifier en futuros installs (item
 operativo, no de seguridad).
 
+### Revision final de seguridad y calidad (cierre bloque 4)
+
+Antes de cerrar el bloque corrimos dos pasadas independientes
+(security review + code quality review) sobre los cambios de #8
+y #3. Cero hallazgos criticos o altos. Aplicamos los hallazgos de
+nivel medio + should-fix en un commit de hardening:
+
+| # | Frente | Fix aplicado |
+|---|---|---|
+| SEC-1 | newline injection en `apply_audit_key_to_env_file` | rechazar `to_key` con `\n`/`\r`/`=` |
+| SEC-2 | symlink swap en env path | rechazar `os.path.islink(env_path)` |
+| SEC-4 | excepcion SMTP cruda en audit chain | solo `error_class` (nombre de la clase) en audit; el texto completo queda en `OutboundEmail.last_error` |
+| SEC-5 | bodies con tokens persisten post-delivery | `body=""` y `to_emails=[]` en transicion a `STATUS_SENT`; idem para expirados |
+| SEC-6 | `mfa_disabled_by_admin` sin TTL en cola | `expires_at = now+2h` |
+| QUAL-1 | monkey-patch en `django._setup_complete_for_notify` | usar `django.apps.apps.ready` como sentinela canonica |
+| QUAL-3 | `select_for_update(skip_locked=True)` no-op en SQLite | guard con `connection.features.has_select_for_update_skip_locked` + docstring de "1 worker on SQLite" |
+| QUAL-4 | `mfa_disabled_notify_sent` pierde `actor`/`email` cuando va por cola | nuevo `OutboundEmail.audit_payload` (JSONField, migracion 0010), `send_with_retry` lo persiste, el worker hace merge al delivery audit |
+| QUAL-5 | `_PasswordResetEmail` definido despues de sus callers | movido arriba del bloque de cola |
+| QUAL-6 | type hints faltantes (`expires_at`, `now`) | anotados |
+| QUAL-10 | thundering herd post-outage SMTP | `_email_retry_delay_seconds` con jitter `random.uniform(0.8, 1.2)` |
+| QUAL-11 | magic numbers en exit codes del CLI | constantes `EXIT_OK=0 / EXIT_GENERIC_ERROR=1 / EXIT_ROTATION_REFUSED=2 / EXIT_CHAIN_BROKEN_STRICT=3 / EXIT_ENV_WRITE_FAILED=4` |
+| QUAL-12 | subject sin truncar (`CharField(max_length=255)` rompe en PG) | clamp explicito en `send_with_retry` |
+
+Diferidos (no afectan postura de seguridad, registrados como backlog
+tecnico post-revision):
+
+- Keys via env/stdin en lugar de argv (visible en `ps`/history)
+- O_NOFOLLOW + lstat para env file (alternativa al refuse-symlink actual)
+- Structured logging / metricas Prometheus en el worker
+- Admin UI para `OutboundEmail`
+- Tests adicionales: unicode bodies, concurrencia 2 workers, timezone naive en `expires_at`, `to_emails` grandes
+- fsync del directorio post-`os.replace` (durabilidad ante power-loss)
+
+Tests post-hardening: **589 verde** (1 deselected pre-existente).
+
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash `5286ed1`

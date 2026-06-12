@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import os
+import tempfile
 from typing import Any
 
 from django.contrib.auth import get_user_model, logout as auth_logout
@@ -375,13 +378,22 @@ def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
 
     Preserves file mode if the target already exists. Refuses to run if
     ``new_key`` is empty (defense against the exact bug observed during
-    the #6 verification: a shell variable typo blanked the env value).
+    the #6 verification: a shell variable typo blanked the env value),
+    contains a newline or carriage return (would inject extra env
+    variables), or contains an ``=`` (would corrupt the line shape).
     """
-    import os
-    import tempfile
-
     if not new_key:
         return {"ok": False, "error": "new_key is empty; refusing to write env file"}
+    if any(ch in new_key for ch in ("\n", "\r", "=")):
+        return {
+            "ok": False,
+            "error": "new_key contains newline/carriage-return/'='; refusing to write env file",
+        }
+    # Defensive: refuse symlinks at the target path. Mostly cosmetic
+    # because the env file lives in a root-owned directory, but cheap
+    # defense-in-depth against a symlink-swap by a compromised role.
+    if os.path.islink(env_path):
+        return {"ok": False, "error": f"refusing to write through symlink: {env_path}"}
     try:
         with open(env_path, encoding="utf-8") as fh:
             lines = fh.readlines()
@@ -1406,17 +1418,23 @@ def _send_mfa_disabled_by_admin_notification(user, *, actor_username: str) -> bo
     # action itself completes, the notification slides to the queue
     # and the worker retries. Permanent failure is audited by the
     # worker as ``email_failed_permanent`` after max_attempts.
+    # audit_payload preserves the {actor, email} context the inline
+    # path records so the eventual delivery audit row is equivalent.
+    # expires_at caps the lifetime: a "your 2FA got disabled" message
+    # that arrives 7 h late is more confusing than useful.
     result = send_with_retry(
         email,
         audit_action="mfa_disabled_notify_sent",
         target_username=user.username,
+        audit_payload={"email": user.email, "actor": actor_username or "admin"},
+        expires_at=timezone.now() + timedelta(hours=2),
     )
     if result["status"] == "queued":
         record_audit(
             "mfa_disabled_notify_queued",
             actor=actor,
             target_username=user.username,
-            payload={"queue_id": result.get("queue_id"), "reason": result.get("error")},
+            payload={"queue_id": result.get("queue_id"), "error_class": "queued"},
         )
         return True
     record_audit(
@@ -1718,197 +1736,6 @@ def _build_reset_url(uidb64: str, token: str, base_url: str) -> str:
     return path
 
 
-_EMAIL_RETRY_SCHEDULE_SECONDS: tuple[int, ...] = (
-    60,        # attempt 1 -> retry in 1 min
-    5 * 60,    # attempt 2 -> 5 min
-    15 * 60,   # 3 -> 15 min
-    60 * 60,   # 4 -> 1 h
-    6 * 60 * 60,  # 5 -> 6 h
-)
-
-
-def _email_retry_delay_seconds(attempts: int) -> int:
-    if attempts <= 0:
-        return _EMAIL_RETRY_SCHEDULE_SECONDS[0]
-    idx = min(attempts - 1, len(_EMAIL_RETRY_SCHEDULE_SECONDS) - 1)
-    return _EMAIL_RETRY_SCHEDULE_SECONDS[idx]
-
-
-def _build_email_message(row: OutboundEmail) -> EmailMessage:
-    """Reconstruct an EmailMessage from a persisted queue row."""
-    message_class: type[EmailMessage] = EmailMessage
-    if row.use_ascii_passthrough:
-        try:
-            row.body.encode("us-ascii")
-            row.subject.encode("us-ascii")
-            message_class = _PasswordResetEmail
-        except UnicodeEncodeError:
-            message_class = EmailMessage
-    return message_class(
-        subject=row.subject,
-        body=row.body,
-        from_email=row.from_email or None,
-        to=list(row.to_emails or []),
-    )
-
-
-def send_with_retry(
-    message: EmailMessage,
-    *,
-    audit_action: str = "",
-    target_username: str = "",
-    expires_at=None,
-    max_attempts: int = 5,
-) -> dict[str, Any]:
-    """Send an email inline; on failure persist it for the retry worker.
-
-    Use this from flows that can tolerate eventual delivery — password
-    resets, admin notifications. Flows that need the user to see the
-    error immediately (profile test email, MFA codes during login)
-    must keep calling ``.send(fail_silently=False)`` directly.
-
-    Returns ``{ok, status, ...}`` where status is ``"sent"`` (delivered
-    inline), ``"queued"`` (persisted for retry), or ``"failed"``
-    (already past max_attempts somehow). The caller is expected to
-    treat ``queued`` as a soft success — the user-facing action
-    succeeded, delivery just slid to the background.
-    """
-    use_ascii = isinstance(message, _PasswordResetEmail)
-    try:
-        message.send(fail_silently=False)
-    except Exception as exc:  # noqa: BLE001 - queue swallows by design
-        now = timezone.now()
-        row = OutboundEmail.objects.create(
-            subject=message.subject or "",
-            body=message.body or "",
-            from_email=message.from_email or "",
-            to_emails=list(message.to or []),
-            use_ascii_passthrough=use_ascii,
-            audit_action=audit_action,
-            target_username=target_username,
-            attempts=1,
-            max_attempts=max_attempts,
-            next_retry_at=now + timedelta(seconds=_email_retry_delay_seconds(1)),
-            last_error=f"{exc.__class__.__name__}: {exc}",
-            expires_at=expires_at,
-        )
-        record_audit(
-            "email_queued_for_retry",
-            target_username=target_username,
-            payload={
-                "queue_id": row.pk,
-                "audit_action": audit_action,
-                "to": list(message.to or []),
-                "reason": row.last_error,
-            },
-        )
-        return {"ok": True, "status": "queued", "queue_id": row.pk, "error": row.last_error}
-    return {"ok": True, "status": "sent"}
-
-
-def process_email_queue(*, max_batch: int = 50, now=None) -> dict[str, Any]:
-    """Walk the OutboundEmail pending rows whose retry time elapsed.
-
-    On success: mark ``sent``, audit ``audit_action`` (if set) so
-    downstream "we tried again" is observable.
-
-    On failure: bump ``attempts``, push ``next_retry_at`` forward
-    using the backoff schedule, store ``last_error``. After
-    ``max_attempts`` failures, mark ``failed`` and audit
-    ``email_failed_permanent`` so the operator gets a signal.
-
-    Rows whose ``expires_at`` has passed are dropped without sending
-    (e.g. a password-reset token that the user won't be able to
-    redeem anyway).
-    """
-    from django.db import transaction
-
-    current = now or timezone.now()
-    pending_ids = list(
-        OutboundEmail.objects
-        .filter(status=OutboundEmail.STATUS_PENDING, next_retry_at__lte=current)
-        .order_by("next_retry_at", "id")
-        .values_list("pk", flat=True)[:max_batch]
-    )
-    sent = 0
-    requeued = 0
-    failed = 0
-    expired = 0
-    for pk in pending_ids:
-        with transaction.atomic():
-            row = (
-                OutboundEmail.objects
-                .select_for_update(skip_locked=True)
-                .filter(pk=pk, status=OutboundEmail.STATUS_PENDING)
-                .first()
-            )
-            if row is None:
-                continue
-            if row.expires_at and row.expires_at <= current:
-                row.status = OutboundEmail.STATUS_FAILED
-                row.last_error = "expired before delivery"
-                row.save(update_fields=["status", "last_error", "updated_at"])
-                record_audit(
-                    "email_failed_permanent",
-                    target_username=row.target_username,
-                    payload={
-                        "queue_id": row.pk,
-                        "audit_action": row.audit_action,
-                        "reason": "expired",
-                    },
-                )
-                expired += 1
-                continue
-            try:
-                _build_email_message(row).send(fail_silently=False)
-            except Exception as exc:  # noqa: BLE001 - by design
-                row.attempts += 1
-                row.last_error = f"{exc.__class__.__name__}: {exc}"
-                if row.attempts >= row.max_attempts:
-                    row.status = OutboundEmail.STATUS_FAILED
-                    row.save(update_fields=["attempts", "last_error", "status", "updated_at"])
-                    record_audit(
-                        "email_failed_permanent",
-                        target_username=row.target_username,
-                        payload={
-                            "queue_id": row.pk,
-                            "audit_action": row.audit_action,
-                            "attempts": row.attempts,
-                            "reason": row.last_error,
-                        },
-                    )
-                    failed += 1
-                else:
-                    row.next_retry_at = timezone.now() + timedelta(
-                        seconds=_email_retry_delay_seconds(row.attempts)
-                    )
-                    row.save(update_fields=[
-                        "attempts", "last_error", "next_retry_at", "updated_at",
-                    ])
-                    requeued += 1
-                continue
-            row.status = OutboundEmail.STATUS_SENT
-            row.save(update_fields=["status", "updated_at"])
-            if row.audit_action:
-                record_audit(
-                    row.audit_action,
-                    target_username=row.target_username,
-                    payload={
-                        "queue_id": row.pk,
-                        "delivered_after_attempts": row.attempts + 1,
-                    },
-                )
-            sent += 1
-    return {
-        "ok": True,
-        "considered": len(pending_ids),
-        "sent": sent,
-        "requeued": requeued,
-        "failed": failed,
-        "expired": expired,
-    }
-
-
 class _PasswordResetEmail(EmailMessage):
     """EmailMessage variant that forces a 7bit body so the long reset URL
     is never soft-wrapped with ``=\\n`` by Python's quoted-printable encoder.
@@ -1933,6 +1760,246 @@ class _PasswordResetEmail(EmailMessage):
         msg.set_payload(self.body, charset=None)
         msg.set_param("charset", "us-ascii")
         return msg
+
+
+_EMAIL_RETRY_SCHEDULE_SECONDS: tuple[int, ...] = (
+    60,        # attempt 1 -> retry in 1 min
+    5 * 60,    # attempt 2 -> 5 min
+    15 * 60,   # 3 -> 15 min
+    60 * 60,   # 4 -> 1 h
+    6 * 60 * 60,  # 5 -> 6 h
+)
+
+
+def _email_retry_delay_seconds(attempts: int) -> int:
+    """Backoff + ±20% jitter so a fleet of workers doesn't synchronize
+    after a shared SMTP outage and thundering-herd the next window."""
+    import random
+
+    if attempts <= 0:
+        base = _EMAIL_RETRY_SCHEDULE_SECONDS[0]
+    else:
+        idx = min(attempts - 1, len(_EMAIL_RETRY_SCHEDULE_SECONDS) - 1)
+        base = _EMAIL_RETRY_SCHEDULE_SECONDS[idx]
+    return int(base * random.uniform(0.8, 1.2))
+
+
+def _build_email_message(row: OutboundEmail) -> EmailMessage:
+    """Reconstruct an EmailMessage from a persisted queue row."""
+    message_class: type[EmailMessage] = EmailMessage
+    if row.use_ascii_passthrough:
+        try:
+            row.body.encode("us-ascii")
+            row.subject.encode("us-ascii")
+            message_class = _PasswordResetEmail
+        except UnicodeEncodeError:
+            message_class = EmailMessage
+    return message_class(
+        subject=row.subject,
+        body=row.body,
+        from_email=row.from_email or None,
+        to=list(row.to_emails or []),
+    )
+
+
+_OUTBOUND_SUBJECT_MAX_LEN = 255
+
+
+def send_with_retry(
+    message: EmailMessage,
+    *,
+    audit_action: str = "",
+    target_username: str = "",
+    expires_at: "datetime | None" = None,
+    max_attempts: int = 5,
+    audit_payload: dict | None = None,
+) -> dict[str, Any]:
+    """Send an email inline; on failure persist it for the retry worker.
+
+    Use this from flows that can tolerate eventual delivery — password
+    resets, admin notifications. Flows that need the user to see the
+    error immediately (profile test email, MFA codes during login)
+    must keep calling ``.send(fail_silently=False)`` directly.
+
+    ``audit_payload`` is merged into the audit row written when the
+    worker eventually delivers (or fails) the message. Use it to
+    preserve actor/context that the inline-success path would have
+    audited (e.g. ``{"email": user.email, "actor": admin.username}``)
+    so going through the queue doesn't lose information.
+
+    Returns ``{ok, status, ...}`` where status is ``"sent"`` (delivered
+    inline), ``"queued"`` (persisted for retry), or ``"failed"``
+    (already past max_attempts somehow). The caller is expected to
+    treat ``queued`` as a soft success — the user-facing action
+    succeeded, delivery just slid to the background.
+    """
+    use_ascii = isinstance(message, _PasswordResetEmail)
+    try:
+        message.send(fail_silently=False)
+    except Exception as exc:  # noqa: BLE001 - queue swallows by design
+        now = timezone.now()
+        # Raw exception strings often contain PII (recipient
+        # addresses, snippets of the message) so store the full text
+        # only on the operational row, and surface only the exception
+        # class in the immutable audit chain.
+        exc_class = exc.__class__.__name__
+        last_error = f"{exc_class}: {exc}"
+        # Subjects beyond the column limit would explode on PG and
+        # silently truncate on SQLite; do it explicitly here.
+        subject = (message.subject or "")[:_OUTBOUND_SUBJECT_MAX_LEN]
+        row = OutboundEmail.objects.create(
+            subject=subject,
+            body=message.body or "",
+            from_email=message.from_email or "",
+            to_emails=list(message.to or []),
+            use_ascii_passthrough=use_ascii,
+            audit_action=audit_action,
+            audit_payload=dict(audit_payload or {}),
+            target_username=target_username,
+            attempts=1,
+            max_attempts=max_attempts,
+            next_retry_at=now + timedelta(seconds=_email_retry_delay_seconds(1)),
+            last_error=last_error,
+            expires_at=expires_at,
+        )
+        record_audit(
+            "email_queued_for_retry",
+            target_username=target_username,
+            payload={
+                "queue_id": row.pk,
+                "audit_action": audit_action,
+                "recipient_count": len(message.to or []),
+                "error_class": exc_class,
+            },
+        )
+        return {"ok": True, "status": "queued", "queue_id": row.pk, "error": last_error}
+    return {"ok": True, "status": "sent"}
+
+
+def process_email_queue(
+    *, max_batch: int = 50, now: "datetime | None" = None,
+) -> dict[str, Any]:
+    """Walk the OutboundEmail pending rows whose retry time elapsed.
+
+    On success: mark ``sent``, audit ``audit_action`` (if set,
+    merging ``audit_payload`` so context the inline path would have
+    written is preserved), then purge the body so the reset token
+    does not linger in the DB past its useful life.
+
+    On failure: bump ``attempts``, push ``next_retry_at`` forward
+    using the backoff schedule, store ``last_error``. After
+    ``max_attempts`` failures, mark ``failed`` and audit
+    ``email_failed_permanent`` so the operator gets a signal.
+
+    Rows whose ``expires_at`` has passed are dropped without sending
+    (e.g. a password-reset token that the user won't be able to
+    redeem anyway).
+
+    Uses ``select_for_update(skip_locked=True)`` so concurrent
+    workers pick disjoint rows. On backends that don't support
+    ``skip_locked`` (e.g. SQLite, which silently ignores
+    ``select_for_update``), this degrades to a non-locking read —
+    in those environments use only one worker.
+    """
+    from django.db import connection, transaction
+
+    current = now or timezone.now()
+    supports_skip_locked = getattr(
+        connection.features, "has_select_for_update_skip_locked", False
+    )
+    pending_ids = list(
+        OutboundEmail.objects
+        .filter(status=OutboundEmail.STATUS_PENDING, next_retry_at__lte=current)
+        .order_by("next_retry_at", "id")
+        .values_list("pk", flat=True)[:max_batch]
+    )
+    sent = 0
+    requeued = 0
+    failed = 0
+    expired = 0
+    for pk in pending_ids:
+        with transaction.atomic():
+            qs = OutboundEmail.objects.filter(
+                pk=pk, status=OutboundEmail.STATUS_PENDING,
+            )
+            if supports_skip_locked:
+                qs = qs.select_for_update(skip_locked=True)
+            row = qs.first()
+            if row is None:
+                continue
+            if row.expires_at and row.expires_at <= current:
+                row.status = OutboundEmail.STATUS_FAILED
+                row.last_error = "expired before delivery"
+                row.body = ""
+                row.save(update_fields=["status", "last_error", "body", "updated_at"])
+                record_audit(
+                    "email_failed_permanent",
+                    target_username=row.target_username,
+                    payload={
+                        "queue_id": row.pk,
+                        "audit_action": row.audit_action,
+                        "reason": "expired",
+                    },
+                )
+                expired += 1
+                continue
+            try:
+                _build_email_message(row).send(fail_silently=False)
+            except Exception as exc:  # noqa: BLE001 - by design
+                exc_class = exc.__class__.__name__
+                row.attempts += 1
+                row.last_error = f"{exc_class}: {exc}"
+                if row.attempts >= row.max_attempts:
+                    row.status = OutboundEmail.STATUS_FAILED
+                    row.save(update_fields=["attempts", "last_error", "status", "updated_at"])
+                    record_audit(
+                        "email_failed_permanent",
+                        target_username=row.target_username,
+                        payload={
+                            "queue_id": row.pk,
+                            "audit_action": row.audit_action,
+                            "attempts": row.attempts,
+                            "error_class": exc_class,
+                        },
+                    )
+                    failed += 1
+                else:
+                    row.next_retry_at = timezone.now() + timedelta(
+                        seconds=_email_retry_delay_seconds(row.attempts)
+                    )
+                    row.save(update_fields=[
+                        "attempts", "last_error", "next_retry_at", "updated_at",
+                    ])
+                    requeued += 1
+                continue
+            row.status = OutboundEmail.STATUS_SENT
+            # Purge body + recipients now that delivery succeeded. The
+            # body may contain a one-time password-reset token whose
+            # blast radius we want to bound; keeping it after delivery
+            # adds nothing and expands a DB-read incident.
+            row.body = ""
+            row.to_emails = []
+            row.save(update_fields=["status", "body", "to_emails", "updated_at"])
+            if row.audit_action:
+                merged_payload = dict(row.audit_payload or {})
+                merged_payload.update({
+                    "queue_id": row.pk,
+                    "delivered_after_attempts": row.attempts + 1,
+                })
+                record_audit(
+                    row.audit_action,
+                    target_username=row.target_username,
+                    payload=merged_payload,
+                )
+            sent += 1
+    return {
+        "ok": True,
+        "considered": len(pending_ids),
+        "sent": sent,
+        "requeued": requeued,
+        "failed": failed,
+        "expired": expired,
+    }
 
 
 def _send_password_reset_email(user, reset_url: str) -> dict[str, Any]:

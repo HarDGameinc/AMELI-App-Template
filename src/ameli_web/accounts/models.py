@@ -236,6 +236,7 @@ class OutboundEmail(models.Model):
     to_emails = models.JSONField(default=list)
     use_ascii_passthrough = models.BooleanField(default=False)
     audit_action = models.CharField(max_length=80, blank=True, default="")
+    audit_payload = models.JSONField(default=dict, blank=True)
     target_username = models.CharField(max_length=150, blank=True, default="")
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True,
