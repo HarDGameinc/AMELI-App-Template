@@ -784,6 +784,59 @@ Tests nuevos (4):
 - mutual-exclusion: `--from-key` + `--from-key-env` -> SystemExit
   del argparse
 
+#### Verificacion operativa en server dev (2026-06-12)
+
+Server: `ha-report2`, commit `8c21d75`.
+
+```text
+# Help muestra el grupo mutuamente excluyente
+.venv/bin/ameli-app rotate-audit-key --help
+  usage: ameli-app rotate-audit-key [-h]
+    (--from-key FROM_KEY | --from-key-env VARNAME | --from-key-stdin)
+    (--to-key TO_KEY | --to-key-env VARNAME | --to-key-stdin)
+    [--apply-env APPLY_ENV]
+
+# Mutual exclusion bloqueada por argparse
+rotate-audit-key --from-key x --from-key-env Y --to-key z
+  -> error: argument --from-key-env: not allowed with argument --from-key
+
+# Env var no seteada -> EXIT_ROTATION_REFUSED
+rotate-audit-key --from-key-env NEVERSET_KEY --to-key validdummy
+  -> { "ok": false, "error": "env var 'NEVERSET_KEY' is empty or unset" }
+     exit=2
+
+# Camino recomendado end-to-end (env vars + apply-env)
+export OLD_KEY NEW_KEY
+rotate-audit-key --from-key-env OLD_KEY --to-key-env NEW_KEY \
+  --apply-env /etc/ameli-app-template-dev/app.env
+  -> { "ok": true, "rotated": 11,
+       "next_steps": [...4 pasos...],
+       "env_file": { "ok": true, "appended": false },
+       "verify_result": { "checked": 11, "ok": true } }
+     exit=0
+systemctl restart api && verify-audit
+  -> { "checked": 11, "ok": true }
+unset OLD_KEY NEW_KEY
+
+# Variante stdin (pipe deterministico, from primero)
+{ printf '%s\n%s\n' "$OLD2" "$NEW2"; } | \
+  rotate-audit-key --from-key-stdin --to-key-stdin --apply-env $TEST_ENV
+  -> { "ok": true, "rotated": 12, ... }
+restart + verify
+  -> { "checked": 12, "ok": true }
+```
+
+Hallazgos:
+- Las tres entradas funcionan; `argparse` enforced la mutual-exclusion
+  sin escapes;
+- El `--apply-env` sigue siendo idempotente (`appended: false` cuando
+  la linea ya existe);
+- La chain se mantiene verificable tras dos rotaciones consecutivas
+  (11 -> 12 rows);
+- Ya no aparece la key en `ps`/historial cuando se usan `--*-env` o
+  `--*-stdin`. El flujo legacy con `--from-key/--to-key` sigue
+  funcionando para compatibilidad.
+
 ### Orden recomendado para retomar
 
 1. Resync local + servidor al hash `5286ed1`
