@@ -764,9 +764,17 @@ items diferidos al backlog tecnico (sin impacto de seguridad).
 | Admin UI para `OutboundEmail` | listo, verificado en server | `c49e400` |
 | Structured logging del worker | listo, verificado en server | `2a31bd1` |
 | Tests adicionales (unicode/concurrencia/tz naive) | listo | `345cc68` |
-| O_NOFOLLOW + dir fsync | listo (este commit) |  |
+| O_NOFOLLOW + dir fsync | listo, verificado en server | `3dff8e6` |
 
-Backlog del post-cierre **cerrado por completo**.
+Backlog del post-cierre **cerrado por completo y verificado**.
+
+Verificacion operativa del cierre (commit `3dff8e6` en `ha-report2`):
+- Symlink rejection via O_NOFOLLOW: `{ok: false, error: 'refusing to write through symlink: ...'}` (kernel ELOOP, no Python pre-check)
+- Rotacion full con `--from-key-env / --to-key-env / --apply-env`:
+  `{ok: true, rotated: 53, env_file.ok: true, exit=0}`
+- Chain post-rotacion + restart: `{checked: 53, ok: true}`
+- fsync del parent dir corrio silenciosamente — best-effort sin
+  romper exit code.
 
 ### Admin UI para `OutboundEmail`
 
