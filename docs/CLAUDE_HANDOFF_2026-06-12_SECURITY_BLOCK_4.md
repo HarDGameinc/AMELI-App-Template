@@ -487,8 +487,81 @@ requiere desarrollo.
      .venv/bin/ameli-app rotate-audit-key --from-key ... --to-key ... --apply-env ...
    ```
 
-5. ⏳ **Limpieza del chain roto del H6 (row 482) en server dev**:
-   sigue abierto como item 9. El runbook ya esta abajo.
+5. ✅ **Limpieza del chain (item 9) — resuelto colateralmente**.
+   Como la `OLD_KEY` se perdio cuando el env file quedo en blanco,
+   no habia forma de verificar la chain historica. Se opto por el
+   wipe-and-restart documentado, ver "Verificacion operativa de
+   #8 + #9 en server dev" abajo.
+
+#### Verificacion operativa de #8 + #9 en server dev (2026-06-12)
+
+Server: `ha-report2`, ruta `/opt/ameli-app-template-dev`, commit
+`321b6fa`.
+
+Estado inicial:
+- Env file con `AMELI_APP_AUDIT_HMAC_KEY=` (vacia, secuela de la
+  verificacion #6).
+- Chain con 516 rows firmadas bajo la `OLD_KEY` perdida, mas la
+  legacy de row 482 del H6.
+
+Pasos ejecutados y resultado:
+
+```text
+# 1. Sync al commit del #8
+git fetch origin dev && git reset --hard 321b6fa
+.venv/bin/ameli-app version   → AMELI App Template v0.2.0-django
+
+# 2. Wipe completo (item 9 — ya no hay key para verificar la chain vieja)
+shell -c "AuditEvent.objects.update(hmac='', prev_hmac='')"
+  → wiped=516
+
+# 3. Generar NEW_KEY y aplicar al env real
+NEW_KEY=nc8sBTYrofLVESyJ1KbRWj2j2VCRCpa3RjqTnGz_ivb84rWHs6z1Rc-D5ZSeq8V7
+sed -i "...AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY..."
+systemctl restart ameli-app-template-dev-api.service
+
+# 4. Verificar chain limpia
+verify-audit --strict-precondition   → {"checked": 0, "ok": true}, exit=0
+
+# 5. Forzar la primera row de la chain nueva
+record_audit('block4_post_wipe_test')
+verify-audit   → {"checked": 1, "ok": true}
+
+# 6. Probar rotacion completa con --apply-env contra un env de TEST
+TEST_ENV=/tmp/test-rotate.env (copia del real)
+OLD_KEY=$NEW_KEY   # capturado desde el env real
+NEW_KEY2=iOUTfMN9UDn8lct1FNBn9kS_e4GoceZVevbNEQnvJCzGXQRo8-N4bRttb-HQSAlb
+guards OK
+rotate-audit-key --from-key $OLD_KEY --to-key $NEW_KEY2 --apply-env $TEST_ENV
+  → {
+      "ok": true,
+      "rotated": 2,
+      "env_file": {"appended": false, "env_path": "/tmp/test-rotate.env", "ok": true},
+      "next_steps": [4 pasos en castellano: update env, restart, verify],
+      "verify_result": {"checked": 2, "ok": true}
+    }
+grep AMELI_APP_AUDIT_HMAC_KEY /tmp/test-rotate.env
+  → AMELI_APP_AUDIT_HMAC_KEY=<NEW_KEY2>     # reemplazo atomico OK
+
+# 7. Sincronizar el env real con la rotacion + restart + verify final
+sed -i "...AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY2..."
+systemctl restart ameli-app-template-dev-api.service
+verify-audit   → {"checked": 2, "ok": true}
+```
+
+Hallazgos:
+
+- `verify-audit --strict-precondition` se comporto como esperado:
+  exit 0 con chain limpia, exit 3 con chain rota o sin key.
+- `--apply-env` reemplazo la linea atomicamente, sin tocar el resto
+  del env file ni alterar permisos (`chmod 600` se preservo).
+- El JSON con `next_steps` quedo visible para el operador y elimina
+  el "OK silencioso" que motivo la fuga del #6.
+- Item 9 cerrado de paso: la chain en server dev queda firmada bajo
+  `NEW_KEY2` desde 2 rows verificables (la primera del wipe + la
+  rotacion).
+
+Items pendientes post-verificacion: ninguno. #8 y #9 cerrados.
 
 #### Como devolver el server dev al estado anterior (sin re-desplegar)
 
@@ -526,12 +599,16 @@ aparecieron al verificarlo en el server:
 |---|---|---|---|
 | 3 | Retry + queue para emails fallidos | Operativo | Medio |
 | 2 | Selector de idioma en header (i18n loop) | UX | Chico |
-| **9** | **Limpieza del chain roto del row 482** en server dev (legacy del tampering del H6) — runbook ya escrito, no requiere desarrollo | Operativo | Trivial |
 
-(Item 8 — endurecer recipe + helper de rotacion HMAC — cerrado en
-esta sesion: `next_steps` en la respuesta del rotate, bash guards en
-`OPERATIONS.md`, `--apply-env` en `rotate-audit-key`,
-`--strict-precondition` en `verify-audit`.)
+Items cerrados en esta sesion:
+- **Item 8** — endurecer recipe + helper de rotacion HMAC:
+  `next_steps` en la respuesta del rotate, bash guards en
+  `OPERATIONS.md`, `--apply-env` en `rotate-audit-key`,
+  `--strict-precondition` en `verify-audit`. Commit `321b6fa`.
+- **Item 9** — wipe del chain legacy del H6 en server dev
+  ejecutado durante la verificacion del #8 (la `OLD_KEY` se habia
+  perdido, asi que no quedaba mejor camino). Chain ahora firmada
+  bajo una nueva key con 2 rows verificables.
 
 ### Orden recomendado para retomar
 
