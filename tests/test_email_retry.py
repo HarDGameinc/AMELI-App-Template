@@ -367,6 +367,75 @@ def test_admin_outbound_email_is_read_only(client, admin_user):
 
 
 @pytest.mark.django_db
+def test_queue_emits_structured_log_on_queue_and_delivery(caplog, settings):
+    """Each transition (queued, requeued, gave_up, expired, delivered)
+    emits a record on the ``ameli.email_queue`` logger with structured
+    extras so a downstream collector can index by queue_id /
+    audit_action / error_class without parsing the message."""
+    import logging
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue, send_with_retry
+
+    settings.AUDIT_HMAC_KEY = "k"
+    caplog.set_level(logging.DEBUG, logger="ameli.email_queue")
+
+    msg = EmailMessage("subj", "body", "from@x", ["to@x"])
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("smtp")):
+        result = send_with_retry(msg, audit_action="x", target_username="alice")
+    queued_records = [r for r in caplog.records if getattr(r, "event", "") == "email.queued"]
+    assert len(queued_records) == 1
+    assert queued_records[0].queue_id == result["queue_id"]
+    assert queued_records[0].error_class == "ConnectionError"
+
+    row = OutboundEmail.objects.get(pk=result["queue_id"])
+    row.next_retry_at = timezone.now() - timedelta(seconds=1)
+    row.save(update_fields=["next_retry_at"])
+    caplog.clear()
+    with patch.object(EmailMessage, "send", return_value=1):
+        process_email_queue()
+    delivered = [r for r in caplog.records if getattr(r, "event", "") == "email.delivered"]
+    assert len(delivered) == 1
+    assert delivered[0].queue_id == row.pk
+    tick = [r for r in caplog.records if getattr(r, "event", "") == "email.queue_tick"]
+    assert len(tick) == 1
+    assert tick[0].sent == 1
+
+
+@pytest.mark.django_db
+def test_queue_emits_structured_log_on_gave_up_and_expired(caplog, settings):
+    import logging
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue
+
+    settings.AUDIT_HMAC_KEY = "k"
+    caplog.set_level(logging.DEBUG, logger="ameli.email_queue")
+
+    # gave_up
+    OutboundEmail.objects.create(
+        subject="s", body="b", to_emails=["x@x"],
+        attempts=4, max_attempts=5, audit_action="da",
+        next_retry_at=timezone.now() - timedelta(seconds=1),
+    )
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("dead")):
+        process_email_queue()
+    gave_up = [r for r in caplog.records if getattr(r, "event", "") == "email.gave_up"]
+    assert len(gave_up) == 1
+    assert gave_up[0].attempts == 5
+
+    # expired
+    caplog.clear()
+    OutboundEmail.objects.create(
+        subject="s", body="b", to_emails=["x@x"],
+        audit_action="da",
+        next_retry_at=timezone.now() - timedelta(seconds=1),
+        expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    process_email_queue()
+    expired = [r for r in caplog.records if getattr(r, "event", "") == "email.expired"]
+    assert len(expired) == 1
+
+
+@pytest.mark.django_db
 def test_notify_worker_processes_queue(config_path):
     """The notify-once CLI command now drains the queue."""
     from ameli_app.cli import main

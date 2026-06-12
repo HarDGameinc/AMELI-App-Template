@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from typing import Any
@@ -41,6 +42,13 @@ ROLE_GROUPS = {
     "public": "public",
     "superadmin": "superadmin",
 }
+
+# Dedicated logger for the email retry pipeline. Operational events
+# (queue, retry, deliver, expire, give up) flow here as INFO/WARNING
+# with structured ``extra=`` fields so a downstream collector can
+# index by ``queue_id`` / ``audit_action`` / ``error_class`` without
+# parsing the message body.
+email_queue_logger = logging.getLogger("ameli.email_queue")
 
 
 def _validate_password_value(password: str, *, user=None) -> None:
@@ -1872,7 +1880,30 @@ def send_with_retry(
                 "error_class": exc_class,
             },
         )
+        email_queue_logger.warning(
+            "email.queued queue_id=%s audit_action=%s error_class=%s",
+            row.pk, audit_action or "-", exc_class,
+            extra={
+                "event": "email.queued",
+                "queue_id": row.pk,
+                "audit_action": audit_action,
+                "target_username": target_username,
+                "error_class": exc_class,
+                "recipient_count": len(message.to or []),
+                "attempts": 1,
+            },
+        )
         return {"ok": True, "status": "queued", "queue_id": row.pk, "error": last_error}
+    email_queue_logger.info(
+        "email.sent_inline audit_action=%s target=%s",
+        audit_action or "-", target_username or "-",
+        extra={
+            "event": "email.sent_inline",
+            "audit_action": audit_action,
+            "target_username": target_username,
+            "recipient_count": len(message.to or []),
+        },
+    )
     return {"ok": True, "status": "sent"}
 
 
@@ -1941,6 +1972,16 @@ def process_email_queue(
                         "reason": "expired",
                     },
                 )
+                email_queue_logger.warning(
+                    "email.expired queue_id=%s audit_action=%s",
+                    row.pk, row.audit_action or "-",
+                    extra={
+                        "event": "email.expired",
+                        "queue_id": row.pk,
+                        "audit_action": row.audit_action,
+                        "target_username": row.target_username,
+                    },
+                )
                 expired += 1
                 continue
             try:
@@ -1962,6 +2003,18 @@ def process_email_queue(
                             "error_class": exc_class,
                         },
                     )
+                    email_queue_logger.error(
+                        "email.gave_up queue_id=%s audit_action=%s attempts=%d error_class=%s",
+                        row.pk, row.audit_action or "-", row.attempts, exc_class,
+                        extra={
+                            "event": "email.gave_up",
+                            "queue_id": row.pk,
+                            "audit_action": row.audit_action,
+                            "target_username": row.target_username,
+                            "attempts": row.attempts,
+                            "error_class": exc_class,
+                        },
+                    )
                     failed += 1
                 else:
                     row.next_retry_at = timezone.now() + timedelta(
@@ -1970,6 +2023,19 @@ def process_email_queue(
                     row.save(update_fields=[
                         "attempts", "last_error", "next_retry_at", "updated_at",
                     ])
+                    email_queue_logger.warning(
+                        "email.requeued queue_id=%s attempts=%d next_retry=%s error_class=%s",
+                        row.pk, row.attempts, row.next_retry_at.isoformat(), exc_class,
+                        extra={
+                            "event": "email.requeued",
+                            "queue_id": row.pk,
+                            "audit_action": row.audit_action,
+                            "target_username": row.target_username,
+                            "attempts": row.attempts,
+                            "error_class": exc_class,
+                            "next_retry_at": row.next_retry_at.isoformat(),
+                        },
+                    )
                     requeued += 1
                 continue
             row.status = OutboundEmail.STATUS_SENT
@@ -1991,8 +2057,19 @@ def process_email_queue(
                     target_username=row.target_username,
                     payload=merged_payload,
                 )
+            email_queue_logger.info(
+                "email.delivered queue_id=%s audit_action=%s attempts=%d",
+                row.pk, row.audit_action or "-", row.attempts + 1,
+                extra={
+                    "event": "email.delivered",
+                    "queue_id": row.pk,
+                    "audit_action": row.audit_action,
+                    "target_username": row.target_username,
+                    "delivered_after_attempts": row.attempts + 1,
+                },
+            )
             sent += 1
-    return {
+    summary = {
         "ok": True,
         "considered": len(pending_ids),
         "sent": sent,
@@ -2000,6 +2077,13 @@ def process_email_queue(
         "failed": failed,
         "expired": expired,
     }
+    if pending_ids:
+        email_queue_logger.info(
+            "email.queue_tick considered=%d sent=%d requeued=%d failed=%d expired=%d",
+            len(pending_ids), sent, requeued, failed, expired,
+            extra={"event": "email.queue_tick", **summary},
+        )
+    return summary
 
 
 def _send_password_reset_email(user, reset_url: str) -> dict[str, Any]:

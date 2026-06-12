@@ -101,6 +101,32 @@ queue stays driven by the worker. Reaching `/django-admin/`
 requires sudo mode — see "Sudo mode" in `docs/SECURITY.md` if you
 need a refresher.
 
+### Structured logs (`ameli.email_queue`)
+
+Every queue transition emits a record on the `ameli.email_queue`
+Python logger with structured `extra=` fields so an aggregator
+(journald + `MESSAGE_ID`, ELK, Loki, OTEL, ...) can index on
+specific keys. Events:
+
+| `event`              | level   | extras                                                              |
+|----------------------|---------|---------------------------------------------------------------------|
+| `email.sent_inline`  | INFO    | audit_action, target_username, recipient_count                      |
+| `email.queued`       | WARNING | queue_id, audit_action, target_username, error_class, recipient_count, attempts |
+| `email.delivered`    | INFO    | queue_id, audit_action, target_username, delivered_after_attempts   |
+| `email.requeued`     | WARNING | queue_id, audit_action, target_username, attempts, error_class, next_retry_at |
+| `email.gave_up`      | ERROR   | queue_id, audit_action, target_username, attempts, error_class      |
+| `email.expired`      | WARNING | queue_id, audit_action, target_username                             |
+| `email.queue_tick`   | INFO    | considered, sent, requeued, failed, expired                         |
+
+The notifier service ships logs to journald by default; filter by
+the logger name with `journalctl _SYSTEMD_UNIT=ameli-app-template-<env>-notifier.service | grep email\\.`
+or by event:
+
+```bash
+journalctl -u ameli-app-template-dev-notifier.service --since "1 hour ago" \
+  | grep -E 'email\.(queued|requeued|gave_up|expired)'
+```
+
 Flows that need the user to see a failure immediately (the profile
 test-email button, MFA codes during login) keep using
 `.send(fail_silently=False)` and surface the exception to the
