@@ -72,6 +72,18 @@ Schedule it via systemd timer alongside the other workers:
 .venv/bin/ameli-app notify-once
 ```
 
+The installer enables `ameli-app-template-<env>-notifier.service`
+automatically as part of the default `api-worker-maintenance`
+profile (and any other api-bearing profile). The service runs
+`notify-once` in a `sleep $AMELI_APP_NOTIFIER_INTERVAL` loop
+(default 30 s) so the OutboundEmail queue drains continuously
+without operator intervention. If your install pre-dates this
+change, enable it manually:
+
+```bash
+systemctl enable --now ameli-app-template-<env>-notifier.service
+```
+
 Inspect the queue:
 
 ```bash

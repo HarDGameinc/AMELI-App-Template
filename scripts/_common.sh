@@ -316,14 +316,18 @@ resolve_systemd_profile() {
 
   case "${APP_SYSTEMD_PROFILE}" in
     api-worker-maintenance)
-      ENABLED_SERVICE_UNITS=("$(service_unit_name api)")
+      # The notifier daemon drains the OutboundEmail retry queue every
+      # ~30 s (AMELI_APP_NOTIFIER_INTERVAL). Without it, queued mails
+      # sit indefinitely until an operator runs ``notify-once`` by
+      # hand, which defeats the purpose of having a retry queue.
+      ENABLED_SERVICE_UNITS=("$(service_unit_name api)" "$(service_unit_name notifier)")
       ENABLED_TIMER_UNITS=("$(timer_unit_name worker)" "$(timer_unit_name maintenance)")
       ;;
     api-web)
       ENABLED_SERVICE_UNITS=("$(service_unit_name api)" "$(service_unit_name web)")
       ;;
     api-web-worker-maintenance)
-      ENABLED_SERVICE_UNITS=("$(service_unit_name api)" "$(service_unit_name web)")
+      ENABLED_SERVICE_UNITS=("$(service_unit_name api)" "$(service_unit_name web)" "$(service_unit_name notifier)")
       ENABLED_TIMER_UNITS=("$(timer_unit_name worker)" "$(timer_unit_name maintenance)")
       ;;
     web-worker)
