@@ -123,6 +123,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--to-id", type=int, default=None,
         help="Stop verification at this row id (inclusive).",
     )
+    verify_audit.add_argument(
+        "--strict-precondition", action="store_true",
+        help=(
+            "Use a distinct exit code (3) when the chain is broken so an "
+            "automated pipeline can refuse to chain into rotate-audit-key."
+        ),
+    )
 
     rotate_audit_key = sub.add_parser(
         "rotate-audit-key",
@@ -138,6 +145,17 @@ def build_parser() -> argparse.ArgumentParser:
     rotate_audit_key.add_argument(
         "--to-key", required=True,
         help="The new key the chain will be re-signed with.",
+    )
+    rotate_audit_key.add_argument(
+        "--apply-env",
+        dest="apply_env",
+        default=None,
+        help=(
+            "After a successful rotation, atomically rewrite "
+            "AMELI_APP_AUDIT_HMAC_KEY=<to_key> in the given env file. "
+            "Avoids the manual sed step (and the empty-variable footgun). "
+            "You still need to restart the service afterwards."
+        ),
     )
 
     shell = sub.add_parser(
@@ -188,16 +206,33 @@ def _handle_verify_audit(args) -> int:
 
     result = verify_audit_chain(start_id=args.from_id, stop_id=args.to_id)
     _json(result)
+    if result.get("ok"):
+        return 0
     # Non-zero exit when the chain is broken so an operator running this
-    # from cron / systemd timer can hook an alert.
-    return 0 if result.get("ok") else 1
+    # from cron / systemd timer can hook an alert. With
+    # --strict-precondition we return a distinct code (3) so a pipeline
+    # like `verify-audit --strict-precondition && rotate-audit-key`
+    # can detect "you can't rotate yet" specifically.
+    return 3 if args.strict_precondition else 1
 
 
 def _handle_rotate_audit_key(args) -> int:
     _bootstrap_django(args)
-    from ameli_web.accounts.services import rotate_audit_key
+    from ameli_web.accounts.services import (
+        apply_audit_key_to_env_file,
+        rotate_audit_key,
+    )
 
     result = rotate_audit_key(from_key=args.from_key, to_key=args.to_key)
+    if result.get("ok") and args.apply_env:
+        env_result = apply_audit_key_to_env_file(args.apply_env, args.to_key)
+        result["env_file"] = env_result
+        if not env_result.get("ok"):
+            # The DB was rotated successfully but we failed to update the
+            # env file. Surface the failure loudly with a distinct exit
+            # code so the operator knows the in-memory key still mismatches.
+            _json(result)
+            return 4
     _json(result)
     return 0 if result.get("ok") else 2
 

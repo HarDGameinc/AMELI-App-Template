@@ -456,42 +456,39 @@ de mejora pendientes.
   apurado puede saltearlo. El comando `rotate-audit-key` es el que
   defiende; el wrapper de shell del operador no.
 
-#### Items para una proxima sesion (mejora del recipe + helper)
+#### Cierre del #8 (mejoras al recipe + helper)
 
-1. **`rotate-audit-key` debe imprimir un mensaje claro sobre el
-   `env` file**: hoy retorna OK silencioso. Conviene que diga
-   explicitamente "now update AMELI_APP_AUDIT_HMAC_KEY in the env
-   file to the new value and restart".
+Items 1–4 quedaron resueltos en el commit del #8. Item 5 (cleanup
+del row 482) sigue en el backlog como item 9 — es operativo, no
+requiere desarrollo.
 
-2. **Snippet defensivo en `OPERATIONS.md`**: agregar guards bash
-   tipo `[ -n "$NEW_KEY" ] || { echo "ABORT: NEW_KEY is empty"; exit
-   1; }` antes del sed. Tambien chequear el exit code del
-   `rotate-audit-key`:
-   ```bash
-   .venv/bin/ameli-app rotate-audit-key --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
-     echo "ABORT: rotation failed; do NOT touch the env file"
-     exit 1
-   }
-   ```
+1. ✅ **`rotate-audit-key` ahora reporta `next_steps`** en el JSON
+   de salida cuando la rotacion sale OK. El array enumera los pasos
+   exactos: actualizar el env file, restart, re-verificar.
 
-3. **Sub-comando `rotate-audit-key --apply-env <path>`**: variante
-   opcional que despues de rotar exitoso, escribe el nuevo valor al
-   env file (atomicamente). Asi el operador no tiene que coordinar
-   manual entre la rotacion y el sed.
+2. ✅ **`OPERATIONS.md` reescrito con guards bash defensivos**.
+   El recipe captura `OLD_KEY` desde el env file, aborta si alguna
+   variable queda vacia, y enmarca la rotacion con `|| { exit 1; }`
+   para que nadie siga al sed cuando el rotate fallo.
 
-4. **`verify-audit` deberia exponer un flag `--strict-precondition`
-   que aborte con exit code distinto cuando el chain este roto** —
-   util para encadenarlo antes de rotaciones automatizadas:
+3. ✅ **Nuevo flag `--apply-env <path>`** en `rotate-audit-key`.
+   Tras una rotacion OK, reescribe atomicamente la linea
+   `AMELI_APP_AUDIT_HMAC_KEY=` en el archivo dado (write a tempfile
+   en el mismo directorio + `fsync` + `os.replace`). Rechaza correr
+   si el `to_key` esta vacio. Nuevo exit code `4` = la rotacion del
+   DB salio OK pero el escribir del env file fallo (el operador
+   sabe que no debe restart aun).
+
+4. ✅ **Nuevo flag `--strict-precondition`** en `verify-audit`.
+   Cuando el chain esta roto, sale con exit code `3` en vez del `1`
+   generico. Permite pipelines tipo:
    ```bash
    .venv/bin/ameli-app verify-audit --strict-precondition && \
-     .venv/bin/ameli-app rotate-audit-key --from-key ... --to-key ...
+     .venv/bin/ameli-app rotate-audit-key --from-key ... --to-key ... --apply-env ...
    ```
 
-5. **Limpieza del chain roto del H6**: el row 482 sigue con el
-   payload tampered. Cuando se restaure la key vieja y se quiera
-   tener un chain verificable end-to-end, hay que ejecutar el
-   wipe-and-restart documentado (el que limpia `hmac` y `prev_hmac`)
-   o restaurar el payload original si se conoce.
+5. ⏳ **Limpieza del chain roto del H6 (row 482) en server dev**:
+   sigue abierto como item 9. El runbook ya esta abajo.
 
 #### Como devolver el server dev al estado anterior (sin re-desplegar)
 
@@ -529,8 +526,12 @@ aparecieron al verificarlo en el server:
 |---|---|---|---|
 | 3 | Retry + queue para emails fallidos | Operativo | Medio |
 | 2 | Selector de idioma en header (i18n loop) | UX | Chico |
-| **8** | **Endurecer recipe + helper de rotacion HMAC** (guards bash, mensaje explicito post-rotacion, opcional `--apply-env`, `verify-audit --strict-precondition`) — ver seccion "Lecciones de la verificacion operativa" arriba | Seguridad operativa | Chico |
 | **9** | **Limpieza del chain roto del row 482** en server dev (legacy del tampering del H6) — runbook ya escrito, no requiere desarrollo | Operativo | Trivial |
+
+(Item 8 — endurecer recipe + helper de rotacion HMAC — cerrado en
+esta sesion: `next_steps` en la respuesta del rotate, bash guards en
+`OPERATIONS.md`, `--apply-env` en `rotate-audit-key`,
+`--strict-precondition` en `verify-audit`.)
 
 ### Orden recomendado para retomar
 

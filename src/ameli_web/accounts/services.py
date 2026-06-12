@@ -340,11 +340,83 @@ def rotate_audit_key(*, from_key: str, to_key: str) -> dict[str, Any]:
 
     # Step 3: confirm the chain verifies under the new key.
     post = verify_audit_chain(key_override=to_key)
-    return {
-        "ok": bool(post.get("ok")),
+    ok = bool(post.get("ok"))
+    result: dict[str, Any] = {
+        "ok": ok,
         "rotated": rotated + 1,
         "verify_result": post,
     }
+    if ok:
+        # Make the post-rotation step impossible to miss. The DB is now
+        # signed with to_key but the running process still holds from_key
+        # in memory, so the operator MUST update the env and restart.
+        result["next_steps"] = [
+            "DB chain re-stamped with to_key; running process still uses from_key.",
+            "Update AMELI_APP_AUDIT_HMAC_KEY in the env file to the new value.",
+            "Restart the api service so the in-memory key matches the DB.",
+            "Re-run `ameli-app verify-audit` after the restart to confirm.",
+        ]
+    return result
+
+
+def apply_audit_key_to_env_file(env_path: str, new_key: str) -> dict[str, Any]:
+    """Atomically replace AMELI_APP_AUDIT_HMAC_KEY=... in an env file.
+
+    Used by ``rotate-audit-key --apply-env`` so the post-rotation env
+    update is not a manual ``sed`` the operator can typo. Writes a temp
+    file in the same directory then renames, so a crash mid-write never
+    leaves the env file truncated.
+
+    Preserves file mode if the target already exists. Refuses to run if
+    ``new_key`` is empty (defense against the exact bug observed during
+    the #6 verification: a shell variable typo blanked the env value).
+    """
+    import os
+    import tempfile
+
+    if not new_key:
+        return {"ok": False, "error": "new_key is empty; refusing to write env file"}
+    try:
+        with open(env_path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        return {"ok": False, "error": f"env file not found: {env_path}"}
+    except OSError as exc:
+        return {"ok": False, "error": f"cannot read env file: {exc}"}
+
+    replaced = False
+    new_lines = []
+    for line in lines:
+        if line.startswith("AMELI_APP_AUDIT_HMAC_KEY="):
+            new_lines.append(f"AMELI_APP_AUDIT_HMAC_KEY={new_key}\n")
+            replaced = True
+        else:
+            new_lines.append(line)
+    if not replaced:
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines[-1] += "\n"
+        new_lines.append(f"AMELI_APP_AUDIT_HMAC_KEY={new_key}\n")
+
+    try:
+        original_mode = os.stat(env_path).st_mode & 0o777
+    except OSError:
+        original_mode = 0o600
+    env_dir = os.path.dirname(os.path.abspath(env_path)) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=".app.env.", dir=env_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.writelines(new_lines)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp_path, original_mode)
+        os.replace(tmp_path, env_path)
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return {"ok": False, "error": f"cannot write env file: {exc}"}
+    return {"ok": True, "env_path": env_path, "appended": not replaced}
 
 
 def _trusted_proxies() -> set[str]:

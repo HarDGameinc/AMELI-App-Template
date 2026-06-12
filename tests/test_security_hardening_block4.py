@@ -594,6 +594,77 @@ def test_rotate_audit_key_rejects_identical_keys():
 
 
 @pytest.mark.django_db
+def test_rotate_audit_key_reports_next_steps_on_success(settings):
+    """#8 — operator-facing post-success message must surface in the
+    rotation result so the JSON the CLI prints tells the operator they
+    still need to update the env file and restart."""
+    from ameli_web.accounts.services import record_audit, rotate_audit_key
+
+    settings.AUDIT_HMAC_KEY = "k1"
+    record_audit("first")
+    result = rotate_audit_key(from_key="k1", to_key="k2")
+    assert result["ok"] is True
+    steps = result.get("next_steps", [])
+    assert any("env file" in s.lower() for s in steps)
+    assert any("restart" in s.lower() for s in steps)
+
+
+def test_apply_audit_key_to_env_file_replaces_existing_line(tmp_path):
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text(
+        "AMELI_APP_LOG_LEVEL=INFO\n"
+        "AMELI_APP_AUDIT_HMAC_KEY=oldvalue\n"
+        "AMELI_APP_EMAIL_HOST=smtp.example.com\n",
+        encoding="utf-8",
+    )
+    result = apply_audit_key_to_env_file(str(env_file), "newvalue")
+    assert result["ok"] is True
+    assert result["appended"] is False
+    contents = env_file.read_text(encoding="utf-8")
+    assert "AMELI_APP_AUDIT_HMAC_KEY=newvalue\n" in contents
+    assert "oldvalue" not in contents
+    # Other lines must be preserved verbatim.
+    assert "AMELI_APP_LOG_LEVEL=INFO\n" in contents
+    assert "AMELI_APP_EMAIL_HOST=smtp.example.com\n" in contents
+
+
+def test_apply_audit_key_to_env_file_appends_when_missing(tmp_path):
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text("AMELI_APP_LOG_LEVEL=INFO\n", encoding="utf-8")
+    result = apply_audit_key_to_env_file(str(env_file), "freshkey")
+    assert result["ok"] is True
+    assert result["appended"] is True
+    contents = env_file.read_text(encoding="utf-8")
+    assert contents.endswith("AMELI_APP_AUDIT_HMAC_KEY=freshkey\n")
+
+
+def test_apply_audit_key_to_env_file_refuses_empty_key(tmp_path):
+    """Defends against the exact failure mode of the #6 verification:
+    a typo'd shell variable would otherwise blank the env file."""
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text("AMELI_APP_AUDIT_HMAC_KEY=original\n", encoding="utf-8")
+    result = apply_audit_key_to_env_file(str(env_file), "")
+    assert result["ok"] is False
+    assert "empty" in result["error"]
+    # File untouched.
+    assert env_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=original\n"
+
+
+def test_apply_audit_key_to_env_file_missing_file(tmp_path):
+    from ameli_web.accounts.services import apply_audit_key_to_env_file
+
+    result = apply_audit_key_to_env_file(str(tmp_path / "nope.env"), "anything")
+    assert result["ok"] is False
+    assert "not found" in result["error"]
+
+
+@pytest.mark.django_db
 def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, settings):
     """When the audit log records enough consecutive ``login_locked_out``
     rows for the same username, the next ``maybe_permanently_lock``

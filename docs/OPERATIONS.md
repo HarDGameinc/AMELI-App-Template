@@ -97,40 +97,65 @@ rotation. The chain stays verifiable after rotation — the helper
 re-stamps every chained row with the new key while preserving the
 prev_hmac sequence.
 
+Run these steps as a single shell session so the `OLD_KEY` /
+`NEW_KEY` variables stay defined. The recipe is intentionally
+paranoid — an empty/typo'd variable blanking the env file is the
+exact failure mode the #6 verification hit on dev.
+
 1. **Verify the chain is clean first.** Rotation refuses to run when
-   the source chain is broken (it would paper over tampering).
+   the source chain is broken (it would paper over tampering). Use
+   `--strict-precondition` so a pipeline can tell "chain broken,
+   can't rotate" (exit 3) apart from other errors (exit 1).
    ```bash
-   .venv/bin/ameli-app verify-audit
+   .venv/bin/ameli-app verify-audit --strict-precondition
    ```
    Must print `{"ok": true, ...}`.
 
-2. **Generate the new key.**
+2. **Capture the current key and generate the new one.** The guards
+   abort the session if either variable ends up empty.
    ```bash
+   OLD_KEY=$(grep '^AMELI_APP_AUDIT_HMAC_KEY=' /etc/ameli-app-template-<env>/app.env | cut -d= -f2-)
    NEW_KEY=$(.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))")
-   echo $NEW_KEY  # save it; you also need the OLD key for the next step
+   [ -n "$OLD_KEY" ] || { echo "ABORT: OLD_KEY is empty"; return 1 2>/dev/null || exit 1; }
+   [ -n "$NEW_KEY" ] || { echo "ABORT: NEW_KEY is empty"; return 1 2>/dev/null || exit 1; }
+   [ "$OLD_KEY" != "$NEW_KEY" ] || { echo "ABORT: keys are identical"; return 1 2>/dev/null || exit 1; }
    ```
 
-3. **Run the rotation.** This re-stamps every chained row in one
-   transaction and writes an `audit_key_rotated` row as the new tail
-   of the chain. The running service still uses the old in-memory
-   key — we only re-stamp the DB rows here.
+3. **Run the rotation in one go (recommended).** `--apply-env` makes
+   the helper atomically rewrite the env file after the DB is
+   re-stamped, so you can't end up with a rotated DB and a stale env
+   file (or worse, a blanked env file from a typo'd `sed`). Then
+   restart the service.
    ```bash
-   .venv/bin/ameli-app rotate-audit-key \
+   sudo .venv/bin/ameli-app rotate-audit-key \
      --from-key "$OLD_KEY" \
-     --to-key "$NEW_KEY"
+     --to-key "$NEW_KEY" \
+     --apply-env /etc/ameli-app-template-<env>/app.env || {
+       echo "ABORT: rotation failed; env file untouched"
+       return 1 2>/dev/null || exit 1
+   }
+   sudo systemctl restart ameli-app-template-<env>-api.service
    ```
-   On success the response contains `{"ok": true, "rotated": N, ...}`.
+   Exit codes: `0` = full success, `2` = rotation refused (chain
+   broken / bad args), `4` = DB rotated but env-file write failed
+   (in-memory key still mismatches; investigate before restarting).
 
-4. **Update the env file and restart.** Now the running process
-   adopts the new key and starts chaining new rows from the rotation
-   row.
+   On success the JSON response contains a `next_steps` array and
+   `rotated: N`. If you prefer the two-step variant, drop
+   `--apply-env` and update the env file yourself — but keep the
+   guards:
    ```bash
+   sudo .venv/bin/ameli-app rotate-audit-key \
+     --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
+       echo "ABORT: rotation failed; do NOT touch the env file"
+       return 1 2>/dev/null || exit 1
+   }
    sudo sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
      /etc/ameli-app-template-<env>/app.env
    sudo systemctl restart ameli-app-template-<env>-api.service
    ```
 
-5. **Sanity-check the post-rotation chain.**
+4. **Sanity-check the post-rotation chain.**
    ```bash
    .venv/bin/ameli-app verify-audit
    ```

@@ -103,3 +103,62 @@ def test_cli_create_user(config_path, capsys):
     assert payload["ok"] is True
     assert payload["username"] == "viewer"
     assert User.objects.filter(username="viewer", role="public").exists()
+
+
+@pytest.mark.django_db
+def test_cli_verify_audit_strict_precondition_exits_three_on_break(
+    config_path, capsys, settings, monkeypatch
+):
+    """#8 — `verify-audit --strict-precondition` returns exit 3 (distinct
+    from generic exit 1) when the chain is broken, so an automation
+    pipeline can distinguish "can't rotate yet" from other failures."""
+    monkeypatch.setenv("AMELI_APP_AUDIT_HMAC_KEY", "k")
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.services import record_audit
+    from ameli_web.audit.models import AuditEvent
+
+    a = record_audit("first")
+    record_audit("second")
+    AuditEvent.objects.filter(id=a.id).update(payload={"tamper": True})
+
+    result = main(["--config", str(config_path), "verify-audit", "--strict-precondition"])
+    assert result == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+
+    # Without the flag the legacy exit code (1) is preserved.
+    result = main(["--config", str(config_path), "verify-audit"])
+    assert result == 1
+
+
+@pytest.mark.django_db
+def test_cli_rotate_audit_key_apply_env_rewrites_file(
+    config_path, capsys, tmp_path, settings, monkeypatch
+):
+    """#8 — `--apply-env` writes the new key into the env file
+    atomically as part of a successful rotation."""
+    monkeypatch.setenv("AMELI_APP_AUDIT_HMAC_KEY", "old")
+    settings.AUDIT_HMAC_KEY = "old"
+    from ameli_web.accounts.services import record_audit
+
+    record_audit("event_a")
+
+    env_file = tmp_path / "app.env"
+    env_file.write_text(
+        "AMELI_APP_LOG_LEVEL=INFO\n"
+        "AMELI_APP_AUDIT_HMAC_KEY=old\n",
+        encoding="utf-8",
+    )
+
+    result = main([
+        "--config", str(config_path),
+        "rotate-audit-key",
+        "--from-key", "old",
+        "--to-key", "newvalue",
+        "--apply-env", str(env_file),
+    ])
+    assert result == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["env_file"]["ok"] is True
+    assert "AMELI_APP_AUDIT_HMAC_KEY=newvalue\n" in env_file.read_text(encoding="utf-8")
