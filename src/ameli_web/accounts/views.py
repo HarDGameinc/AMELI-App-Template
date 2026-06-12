@@ -690,10 +690,27 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         chosen = request.POST["choose_method"]
         request.session[PENDING_MFA_METHOD_KEY] = chosen
         if chosen == "email":
+            # Any SMTP-side failure must not 500 the login flow. Audit
+            # the failure so an operator can investigate, leave a flash
+            # message for the user, and bounce back to the chooser —
+            # they can still try TOTP or hit "Reenviar codigo" later.
             try:
                 send_mfa_email_login_code(user)
             except ValueError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "login mfa email send failed during choose for %s", user.username,
+                )
+                record_audit(
+                    "mfa_email_login_send_failed",
+                    target_username=user.username,
+                    payload={"error_class": exc.__class__.__name__, "phase": "choose"},
+                )
+                messages.error(
+                    request,
+                    "No pudimos enviar el codigo por email. Probá con tu app de autenticacion o usá 'Reenviar codigo'.",
+                )
         return redirect("accounts:verify-mfa")
 
     if chosen is None and len(available_methods) >= 2:
@@ -737,6 +754,22 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
                     # Rate-limited at this very moment; user can hit
                     # "Reenviar codigo" once the cooldown expires.
                     pass
+                except Exception as exc:  # noqa: BLE001
+                    # SMTP died; we still render the page so the user
+                    # can hit "Reenviar codigo" later or switch to TOTP.
+                    # Auditing the cause keeps the operator informed.
+                    logger.exception(
+                        "login mfa email send failed on GET for %s", user.username,
+                    )
+                    record_audit(
+                        "mfa_email_login_send_failed",
+                        target_username=user.username,
+                        payload={"error_class": exc.__class__.__name__, "phase": "render"},
+                    )
+                    messages.error(
+                        request,
+                        "No pudimos enviar el codigo por email. Probá con tu app de autenticacion o usá 'Reenviar codigo'.",
+                    )
         return render(request, "accounts/verify_mfa.html", context)
 
     candidate = str(request.POST.get("code") or "").strip()
