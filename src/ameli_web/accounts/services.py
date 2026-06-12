@@ -1842,6 +1842,14 @@ def send_with_retry(
     succeeded, delivery just slid to the background.
     """
     use_ascii = isinstance(message, _PasswordResetEmail)
+    # Defensive: ``expires_at`` flows into the queue row and is later
+    # compared against ``timezone.now()``. A naive datetime would raise
+    # TypeError at compare time; promote it to aware-UTC up front so
+    # callers can use either ``timezone.now() + ...`` or a plain
+    # ``datetime.utcnow() + ...`` without subtle bugs.
+    if expires_at is not None and timezone.is_naive(expires_at):
+        from datetime import timezone as dt_timezone
+        expires_at = timezone.make_aware(expires_at, dt_timezone.utc)
     try:
         message.send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 - queue swallows by design

@@ -762,8 +762,8 @@ items diferidos al backlog tecnico (sin impacto de seguridad).
 |---|---|---|---|
 | Keys via stdin/env | listo, verificado en server | `8c21d75` + `c4fa660` |
 | Admin UI para `OutboundEmail` | listo, verificado en server | `c49e400` |
-| Structured logging del worker | listo (este commit) |  |
-| Tests adicionales (unicode/concurrencia/tz naive) | pendiente |  |
+| Structured logging del worker | listo, verificado en server | `2a31bd1` |
+| Tests adicionales (unicode/concurrencia/tz naive) | listo (este commit) |  |
 | O_NOFOLLOW + dir fsync | pendiente |  |
 
 ### Admin UI para `OutboundEmail`

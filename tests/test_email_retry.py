@@ -436,6 +436,134 @@ def test_queue_emits_structured_log_on_gave_up_and_expired(caplog, settings):
 
 
 @pytest.mark.django_db
+def test_queue_round_trips_unicode_body_and_subject(settings):
+    """A queued row with non-ASCII subject and body must be re-built
+    correctly by the worker. The use_ascii_passthrough flag must end
+    up False so the EmailMessage uses Django's default quoted-printable
+    encoder instead of the 7bit reset-URL variant."""
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue, send_with_retry
+
+    unicode_subject = "Cofirmación 2FA — ñ é á 中文 🚀"
+    unicode_body = "Hola @usuario, recibís este mensaje en español. 中文测试. 🔐"
+    msg = EmailMessage(unicode_subject, unicode_body, "from@x", ["to@x"])
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("boom")):
+        result = send_with_retry(msg, audit_action="x", target_username="u")
+    row = OutboundEmail.objects.get(pk=result["queue_id"])
+    assert row.subject == unicode_subject
+    assert row.body == unicode_body
+    # Not a _PasswordResetEmail instance, so the ASCII passthrough flag
+    # must stay False (otherwise the worker would later try to re-render
+    # the message in 7bit and choke on the non-ASCII characters).
+    assert row.use_ascii_passthrough is False
+
+    row.next_retry_at = timezone.now() - timedelta(seconds=1)
+    row.save(update_fields=["next_retry_at"])
+    # Capture the EmailMessage actually delivered to assert it carries
+    # the unicode payload intact.
+    sent_messages = []
+
+    def _capture(self, *args, **kwargs):
+        sent_messages.append((self.subject, self.body, list(self.to)))
+        return 1
+
+    with patch.object(EmailMessage, "send", _capture):
+        process_email_queue()
+    assert sent_messages == [(unicode_subject, unicode_body, ["to@x"])]
+
+
+@pytest.mark.django_db
+def test_send_with_retry_normalizes_naive_expires_at(settings):
+    """Callers that pass datetime.utcnow() + delta (naive) should not
+    crash inside process_email_queue when it compares expires_at to
+    timezone.now() (aware). ``send_with_retry`` coerces to UTC-aware."""
+    from datetime import datetime
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue, send_with_retry
+
+    naive_future = datetime.utcnow() + timedelta(hours=1)
+    assert naive_future.tzinfo is None
+    msg = EmailMessage("s", "b", "from@x", ["to@x"])
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("boom")):
+        result = send_with_retry(
+            msg, audit_action="x", target_username="u",
+            expires_at=naive_future,
+        )
+    row = OutboundEmail.objects.get(pk=result["queue_id"])
+    # Stored value is timezone-aware.
+    assert row.expires_at is not None
+    assert row.expires_at.tzinfo is not None
+    # And the worker can compare without TypeError.
+    row.next_retry_at = timezone.now() - timedelta(seconds=1)
+    row.save(update_fields=["next_retry_at"])
+    with patch.object(EmailMessage, "send", return_value=1):
+        out = process_email_queue()
+    assert out["sent"] == 1
+
+
+@pytest.mark.django_db
+def test_queue_round_trips_many_recipients(settings):
+    """A row with many recipients (50+) must survive the queue
+    round-trip — the JSONField on to_emails has no implicit cap and
+    the worker re-builds the EmailMessage with the full list."""
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue, send_with_retry
+
+    recipients = [f"user{i:03d}@example.org" for i in range(75)]
+    msg = EmailMessage("s", "b", "from@x", recipients)
+    with patch.object(EmailMessage, "send", side_effect=ConnectionError("boom")):
+        result = send_with_retry(msg, audit_action="x", target_username="u")
+    row = OutboundEmail.objects.get(pk=result["queue_id"])
+    assert row.to_emails == recipients
+
+    row.next_retry_at = timezone.now() - timedelta(seconds=1)
+    row.save(update_fields=["next_retry_at"])
+    captured = []
+
+    def _capture(self, *args, **kwargs):
+        captured.append(list(self.to))
+        return 1
+
+    with patch.object(EmailMessage, "send", _capture):
+        process_email_queue()
+    assert captured == [recipients]
+
+
+@pytest.mark.django_db
+def test_queue_does_not_double_deliver_same_row_in_two_passes(settings):
+    """Two sequential calls to process_email_queue must NOT process the
+    same row twice. The per-row ``filter(status=PENDING)`` after the
+    select_for_update is the guard — even without true concurrency we
+    can assert that re-running the queue on an already-sent row never
+    re-invokes send()."""
+    settings.AUDIT_HMAC_KEY = "k"
+    from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import process_email_queue
+
+    OutboundEmail.objects.create(
+        subject="s", body="b", to_emails=["x@x"],
+        next_retry_at=timezone.now() - timedelta(seconds=1),
+    )
+    sends = []
+
+    def _capture(self, *args, **kwargs):
+        sends.append(1)
+        return 1
+
+    with patch.object(EmailMessage, "send", _capture):
+        first = process_email_queue()
+        second = process_email_queue()
+    assert first["sent"] == 1
+    # Second pass finds no eligible row.
+    assert second["sent"] == 0
+    assert second["considered"] == 0
+    assert len(sends) == 1
+
+
+@pytest.mark.django_db
 def test_notify_worker_processes_queue(config_path):
     """The notify-once CLI command now drains the queue."""
     from ameli_app.cli import main
