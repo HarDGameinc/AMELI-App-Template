@@ -199,6 +199,24 @@ The installer enables `ameli-app-template-<env>-maintenance.timer`
 by default — check its schedule with
 `systemctl list-timers | grep maintenance`.
 
+## Docker (dev only)
+
+A `Dockerfile` (multi-stage, non-root, tini entrypoint) plus a
+`docker-compose.yml` are included for local development:
+
+```bash
+docker compose up                     # api + notifier + postgres
+docker compose run --rm api pytest    # full suite in-container
+docker compose exec api .venv/bin/ameli-app verify-audit
+```
+
+The compose stack is intentionally not a production manifest —
+the `AMELI_APP_SECRET_KEY` is a placeholder, no TLS termination,
+no resource limits, email backend is the console (so flows that
+send mail print to the api container's stdout instead of needing
+a real SMTP relay). For prod, use `scripts/install.sh` against
+the systemd profile of choice.
+
 ## Prometheus metrics (/metrics)
 
 `/metrics` exposes the operator-relevant counters in Prometheus

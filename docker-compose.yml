@@ -1,0 +1,79 @@
+# Development compose stack.
+#
+#   docker compose up         — api + notifier + postgres
+#   docker compose run --rm api pytest     — run the suite in-container
+#   docker compose exec api .venv/bin/ameli-app verify-audit
+#
+# This is intentionally NOT a production manifest — no TLS termination,
+# no resource limits, the SECRET_KEY is a placeholder, and the
+# admin bootstrap step is left to the operator. For prod refer to
+# ``scripts/install.sh`` + the systemd profile.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ameli
+      POSTGRES_USER: ameli
+      POSTGRES_PASSWORD: ameli_dev_only
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ameli -d ameli"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ameli-app-template:dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: ameli_web.settings
+      AMELI_APP_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
+      AMELI_APP_ALLOWED_HOSTS: "*"
+      AMELI_APP_DEBUG: "true"
+      AMELI_APP_TRUSTED_PROXIES: "127.0.0.1"
+      AMELI_APP_AUDIT_HMAC_KEY: dev-audit-key
+      DATABASE_URL: postgres://ameli:ameli_dev_only@db:5432/ameli
+      AMELI_APP_EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+    ports:
+      - "18080:18080"
+    volumes:
+      # Hot-reload source in dev. Bind-mount excludes the venv and
+      # the compiled assets so we don't shadow the image's installed
+      # site-packages.
+      - ./src:/app/src:cached
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:18080/health\").read()' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    command: ["python", "-m", "uvicorn", "ameli_web.asgi:application",
+              "--host", "0.0.0.0", "--port", "18080", "--reload"]
+
+  notifier:
+    image: ameli-app-template:dev
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: ameli_web.settings
+      AMELI_APP_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
+      AMELI_APP_ALLOWED_HOSTS: "*"
+      AMELI_APP_TRUSTED_PROXIES: "127.0.0.1"
+      AMELI_APP_AUDIT_HMAC_KEY: dev-audit-key
+      DATABASE_URL: postgres://ameli:ameli_dev_only@db:5432/ameli
+      AMELI_APP_EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+      AMELI_APP_NOTIFIER_INTERVAL: "30"
+    command: ["sh", "-c",
+              "while true; do python -m ameli_app.cli notify-once || true; sleep ${AMELI_APP_NOTIFIER_INTERVAL:-30}; done"]
+
+volumes:
+  db-data:

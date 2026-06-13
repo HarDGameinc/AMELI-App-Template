@@ -1,0 +1,22 @@
+# Keep the build context tight — anything copied below cuts cache hits.
+.git
+.github
+.venv
+.venv-*
+.test-deps
+**/__pycache__
+**/*.pyc
+**/*.pyo
+node_modules
+data
+logs
+backups
+*.sqlite3
+*.sqlite3-journal
+.coverage
+.coverage.*
+htmlcov
+.pytest_cache
+.ruff_cache
+docs
+deploy/systemd
