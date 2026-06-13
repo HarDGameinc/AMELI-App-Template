@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 from django.test import override_settings
 
 from ameli_web.accounts.services import client_ip

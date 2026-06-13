@@ -191,6 +191,7 @@ def test_choose_email_method_does_not_500_on_smtp_failure(
     HTTP 500. The flow must now bounce back to /login/verify-mfa/
     with a flash message and an audit row."""
     from unittest.mock import patch
+
     from django.core.mail import EmailMessage
 
     settings.AUDIT_HMAC_KEY = "k"
@@ -217,6 +218,7 @@ def test_get_verify_mfa_with_email_does_not_500_on_smtp_failure(
     tries to auto-send a code; transient SMTP failure must not 500
     the page."""
     from unittest.mock import patch
+
     from django.core.mail import EmailMessage
 
     settings.AUDIT_HMAC_KEY = "k"

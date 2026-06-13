@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # H12 — /health, /api/health, /metrics behind an optional IP allowlist
 # ---------------------------------------------------------------------------
@@ -326,6 +325,7 @@ def test_throttle_counter_window_snaps_to_buckets(admin_user):
     """Bumps inside the same window share one row; the next window owns
     its own row so old counts do not leak across the boundary."""
     from datetime import timedelta
+
     from django.utils import timezone
 
     from ameli_web.accounts.models import ThrottleCounter
@@ -454,8 +454,8 @@ def test_verify_audit_chain_returns_ok_on_clean_chain(settings):
 def test_verify_audit_chain_detects_payload_tampering(settings):
     """Editing a row's payload after the fact must break verification:
     the stored hmac no longer matches the recomputed one."""
-    from ameli_web.audit.models import AuditEvent
     from ameli_web.accounts.services import record_audit, verify_audit_chain
+    from ameli_web.audit.models import AuditEvent
 
     settings.AUDIT_HMAC_KEY = "tamper-key"
     a = record_audit("safe_action", payload={"v": 1})
@@ -475,8 +475,8 @@ def test_verify_audit_chain_detects_payload_tampering(settings):
 def test_verify_audit_chain_detects_deleted_row(settings):
     """Deleting a row in the middle breaks ``prev_hmac`` on the next
     surviving row."""
-    from ameli_web.audit.models import AuditEvent
     from ameli_web.accounts.services import record_audit, verify_audit_chain
+    from ameli_web.audit.models import AuditEvent
 
     settings.AUDIT_HMAC_KEY = "delete-key"
     record_audit("act_a")

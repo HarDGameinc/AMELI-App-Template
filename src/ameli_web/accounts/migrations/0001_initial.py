@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import ameli_web.accounts.models
-from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
+from django.db import migrations, models
+
+import ameli_web.accounts.models
 
 
 class Migration(migrations.Migration):

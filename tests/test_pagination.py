@@ -6,7 +6,6 @@ from django.contrib.auth import get_user_model
 from ameli_web.pagination import (
     DEFAULT_PER_PAGE,
     MAX_PER_PAGE,
-    Page,
     coerce_page,
     coerce_per_page,
     paginate_list,

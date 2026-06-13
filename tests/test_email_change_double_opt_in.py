@@ -12,11 +12,12 @@ future refactor cannot silently drop one of the guardrails:
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.utils import timezone
-from datetime import timedelta
 
 from ameli_web.accounts.models import EmailChangeRequest
 from ameli_web.accounts.services import (

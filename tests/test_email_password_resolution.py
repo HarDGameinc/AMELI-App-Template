@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from ameli_app.config import _resolve_email_password, _read_secret_file
+from ameli_app.config import _read_secret_file, _resolve_email_password
 
 
 def test_resolve_uses_explicit_env_first(monkeypatch, tmp_path):

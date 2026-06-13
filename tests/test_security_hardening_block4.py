@@ -268,8 +268,9 @@ def test_locked_user_cannot_log_in_even_with_right_password(client, admin_user):
 
 @pytest.mark.django_db
 def test_admin_unlock_user_clears_locked_at(admin_user, settings):
-    from ameli_web.accounts.services import admin_unlock_user as _unlock
     from django.utils import timezone
+
+    from ameli_web.accounts.services import admin_unlock_user as _unlock
 
     admin_user.locked_at = timezone.now()
     admin_user.locked_reason = "throttle:3_consecutive_lockouts"
@@ -347,7 +348,7 @@ def test_admin_panel_shows_unlock_button_for_locked_users(client, admin_user):
     'Bloqueado' badge and a per-row 'Desbloquear' action."""
     from django.utils import timezone
 
-    from ameli_web.accounts.services import bootstrap_superadmin, create_user_account, grant_sudo
+    from ameli_web.accounts.services import create_user_account, grant_sudo
 
     # Need a second user — the panel hides actions on the operator's own row.
     create_user_account(
@@ -715,6 +716,7 @@ def test_apply_audit_key_to_env_file_fsyncs_parent_dir(tmp_path, monkeypatch):
     survives a power loss. Mock os.fsync to count calls and assert at
     least one of them targets the env_dir's fd."""
     import os
+
     from ameli_web.accounts.services import apply_audit_key_to_env_file
 
     env_file = tmp_path / "app.env"
@@ -752,8 +754,9 @@ def test_maybe_permanently_lock_trips_after_consecutive_lockouts(admin_user, set
     settings.LOCKOUT_PERMANENT_CONSECUTIVE = 3
 
     # Three distinct lockout windows
-    from django.utils import timezone
     from datetime import timedelta
+
+    from django.utils import timezone
 
     for offset in (600, 300, 30):
         ev = record_audit(

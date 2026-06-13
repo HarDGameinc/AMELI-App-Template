@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 COMMON_SH = Path(__file__).resolve().parents[1] / "scripts" / "_common.sh"
 
 

@@ -7,7 +7,6 @@ from django.test import RequestFactory
 from ameli_web.accounts.services import bootstrap_superadmin, create_user_account, record_audit
 from ameli_web.pagination import (
     PAGE_SIZE_CHOICES,
-    paginate_list,
     persist_per_page_cookie,
     resolve_per_page,
 )

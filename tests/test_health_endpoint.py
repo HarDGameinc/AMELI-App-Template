@@ -66,7 +66,9 @@ def test_health_email_queue_check_flags_stuck_rows(client, settings):
     """If the oldest pending row is older than the stuck threshold,
     the email_queue check reports not-ok."""
     from datetime import timedelta
+
     from django.utils import timezone
+
     from ameli_web.accounts.models import OutboundEmail
 
     settings.AUDIT_HMAC_KEY = "k"

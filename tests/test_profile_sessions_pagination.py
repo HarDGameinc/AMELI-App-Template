@@ -7,7 +7,11 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from ameli_web.accounts.models import UserSession
-from ameli_web.accounts.services import paginate_user_sessions, bootstrap_superadmin, create_user_account
+from ameli_web.accounts.services import (
+    bootstrap_superadmin,
+    create_user_account,
+    paginate_user_sessions,
+)
 
 User = get_user_model()
 

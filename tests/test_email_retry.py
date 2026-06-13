@@ -373,6 +373,7 @@ def test_queue_emits_structured_log_on_queue_and_delivery(caplog, settings):
     extras so a downstream collector can index by queue_id /
     audit_action / error_class without parsing the message."""
     import logging
+
     from ameli_web.accounts.models import OutboundEmail
     from ameli_web.accounts.services import process_email_queue, send_with_retry
 
@@ -404,6 +405,7 @@ def test_queue_emits_structured_log_on_queue_and_delivery(caplog, settings):
 @pytest.mark.django_db
 def test_queue_emits_structured_log_on_gave_up_and_expired(caplog, settings):
     import logging
+
     from ameli_web.accounts.models import OutboundEmail
     from ameli_web.accounts.services import process_email_queue
 

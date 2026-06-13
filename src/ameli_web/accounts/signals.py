@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.contrib.sessions.models import Session
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.contrib.sessions.models import Session
 from django.utils import timezone
 
 from .models import User, UserSession

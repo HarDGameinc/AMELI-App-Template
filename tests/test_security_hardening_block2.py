@@ -166,6 +166,7 @@ def test_mfa_resend_throttle_after_too_many_resends(client, tester, settings):
 @pytest.mark.django_db
 def test_admin_disable_mfa_emails_the_user(tester, admin_user, settings):
     from django.core import mail
+
     from ameli_web.accounts.services import admin_disable_mfa_for_user
 
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
@@ -193,6 +194,7 @@ def test_admin_disable_mfa_audit_row_carries_actor(tester, admin_user, settings)
     """The notify-sent audit row should be attributed to the admin that
     triggered the disable, not to the anonymous ``record_audit`` default."""
     from django.core import mail
+
     from ameli_web.accounts.services import admin_disable_mfa_for_user
     from ameli_web.audit.models import AuditEvent
 
@@ -213,6 +215,7 @@ def test_admin_disable_mfa_audit_row_carries_actor(tester, admin_user, settings)
 @pytest.mark.django_db
 def test_admin_disable_mfa_skips_email_when_user_has_none(tester, admin_user, settings):
     from django.core import mail
+
     from ameli_web.accounts.services import admin_disable_mfa_for_user
 
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
@@ -378,9 +381,9 @@ def test_sudo_status_reports_enrolled_methods(client, admin_user):
 def test_sudo_accepts_email_mfa_code(admin_user, settings):
     """Operators enrolled only in email MFA must be able to sudo. Before
     the fix the verifier only checked TOTP and recovery codes."""
+    from ameli_web.accounts.mfa import hash_email_code
     from ameli_web.accounts.models import MFAEmailChallenge
     from ameli_web.accounts.services import verify_sudo_credentials
-    from ameli_web.accounts.mfa import hash_email_code
 
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     admin_user.mfa_email_enabled = True
@@ -390,8 +393,9 @@ def test_sudo_accepts_email_mfa_code(admin_user, settings):
     admin_user.save()
 
     # Drop a fresh challenge as if send_sudo_email_code had run.
-    from django.utils import timezone
     from datetime import timedelta
+
+    from django.utils import timezone
 
     code = "654321"
     MFAEmailChallenge.objects.create(

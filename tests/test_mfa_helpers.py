@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 
 import pyotp
-import pytest
 
 from ameli_web.accounts.mfa import (
     RECOVERY_ALPHABET,
@@ -18,7 +17,6 @@ from ameli_web.accounts.mfa import (
     recovery_codes_match,
     verify_totp,
 )
-
 
 # ---- TOTP secret ----
 

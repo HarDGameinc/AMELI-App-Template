@@ -11,8 +11,7 @@ import io
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.contrib.auth.hashers import check_password
-from django.contrib.auth.hashers import identify_hasher
+from django.contrib.auth.hashers import check_password, identify_hasher
 
 from ameli_web.accounts.services import bootstrap_superadmin, create_user_account
 from ameli_web.admin_views import _csv_safe

@@ -7,7 +7,6 @@ from io import StringIO
 
 import pytest
 
-
 UUID_HEX_RE = re.compile(r"^[0-9a-f]{32}$")
 
 

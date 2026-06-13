@@ -3,30 +3,29 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from django.contrib.auth import get_user_model, logout as auth_logout
-from django.contrib.auth.password_validation import validate_password
+from django.conf import settings as django_settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.models import Group
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
-from django.db.models import Count
-from django.utils import timezone
-from django.utils.translation import gettext as _
-
-from django.conf import settings as django_settings
-from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMessage
+from django.db.models import Count
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.translation import gettext as _
 
 from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
-
-from datetime import datetime, timedelta
 
 from . import mfa
 from .models import (
@@ -314,7 +313,6 @@ def rotate_audit_key(*, from_key: str, to_key: str) -> dict[str, Any]:
             "verify_result": pre,
         }
 
-    old_key_bytes = from_key.encode("utf-8") if isinstance(from_key, str) else bytes(from_key)
     new_key_bytes = to_key.encode("utf-8") if isinstance(to_key, str) else bytes(to_key)
 
     with transaction.atomic():
@@ -346,7 +344,6 @@ def rotate_audit_key(*, from_key: str, to_key: str) -> dict[str, Any]:
             rotated += 1
         # Audit-of-audit: write the rotation event using the NEW key so
         # it becomes the next link of the post-rotation chain.
-        from django.utils import timezone
 
         rotation_event = AuditEvent.objects.create(
             action="audit_key_rotated",
@@ -2131,7 +2128,7 @@ def send_with_retry(
     *,
     audit_action: str = "",
     target_username: str = "",
-    expires_at: "datetime | None" = None,
+    expires_at: datetime | None = None,
     max_attempts: int = 5,
     audit_payload: dict | None = None,
 ) -> dict[str, Any]:
@@ -2161,8 +2158,7 @@ def send_with_retry(
     # callers can use either ``timezone.now() + ...`` or a plain
     # ``datetime.utcnow() + ...`` without subtle bugs.
     if expires_at is not None and timezone.is_naive(expires_at):
-        from datetime import timezone as dt_timezone
-        expires_at = timezone.make_aware(expires_at, dt_timezone.utc)
+        expires_at = timezone.make_aware(expires_at, UTC)
     try:
         message.send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 - queue swallows by design
@@ -2229,7 +2225,7 @@ def send_with_retry(
 
 
 def process_email_queue(
-    *, max_batch: int = 50, now: "datetime | None" = None,
+    *, max_batch: int = 50, now: datetime | None = None,
 ) -> dict[str, Any]:
     """Walk the OutboundEmail pending rows whose retry time elapsed.
 
@@ -2558,12 +2554,12 @@ def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[
 def _window_start_for(seconds: int, now=None):
     """Snap ``now`` to the start of its ``seconds``-wide window so all
     requests inside the same bucket hit the same counter row."""
-    from datetime import datetime, timezone as dt_timezone
+    from datetime import datetime
 
     now = now or timezone.now()
     epoch = int(now.timestamp())
     bucket = (epoch // max(1, seconds)) * max(1, seconds)
-    return datetime.fromtimestamp(bucket, tz=dt_timezone.utc)
+    return datetime.fromtimestamp(bucket, tz=UTC)
 
 
 def _bump_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
@@ -3038,9 +3034,10 @@ def request_email_change(
     can surface a single feedback message to the form.
     """
     import secrets
-    from django.core.validators import validate_email
-    from django.core.exceptions import ValidationError as DjangoValidationError
+
     from django.conf import settings as django_settings
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from django.core.validators import validate_email
 
     if not user or not user.is_authenticated:
         raise ValueError("autenticacion requerida")
@@ -3049,8 +3046,8 @@ def request_email_change(
         raise ValueError("ingresa la nueva direccion de email")
     try:
         validate_email(cleaned)
-    except DjangoValidationError:
-        raise ValueError("la direccion de email no es valida")
+    except DjangoValidationError as exc:
+        raise ValueError("la direccion de email no es valida") from exc
     if cleaned == (user.email or "").strip().lower():
         raise ValueError("la nueva direccion es igual a la actual")
     if not user.check_password(current_password or ""):
@@ -3285,7 +3282,7 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
     """
     if not user or not user.is_authenticated:
         raise ValueError("autenticacion requerida")
-    if not user.check_password((password or "")):
+    if not user.check_password(password or ""):
         raise ValueError("contrasena invalida")
     if not user.mfa_enabled:
         return

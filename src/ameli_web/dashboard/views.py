@@ -421,6 +421,7 @@ def _check_disk_space() -> dict:
     instead of blocking readiness for an optional knob.
     """
     import shutil
+
     from django.conf import settings as dj_settings
 
     data_dir = getattr(dj_settings.CFG, "data_dir", "")
@@ -477,16 +478,14 @@ def metrics(request):
     if blocked is not None:
         return blocked
     from django.http import HttpResponse
-    from django.utils import timezone
 
-    from ameli_web.accounts.models import OutboundEmail, User, UserSession
+    from ameli_web.accounts.models import User, UserSession
     from ameli_web.accounts.services import (
         get_maintenance_state,
         summarize_email_queue,
     )
     from ameli_web.audit.models import AuditEvent
 
-    now = timezone.now()
     users_total = User.objects.count()
     users_active = User.objects.filter(is_active=True).count()
     users_locked = User.objects.filter(locked_at__isnull=False).count()
@@ -518,59 +517,59 @@ def metrics(request):
     uptime_seconds = _process_uptime_seconds()
 
     lines = [
-        f"# HELP ameli_app_users_total Total registered users.",
-        f"# TYPE ameli_app_users_total gauge",
+        "# HELP ameli_app_users_total Total registered users.",
+        "# TYPE ameli_app_users_total gauge",
         f"ameli_app_users_total {users_total}",
-        f"# HELP ameli_app_users_active Currently enabled users.",
-        f"# TYPE ameli_app_users_active gauge",
+        "# HELP ameli_app_users_active Currently enabled users.",
+        "# TYPE ameli_app_users_active gauge",
         f"ameli_app_users_active {users_active}",
-        f"# HELP ameli_app_users_locked Users whose locked_at is set (permanent lockout).",
-        f"# TYPE ameli_app_users_locked gauge",
+        "# HELP ameli_app_users_locked Users whose locked_at is set (permanent lockout).",
+        "# TYPE ameli_app_users_locked gauge",
         f"ameli_app_users_locked {users_locked}",
-        f"# HELP ameli_app_users_pending_password Users that must rotate their password.",
-        f"# TYPE ameli_app_users_pending_password gauge",
+        "# HELP ameli_app_users_pending_password Users that must rotate their password.",
+        "# TYPE ameli_app_users_pending_password gauge",
         f"ameli_app_users_pending_password {users_pending_password}",
-        f"# HELP ameli_app_sessions_total Total UserSession rows tracked.",
-        f"# TYPE ameli_app_sessions_total gauge",
+        "# HELP ameli_app_sessions_total Total UserSession rows tracked.",
+        "# TYPE ameli_app_sessions_total gauge",
         f"ameli_app_sessions_total {sessions_total}",
-        f"# HELP ameli_app_sessions_active Sessions whose revoked_at is null.",
-        f"# TYPE ameli_app_sessions_active gauge",
+        "# HELP ameli_app_sessions_active Sessions whose revoked_at is null.",
+        "# TYPE ameli_app_sessions_active gauge",
         f"ameli_app_sessions_active {sessions_active}",
-        f"# HELP ameli_app_sessions_revoked Sessions with a revoked_at timestamp.",
-        f"# TYPE ameli_app_sessions_revoked gauge",
+        "# HELP ameli_app_sessions_revoked Sessions with a revoked_at timestamp.",
+        "# TYPE ameli_app_sessions_revoked gauge",
         f"ameli_app_sessions_revoked {sessions_revoked}",
-        f"# HELP ameli_app_audit_events_total Total audit events recorded.",
-        f"# TYPE ameli_app_audit_events_total counter",
+        "# HELP ameli_app_audit_events_total Total audit events recorded.",
+        "# TYPE ameli_app_audit_events_total counter",
         f"ameli_app_audit_events_total {audit_total}",
-        f"# HELP ameli_app_audit_events_failed Audit events whose action ends with _failed.",
-        f"# TYPE ameli_app_audit_events_failed counter",
+        "# HELP ameli_app_audit_events_failed Audit events whose action ends with _failed.",
+        "# TYPE ameli_app_audit_events_failed counter",
         f"ameli_app_audit_events_failed {audit_failed}",
-        f"# HELP ameli_app_audit_chain_ok 1 if the tail row's hmac matches the configured key, 0 otherwise.",
-        f"# TYPE ameli_app_audit_chain_ok gauge",
+        "# HELP ameli_app_audit_chain_ok 1 if the tail row's hmac matches the configured key, 0 otherwise.",
+        "# TYPE ameli_app_audit_chain_ok gauge",
         f"ameli_app_audit_chain_ok {audit_chain_ok}",
-        f"# HELP ameli_app_email_queue_pending OutboundEmail rows waiting for a worker tick.",
-        f"# TYPE ameli_app_email_queue_pending gauge",
+        "# HELP ameli_app_email_queue_pending OutboundEmail rows waiting for a worker tick.",
+        "# TYPE ameli_app_email_queue_pending gauge",
         f"ameli_app_email_queue_pending {queue_pending}",
-        f"# HELP ameli_app_email_queue_oldest_seconds Age of the oldest pending OutboundEmail row in seconds (0 when empty).",
-        f"# TYPE ameli_app_email_queue_oldest_seconds gauge",
+        "# HELP ameli_app_email_queue_oldest_seconds Age of the oldest pending OutboundEmail row in seconds (0 when empty).",
+        "# TYPE ameli_app_email_queue_oldest_seconds gauge",
         f"ameli_app_email_queue_oldest_seconds {queue_oldest}",
-        f"# HELP ameli_app_email_queue_sent_24h OutboundEmail rows delivered in the last 24 hours.",
-        f"# TYPE ameli_app_email_queue_sent_24h gauge",
+        "# HELP ameli_app_email_queue_sent_24h OutboundEmail rows delivered in the last 24 hours.",
+        "# TYPE ameli_app_email_queue_sent_24h gauge",
         f"ameli_app_email_queue_sent_24h {queue_sent_24h}",
-        f"# HELP ameli_app_email_queue_failed_24h OutboundEmail rows permanently failed in the last 24 hours.",
-        f"# TYPE ameli_app_email_queue_failed_24h gauge",
+        "# HELP ameli_app_email_queue_failed_24h OutboundEmail rows permanently failed in the last 24 hours.",
+        "# TYPE ameli_app_email_queue_failed_24h gauge",
         f"ameli_app_email_queue_failed_24h {queue_failed_24h}",
-        f"# HELP ameli_app_email_queue_expired_24h OutboundEmail rows expired before delivery in the last 24 hours.",
-        f"# TYPE ameli_app_email_queue_expired_24h gauge",
+        "# HELP ameli_app_email_queue_expired_24h OutboundEmail rows expired before delivery in the last 24 hours.",
+        "# TYPE ameli_app_email_queue_expired_24h gauge",
         f"ameli_app_email_queue_expired_24h {queue_expired_24h}",
-        f"# HELP ameli_app_maintenance_mode_active 1 when MaintenanceMode.active is set, 0 otherwise.",
-        f"# TYPE ameli_app_maintenance_mode_active gauge",
+        "# HELP ameli_app_maintenance_mode_active 1 when MaintenanceMode.active is set, 0 otherwise.",
+        "# TYPE ameli_app_maintenance_mode_active gauge",
         f"ameli_app_maintenance_mode_active {maintenance_active}",
-        f"# HELP ameli_app_uptime_seconds Seconds since the process started.",
-        f"# TYPE ameli_app_uptime_seconds counter",
+        "# HELP ameli_app_uptime_seconds Seconds since the process started.",
+        "# TYPE ameli_app_uptime_seconds counter",
         f"ameli_app_uptime_seconds {uptime_seconds}",
-        f"# HELP ameli_app_info Static info about this app build.",
-        f"# TYPE ameli_app_info gauge",
+        "# HELP ameli_app_info Static info about this app build.",
+        "# TYPE ameli_app_info gauge",
         f'ameli_app_info{{version="{__version__}",environment="{settings.CFG.environment}"}} 1',
         "",
     ]

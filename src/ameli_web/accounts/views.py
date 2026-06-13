@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-
 from datetime import datetime, timedelta
 
-from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout, update_session_auth_hash
+from django.contrib.auth import get_user_model, update_session_auth_hash
+from django.contrib.auth import login as auth_login
+from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -20,10 +20,13 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from ameli_app import __version__
 from ameli_web.utils import format_timestamp_ui
 
-logger = logging.getLogger(__name__)
-
 from . import mfa as mfa_lib
-from .forms import AvatarUploadForm, ProfilePasswordForm, ProfilePreferencesForm, TemplateAuthenticationForm
+from .forms import (
+    AvatarUploadForm,
+    ProfilePasswordForm,
+    ProfilePreferencesForm,
+    TemplateAuthenticationForm,
+)
 from .models import MFAEmailChallenge, UserSession
 from .services import (
     change_password_for_user,
@@ -37,7 +40,6 @@ from .services import (
     disable_mfa_for_self,
     disable_mfa_totp_for_self,
     get_user_for_reset_token,
-    list_user_sessions,
     paginate_user_sessions,
     record_audit,
     regenerate_recovery_codes,
@@ -52,6 +54,8 @@ from .services import (
     start_mfa_email_enrollment,
     start_mfa_enrollment,
 )
+
+logger = logging.getLogger(__name__)
 
 PENDING_MFA_SESSION_KEY = "pending_mfa_user_id"
 PENDING_MFA_STARTED_KEY = "pending_mfa_started_at"

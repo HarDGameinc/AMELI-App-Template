@@ -7,7 +7,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
-def avatar_upload_to(user: "User", filename: str) -> str:
+def avatar_upload_to(user: User, filename: str) -> str:
     suffix = Path(filename or "avatar.png").suffix.lower() or ".png"
     safe_username = "".join(ch.lower() if ch.isalnum() else "-" for ch in (user.username or "user")).strip("-") or "user"
     return f"avatars/{safe_username}-{secrets.token_hex(8)}{suffix}"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ameli_app.cli import _autodetect_env_file, _effective_env_file
 

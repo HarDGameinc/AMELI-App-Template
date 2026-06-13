@@ -7,7 +7,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ameli_app import __version__
 from ameli_web.accounts.models import User, UserSession
@@ -16,21 +16,21 @@ from ameli_web.accounts.services import (
     change_password_for_user,
     create_user_account,
     delete_user_account,
+    disable_maintenance,
+    enable_maintenance,
     filtered_audit_queryset,
     filtered_users_queryset,
+    get_maintenance_state,
     list_recent_audit_entries,
     list_recent_sessions,
     list_users,
     paginate_admin_sessions,
     paginate_audit_for_admin,
     paginate_users_for_admin,
-    serialize_audit_event,
     reset_user_password,
     revoke_session_record,
+    serialize_audit_event,
     serialize_user,
-    disable_maintenance,
-    enable_maintenance,
-    get_maintenance_state,
     summarize_email_queue,
     summarize_users,
     update_user_account,

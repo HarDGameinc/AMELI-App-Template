@@ -4,6 +4,7 @@ import re
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from ameli_web.accounts.models import UserSession
 from ameli_web.accounts.services import (
@@ -11,7 +12,6 @@ from ameli_web.accounts.services import (
     create_user_account,
     record_audit,
 )
-from django.utils import timezone
 
 User = get_user_model()
 
@@ -121,7 +121,9 @@ def test_metrics_exposes_email_queue_gauges(client, admin_user, settings):
     so an external Prometheus can alert on a stuck queue without
     talking to the admin panel."""
     from datetime import timedelta
+
     from django.utils import timezone
+
     from ameli_web.accounts.models import OutboundEmail
 
     settings.AUDIT_HMAC_KEY = "k"
@@ -188,8 +190,9 @@ def test_metrics_exposes_audit_chain_status(client, admin_user, settings):
 
 @pytest.mark.django_db
 def test_metrics_exposes_uptime_and_locked_users(client, admin_user):
-    from ameli_web.accounts.models import User
     from django.utils import timezone
+
+    from ameli_web.accounts.models import User
 
     User.objects.filter(username="admin").update(locked_at=timezone.now())
 

@@ -9,7 +9,6 @@ from ameli_web.accounts.services import (
     LoginThrottled,
     bootstrap_superadmin,
     check_login_throttle,
-    record_audit,
     record_login_failure,
 )
 from ameli_web.audit.models import AuditEvent
@@ -57,6 +56,7 @@ def test_check_login_throttle_old_failures_do_not_count(admin_user):
     pinning the row's window_start in the past is the cleanest way to
     pretend those failures expired without time-traveling the clock."""
     from datetime import timedelta
+
     from django.utils import timezone
 
     from ameli_web.accounts.models import ThrottleCounter
