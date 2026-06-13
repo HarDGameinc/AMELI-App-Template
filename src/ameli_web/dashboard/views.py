@@ -413,13 +413,23 @@ def _check_audit_chain() -> dict:
 
 
 def _check_disk_space() -> dict:
-    """Disk-free probe on the data directory. Below 5% free = warn."""
+    """Disk-free probe on the data directory. Below 5% free = warn.
+
+    Many installs (Django without media uploads, ephemeral container
+    deployments) don't have a configured data_dir at all. Treat that
+    as a clean OK with a ``note`` so the overall health stays green
+    instead of blocking readiness for an optional knob.
+    """
     import shutil
     from django.conf import settings as dj_settings
 
-    data_dir = getattr(dj_settings.CFG, "data_dir", "/var/lib")
+    data_dir = getattr(dj_settings.CFG, "data_dir", "")
+    if not data_dir:
+        return {"ok": True, "detail": {"note": "data_dir not configured"}}
     try:
         usage = shutil.disk_usage(str(data_dir))
+    except FileNotFoundError:
+        return {"ok": True, "detail": {"note": f"data_dir not present: {data_dir}"}}
     except OSError as exc:
         return {"ok": False, "detail": {"error": str(exc), "path": str(data_dir)}}
     free_pct = (usage.free / usage.total * 100) if usage.total else 0

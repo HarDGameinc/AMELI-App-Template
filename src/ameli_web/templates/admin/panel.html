@@ -551,7 +551,7 @@ document.addEventListener("DOMContentLoaded", () => {
           credentials: "same-origin",
           headers: {
             "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
+            "x-csrf-token": csrfToken,
           },
           body: JSON.stringify({
             action,
@@ -559,13 +559,21 @@ document.addEventListener("DOMContentLoaded", () => {
             read_only: true,
           }),
         });
-        if (res.status === 401) {
-          feedback.textContent = "Requiere sudo. Iniciá el modal y reintenta.";
+        let payload = {};
+        try { payload = await res.json(); } catch (_) { /* non-json */ }
+        if (res.status === 401 || payload.need_sudo) {
+          feedback.textContent = "Requiere sudo. Tocá el boton 'Admin nativo Django' para iniciar sudo y reintenta.";
           return;
         }
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-        setState(!!data.state && data.state.active);
+        if (res.status === 403) {
+          feedback.textContent = "Sin permisos. Cerra y vuelve a iniciar sesion como superadmin.";
+          return;
+        }
+        if (!res.ok) {
+          const detail = payload.error || ("HTTP " + res.status);
+          throw new Error(detail);
+        }
+        setState(!!payload.state && payload.state.active);
         feedback.textContent = "Listo.";
       } catch (err) {
         feedback.textContent = "Error: " + err.message;
