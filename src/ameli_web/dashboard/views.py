@@ -294,6 +294,10 @@ def health(request):
             "ok": bool(db_status.get("ok")),
             "detail": db_status,
         },
+        "smtp_config": _check_smtp_config(),
+        "email_queue": _check_email_queue(),
+        "audit_chain": _check_audit_chain(),
+        "disk": _check_disk_space(),
     }
 
     overall_ok = all(check["ok"] for check in checks.values())
@@ -311,6 +315,124 @@ def health(request):
             "db": db_status,
         }
     )
+
+
+def _check_smtp_config() -> dict:
+    """Light SMTP probe: confirm the backend is configured for actual
+    delivery (not the console no-op) and the host/port look sane.
+    We DON'T open a connection — that would be heavy for every probe
+    and would make the readiness check depend on a third-party MX
+    rather than on this service. The boot guard in settings already
+    refuses to start with a broken backend in prod."""
+    from django.conf import settings as dj_settings
+
+    backend = getattr(dj_settings, "EMAIL_BACKEND", "")
+    if "smtp" not in backend.lower():
+        return {"ok": True, "detail": {"backend": backend, "note": "non-smtp backend"}}
+    host = getattr(dj_settings, "EMAIL_HOST", "")
+    port = getattr(dj_settings, "EMAIL_PORT", 0)
+    if not host or not port:
+        return {"ok": False, "detail": {"backend": backend, "host": host, "port": port}}
+    return {"ok": True, "detail": {"backend": backend, "host": host, "port": port}}
+
+
+def _check_email_queue() -> dict:
+    """Lightweight depth probe of the OutboundEmail retry queue. The
+    check fails when the oldest pending row is older than a soft
+    threshold — usually a sign the notifier daemon stalled."""
+    from django.utils import timezone as dj_tz
+
+    try:
+        from ameli_web.accounts.models import OutboundEmail
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": True, "detail": {"note": f"unavailable: {exc.__class__.__name__}"}}
+    try:
+        pending = OutboundEmail.objects.filter(status=OutboundEmail.STATUS_PENDING).count()
+        oldest = (
+            OutboundEmail.objects
+            .filter(status=OutboundEmail.STATUS_PENDING)
+            .order_by("created_at")
+            .first()
+        )
+    except Exception as exc:  # noqa: BLE001 - probe must not 500
+        return {"ok": False, "detail": {"error": f"{exc.__class__.__name__}: {exc}"}}
+    oldest_age_seconds: int | None = None
+    if oldest is not None:
+        oldest_age_seconds = int((dj_tz.now() - oldest.created_at).total_seconds())
+    # 1 h stuck = something is wrong. The backoff schedule tops out at
+    # 6 h between attempts, but the *oldest* row should never be that
+    # old unless the worker is dead.
+    threshold = 60 * 60
+    healthy = oldest_age_seconds is None or oldest_age_seconds <= threshold
+    return {
+        "ok": healthy,
+        "detail": {
+            "pending": pending,
+            "oldest_pending_age_seconds": oldest_age_seconds,
+            "stuck_threshold_seconds": threshold,
+        },
+    }
+
+
+def _check_audit_chain() -> dict:
+    """Quick chain check: confirm the configured HMAC key matches the
+    tail row's signature. Walking the whole chain is too expensive
+    for a readiness probe (use ``ameli-app verify-audit`` for that);
+    we only validate the most recent link as a smoke test."""
+    try:
+        from ameli_web.accounts.services import _audit_hmac, _audit_hmac_key
+        from ameli_web.audit.models import AuditEvent
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": True, "detail": {"note": f"unavailable: {exc.__class__.__name__}"}}
+    key = _audit_hmac_key()
+    if not key:
+        return {"ok": True, "detail": {"note": "AUDIT_HMAC_KEY not configured"}}
+    try:
+        tail = AuditEvent.objects.exclude(hmac="").order_by("-id").first()
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": {"error": f"{exc.__class__.__name__}: {exc}"}}
+    if tail is None:
+        return {"ok": True, "detail": {"note": "no signed rows yet"}}
+    expected = _audit_hmac(
+        key=key,
+        prev_hmac=tail.prev_hmac,
+        action=tail.action,
+        actor_username=tail.actor_username,
+        target_username=tail.target_username,
+        payload=tail.payload,
+        created_at=tail.created_at,
+    )
+    healthy = expected == tail.hmac
+    return {
+        "ok": healthy,
+        "detail": {
+            "tail_id": tail.id,
+            "match": healthy,
+        },
+    }
+
+
+def _check_disk_space() -> dict:
+    """Disk-free probe on the data directory. Below 5% free = warn."""
+    import shutil
+    from django.conf import settings as dj_settings
+
+    data_dir = getattr(dj_settings.CFG, "data_dir", "/var/lib")
+    try:
+        usage = shutil.disk_usage(str(data_dir))
+    except OSError as exc:
+        return {"ok": False, "detail": {"error": str(exc), "path": str(data_dir)}}
+    free_pct = (usage.free / usage.total * 100) if usage.total else 0
+    healthy = free_pct >= 5.0
+    return {
+        "ok": healthy,
+        "detail": {
+            "path": str(data_dir),
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+            "free_pct": round(free_pct, 2),
+        },
+    }
 
 
 @require_GET
