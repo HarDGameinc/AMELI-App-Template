@@ -60,13 +60,31 @@ def configure_logging(level: str = "INFO", *, format: str | None = None) -> None
     ``"text"`` for the human-friendly default. Without an explicit arg
     the ``AMELI_APP_LOG_FORMAT`` env var decides; if unset, text wins so
     nothing changes for existing operators on plain stdout.
+
+    The handler also installs a ``RequestIdLogFilter`` so the current
+    request id (set by ``ameli_web.request_id.RequestIdMiddleware``) is
+    available as ``%(request_id)s`` in the text formatter and as a
+    top-level field in the JSON formatter. Outside a request the value
+    is ``"-"``.
     """
+    # Local import to avoid pulling Django (request_id depends on it)
+    # into shell utilities that just want logging.
+    try:
+        from ameli_web.request_id import RequestIdLogFilter
+        request_id_filter: logging.Filter | None = RequestIdLogFilter()
+    except Exception:  # noqa: BLE001 - Django might not be set up yet
+        request_id_filter = None
+
     handler = logging.StreamHandler()
+    if request_id_filter is not None:
+        handler.addFilter(request_id_filter)
     if _should_use_json(format):
         handler.setFormatter(JsonFormatter())
     else:
         handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+            logging.Formatter(
+                "%(asctime)s %(levelname)s [%(name)s] [req=%(request_id)s] %(message)s"
+            )
         )
 
     root = logging.getLogger()

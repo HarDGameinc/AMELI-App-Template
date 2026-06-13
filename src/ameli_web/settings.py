@@ -153,6 +153,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "ameli_web.request_id.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "ameli_web.accounts.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

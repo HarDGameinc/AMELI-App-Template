@@ -130,9 +130,18 @@ def record_audit(action: str, *, actor=None, target_username: str | None = None,
     """
     from django.db import transaction
 
+    from ameli_web.request_id import get_request_id
+
     actor_username = getattr(actor, "username", None) or ""
     target = target_username or ""
-    payload_dict = payload or {}
+    payload_dict = dict(payload or {})
+    # Stamp the audit row with the current request id (if any) so the
+    # operator can correlate a single user action across multiple
+    # log lines and audit events. Outside an HTTP request the value
+    # is empty and we skip injecting the key.
+    rid = get_request_id()
+    if rid and "request_id" not in payload_dict:
+        payload_dict["request_id"] = rid
     key = _audit_hmac_key()
 
     if not key:
