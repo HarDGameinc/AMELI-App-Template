@@ -205,7 +205,12 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         response = render(request, "admin/_users_panel.html", context)
     elif partial == "audit":
         response = render(request, "admin/_audit_panel.html", context)
-    elif partial == "sessions":
+    elif partial == "admin_sessions":
+        # The admin-side sessions panel uses ``admin_sessions`` so it
+        # doesn't collide with the per-user sessions panel served at
+        # /profile/ (``partial=sessions`` there). Without this match
+        # the JS pagination footer was getting back the full /admin/
+        # page and the panel rendered the whole site recursively.
         response = render(request, "admin/_sessions_panel.html", context)
     else:
         response = render(request, "admin/panel.html", context)

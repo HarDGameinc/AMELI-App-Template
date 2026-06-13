@@ -123,7 +123,7 @@ def test_admin_panel_sessions_partial_returns_only_panel_with_fetch_header(clien
     _make_session(admin_user, key="partial-render")
     client.force_login(admin_user)
 
-    response = client.get("/admin/?partial=sessions", HTTP_X_REQUESTED_WITH="fetch")
+    response = client.get("/admin/?partial=admin_sessions", HTTP_X_REQUESTED_WITH="fetch")
     body = _body(response)
 
     assert response.status_code == 200
@@ -142,10 +142,36 @@ def test_admin_panel_sessions_filter_applies_server_side(client, admin_user):
     client.force_login(admin_user)
 
     response = client.get(
-        "/admin/?admin_sessions_search=seekme&partial=sessions",
+        "/admin/?admin_sessions_search=seekme&partial=admin_sessions",
         HTTP_X_REQUESTED_WITH="fetch",
     )
     body = _body(response)
 
     assert "seekme" in body
     assert "admin" not in body or body.count("seekme") >= 1
+
+
+@pytest.mark.django_db
+def test_admin_sessions_partial_does_not_return_full_page(client, admin_user):
+    """Regression: the panel's data-pagination-panel is 'admin_sessions'
+    (so it doesn't collide with the per-user sessions panel served
+    at /profile/). The view used to compare against 'sessions' only,
+    so a fetch from the pagination footer received the full
+    /admin/ page back and rendered the entire site recursively
+    inside the sessions panel."""
+    _make_session(admin_user, key="regression-row")
+    client.force_login(admin_user)
+
+    response = client.get(
+        "/admin/?partial=admin_sessions&admin_sessions_page=1",
+        HTTP_X_REQUESTED_WITH="fetch",
+    )
+    body = _body(response)
+
+    assert response.status_code == 200
+    # If the panel partial is being served, the response body is the
+    # fragment template — no full <html> wrapper.
+    assert "<html" not in body
+    assert "<body" not in body
+    # Sanity: the fragment includes the sessions header.
+    assert "Sesiones recientes" in body
