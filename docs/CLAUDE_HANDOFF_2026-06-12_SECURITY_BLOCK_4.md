@@ -978,3 +978,71 @@ DATABASE_URL= APP_ENV=dev .venv/bin/pytest tests/test_security_hardening_block4.
 - [`deploy/systemd/ameli-app-verify-audit.service`](../deploy/systemd/ameli-app-verify-audit.service) + `.timer`
 - [`docs/OPERATIONS.md`](OPERATIONS.md) — seccion "Audit chain verification (H6)"
 - [`tests/test_security_hardening_block4.py`](../tests/test_security_hardening_block4.py) — 18 tests
+
+---
+
+## Cierre de sesion (2026-06-13 00:14 UTC)
+
+Sesion finalizada con **615/615 tests verde**, **0 deselects**,
+**0 hallazgos abiertos** de severidad media o alta.
+
+### Commits de la sesion (`dev`, en orden cronologico)
+
+| Hash | Linea | Categoria |
+|---|---|---|
+| `321b6fa` | harden HMAC rotation recipe + helper (#8 backlog) | Bloque 4 |
+| `df3de1e` | amend bloque 4 handoff con #8 + #9 cierre en server | Doc |
+| `b066ce5` | outbound email retry queue (#3 backlog) | Bloque 4 |
+| `1ba3b34` | amend handoff con #3 verificacion operativa | Doc |
+| `9754351` | post-review hardening for #8 + #3 (sec + quality) | Revision |
+| `be8442d` | amend handoff con post-review hardening verification | Doc |
+| `8c21d75` | rotate-audit-key: accept keys via env vars or stdin | Post-revision |
+| `c4fa660` | amend handoff con --*-env/--*-stdin verification | Doc |
+| `c49e400` | admin: read-only view + retry-now para OutboundEmail | Post-revision |
+| `9594203` | verify-mfa: catch SMTP failures (diagnostico erroneo) | Revert |
+| `95d4615` | Revert "verify-mfa: catch SMTP failures" | Revert |
+| `d2b2842` | verify-mfa: keep login flow alive on Errno 101 | Bugfix |
+| `2a31bd1` | email retry queue: structured logging | Post-revision |
+| `345cc68` | email retry queue: unicode/concurrencia/tz tests | Post-revision |
+| `3dff8e6` | apply_audit_key: O_NOFOLLOW + parent dir fsync | Post-revision |
+| `91237ab` | amend handoff con O_NOFOLLOW + dir fsync verification | Doc |
+| `25211cb` | admin: live email-queue metrics widget en /admin/ | Post-revision |
+| `2b0494d` | fix flaky mfa-resend-throttle test | Pendiente operativo |
+| `a0a84ec` | installer: enable notifier por default en api-bearing profiles | Pendiente operativo |
+
+### Estado final por frente
+
+| Frente | Estado | Verificado en server |
+|---|---|---|
+| Bloque 4 (audit 2026-06-11 completo) | Cerrado | Si |
+| Revision final sec + calidad (13 findings) | Aplicado | Si |
+| Backlog tecnico post-revision (5 items) | Cerrado | Si |
+| Keys via stdin/env (no mas argv) | Cerrado | Si |
+| Admin UI para OutboundEmail | Cerrado | Si |
+| Structured logging del worker | Cerrado | Si |
+| Tests adicionales (unicode/concurrency/tz naive) | Cerrado | N/A (unit) |
+| O_NOFOLLOW + parent dir fsync | Cerrado | Si |
+| Metrics widget en /admin/ (review item #3) | Cerrado | Si |
+| Bug MFA email 500 (OSError Network unreachable) | Cerrado | Si |
+| Flaky pre-existing test del MFA throttle | Cerrado | N/A (unit) |
+| Notifier auto-habilitado en installer | Cerrado | Codigo + tests |
+
+### Backlog que entrega esta sesion
+
+**Vacio.** No hay items abiertos de seguridad u operativos. La unica
+mejora futura razonable seria el endpoint `/metrics` formato
+Prometheus (opcion B del review item #3) — solo aplica si se monta
+una stack externa de observabilidad. Hoy el widget en `/admin/`
+cubre el caso operativo del template.
+
+### Para el proximo agente
+
+- Rama estable: `main` (post-promocion)
+- Rama de trabajo: `dev` (sincronizada con `main`, ultimo commit `a0a84ec`)
+- Sin migraciones pendientes (ultima fue `accounts.0010_outboundemail_audit_payload`)
+- Server dev `ha-report2` sincronizado y sano:
+  - chain audit firmada con la key actual del env, `verify-audit` clean
+  - cola `OutboundEmail` drenada (pending=0 al cierre)
+  - notifier corriendo como service persistente (cada 30 s)
+  - widget de metricas accesible en `/admin/` para admin con sudo
+- Sin warnings abiertos en `pytest`, sin nuevas E501 vs baseline.
