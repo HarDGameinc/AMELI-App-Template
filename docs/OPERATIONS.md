@@ -45,11 +45,37 @@ Use the full first-install walkthrough in:
 
 - `docs/FIRST_INSTALL_DJANGO.md`
 
-## Backup
+## Backup + restore
 
 ```bash
+# create an archive
 sudo APP_ENV=prod bash scripts/backup.sh
+
+# verify an archive without touching the live deploy (cron-friendly)
+sudo APP_ENV=prod bash scripts/restore.sh verify /var/backups/<archive>.tar.gz
+
+# restore (destructive)
+sudo APP_ENV=prod bash scripts/restore.sh restore /var/backups/<archive>.tar.gz --yes
 ```
+
+`backup.sh` bundles:
+- the DB dump (`pg_dump --format=custom` on Postgres, `sqlite3 .backup`
+  on SQLite — both work against a live writer)
+- `${ETC_DIR}` (env file + yaml config)
+- `${DATA_DIR}` (user-uploaded media)
+- a `MANIFEST.sha256` of every artifact
+
+Tunables (env vars):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `AMELI_APP_BACKUP_RETENTION_DAYS` | `30` | Older archives matching `${APP_INSTANCE}-*.tar.gz(.gpg)` are deleted at the end of each run. Neighbouring deploys' backups are never touched. |
+| `AMELI_APP_BACKUP_GPG_RECIPIENT` | unset | When set, the archive is `gpg --encrypt`ed to that recipient and the plaintext deleted. Required if backups leave the host. |
+
+`restore.sh verify` is the contract test: it extracts to a scratch
+dir, validates every `sha256sum` from the manifest, then exits 0.
+Schedule it weekly so a silently-corrupt backup gets caught before
+you need to restore in anger.
 
 ## Outbound email retry queue (#3)
 
