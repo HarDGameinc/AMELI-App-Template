@@ -35,6 +35,7 @@ from .models import (
     MFAEmailChallenge,
     MFARecoveryCode,
     OutboundEmail,
+    ThrottleCounter,
     UserSession,
 )
 
@@ -786,6 +787,144 @@ def disable_maintenance(actor_username: str) -> dict[str, Any]:
         payload={"was_message_len": len(row.message)},
     )
     return {"ok": True, "status": "disabled", "state": get_maintenance_state()}
+
+
+def run_retention_sweep(
+    *,
+    sessions_revoked_max_age_days: int = 30,
+    outbound_email_sent_max_age_days: int = 30,
+    throttle_counter_max_age_days: int = 1,
+    email_change_resolved_max_age_days: int = 30,
+    mfa_email_challenge_consumed_max_age_days: int = 7,
+    audit_max_age_days: int | None = None,
+) -> dict[str, Any]:
+    """Purge old operational rows so the DB doesn't grow without bound.
+
+    The sweep is conservative and idempotent: only resolved /
+    expired / revoked rows are touched, never anything still in
+    flight. Defaults align with what an operator would expect from
+    a baseline retention policy on a fresh deploy; callers can
+    override per-knob for tighter or looser windows.
+
+    Returns a dict of ``{table: rows_deleted}`` plus an ``audit_*``
+    summary so the operator can confirm the run in journalctl /
+    /admin/.
+
+    ``audit_max_age_days=None`` skips the audit prune — the audit
+    chain is the long-term log of "who did what" and most policies
+    keep it. Pass an integer to enforce a horizon (rows older are
+    deleted and a fresh chain anchor is written so verify-audit
+    stays clean — anchor logic lives in
+    :func:`_anchor_audit_chain_after_prune`).
+    """
+    from datetime import timedelta
+
+    now = timezone.now()
+    counts: dict[str, int] = {}
+
+    # 1) Revoked / stale UserSession rows.
+    cutoff = now - timedelta(days=sessions_revoked_max_age_days)
+    n, _ = UserSession.objects.filter(
+        revoked_at__isnull=False, revoked_at__lt=cutoff,
+    ).delete()
+    counts["user_sessions"] = n
+
+    # 2) Sent / failed OutboundEmail rows.
+    cutoff = now - timedelta(days=outbound_email_sent_max_age_days)
+    n, _ = OutboundEmail.objects.filter(
+        status__in=[OutboundEmail.STATUS_SENT, OutboundEmail.STATUS_FAILED],
+        updated_at__lt=cutoff,
+    ).delete()
+    counts["outbound_emails"] = n
+
+    # 3) ThrottleCounter rows whose window is well in the past.
+    cutoff = now - timedelta(days=throttle_counter_max_age_days)
+    n, _ = ThrottleCounter.objects.filter(window_start__lt=cutoff).delete()
+    counts["throttle_counters"] = n
+
+    # 4) Resolved (confirmed / cancelled) EmailChangeRequest rows.
+    cutoff = now - timedelta(days=email_change_resolved_max_age_days)
+    n, _ = EmailChangeRequest.objects.filter(
+        created_at__lt=cutoff,
+    ).exclude(confirmed_at__isnull=True, cancelled_at__isnull=True).delete()
+    counts["email_change_requests"] = n
+
+    # 5) Used / expired MFA email challenges.
+    cutoff = now - timedelta(days=mfa_email_challenge_consumed_max_age_days)
+    n, _ = MFAEmailChallenge.objects.filter(
+        created_at__lt=cutoff,
+    ).filter(used_at__isnull=False).delete()
+    counts["mfa_email_challenges"] = n
+
+    counts["audit_events"] = 0
+    if audit_max_age_days is not None:
+        counts["audit_events"] = _prune_audit_with_anchor(
+            cutoff=now - timedelta(days=audit_max_age_days),
+        )
+
+    record_audit(
+        "retention_sweep",
+        target_username="",
+        payload={"counts": dict(counts)},
+    )
+    return {"ok": True, "counts": counts, "swept_at": now.isoformat()}
+
+
+def _prune_audit_with_anchor(*, cutoff) -> int:
+    """Delete audit rows older than ``cutoff`` and re-anchor the chain.
+
+    The chain links each row to the previous one via ``prev_hmac``;
+    naively deleting the head would orphan the tail. We:
+
+    1. Delete the rows older than ``cutoff`` in one transaction.
+    2. Demote every still-chained surviving row to legacy (``hmac=""``
+       and ``prev_hmac=""``). ``verify_audit_chain`` skips rows
+       without an hmac, so the surviving tail becomes pre-chain
+       history (no longer cryptographically anchored to the deleted
+       head, which is what the operator chose by enabling the prune).
+    3. Write a ``retention_audit_anchor`` row that becomes the new
+       head of the chain — fresh ``prev_hmac=""`` + a new hmac
+       derived from the live key. Subsequent ``record_audit`` rows
+       chain from this anchor.
+
+    Step 2 is the price of the prune: it sacrifices verifiability of
+    the rows that "lived through the cut" in exchange for a clean
+    chain going forward. Operators that need stronger guarantees
+    should archive the audit table externally rather than running
+    this prune.
+    """
+    from django.db import transaction
+
+    deleted = 0
+    with transaction.atomic():
+        deleted, _ = AuditEvent.objects.filter(created_at__lt=cutoff).delete()
+        if deleted:
+            # 2) Surviving rows become legacy.
+            AuditEvent.objects.filter(created_at__gte=cutoff).update(
+                hmac="", prev_hmac="",
+            )
+            # 3) Fresh anchor.
+            key = _audit_hmac_key()
+            event = AuditEvent.objects.create(
+                actor_username="",
+                target_username="",
+                action="retention_audit_anchor",
+                payload={"deleted_rows": deleted, "cutoff": cutoff.isoformat()},
+                prev_hmac="",
+            )
+            if key:
+                event.refresh_from_db(fields=["created_at"])
+                event.hmac = _audit_hmac(
+                    key=key,
+                    prev_hmac="",
+                    action=event.action,
+                    actor_username=event.actor_username,
+                    target_username=event.target_username,
+                    payload=event.payload,
+                    created_at=event.created_at,
+                )
+                event.save(update_fields=["hmac"])
+    return deleted
 
 
 def summarize_users() -> dict[str, int]:

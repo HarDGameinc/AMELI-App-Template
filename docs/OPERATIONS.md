@@ -161,6 +161,44 @@ test-email button, MFA codes during login) keep using
 `.send(fail_silently=False)` and surface the exception to the
 caller — the queue is opt-in.
 
+## Data retention sweep (maintenance worker)
+
+The `maintenance-once` worker now runs a conservative retention
+sweep on every tick — purges only resolved / expired / revoked
+operational rows so the DB stays bounded on long-lived deploys.
+Defaults:
+
+| Table | Window | What gets deleted |
+|---|---|---|
+| `UserSession` | 30 d | rows with `revoked_at` set and older than window |
+| `OutboundEmail` | 30 d | rows in `sent` or `failed` whose `updated_at` < window |
+| `ThrottleCounter` | 1 d | rows whose `window_start` < window |
+| `EmailChangeRequest` | 30 d | rows already `confirmed_at` or `cancelled_at` |
+| `MFAEmailChallenge` | 7 d | rows with `used_at` set and older than window |
+| `AuditEvent` | off by default | only when `AMELI_APP_AUDIT_RETENTION_MAX_AGE_DAYS` is set |
+
+Audit pruning is opt-in. When you set
+`AMELI_APP_AUDIT_RETENTION_MAX_AGE_DAYS=<N>` the sweep deletes rows
+older than N days, demotes the surviving tail to legacy (clears
+`hmac` and `prev_hmac` — they become pre-chain rows, skipped by
+`verify-audit`), and writes a fresh `retention_audit_anchor` row
+that becomes the new chain head. This sacrifices verifiability of
+the rows that lived through the cut in exchange for a clean chain
+going forward.
+
+Each run is itself audited (`retention_sweep`) so the operator can
+confirm via `/admin/` or `ameli-app verify-audit --strict-precondition`.
+
+Run it manually:
+
+```bash
+.venv/bin/ameli-app maintenance
+```
+
+The installer enables `ameli-app-template-<env>-maintenance.timer`
+by default — check its schedule with
+`systemctl list-timers | grep maintenance`.
+
 ## Audit chain verification (H6)
 
 Enable the HMAC chain by setting `AMELI_APP_AUDIT_HMAC_KEY` in the env
