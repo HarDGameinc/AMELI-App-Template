@@ -1,4 +1,10 @@
-<section class="panel" id="admin-sessions-panel" data-pagination-panel="admin_sessions">
+{% comment %}
+Inner content of the admin Sessions panel. Rendered standalone when the
+view is requested with ``?partial=admin_sessions`` so the client-side
+pagination/filter swap can drop straight into the existing panel container
+without nesting a second ``<section>`` inside. The outer ``<section
+class="panel" id="admin-sessions-panel">`` lives in ``admin/panel.html``.
+{% endcomment %}
   <div class="metric-label">Sesiones recientes</div>
   <p class="panel-note muted">Sesiones activas y revocadas de todos los usuarios del Template.</p>
 
@@ -45,4 +51,3 @@
   </div>
 
   {% include "_pagination_footer.html" with pagination=sessions_pagination %}
-</section>

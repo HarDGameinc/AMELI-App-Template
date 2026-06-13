@@ -173,5 +173,13 @@ def test_admin_sessions_partial_does_not_return_full_page(client, admin_user):
     # fragment template — no full <html> wrapper.
     assert "<html" not in body
     assert "<body" not in body
+    # And the fragment must NOT contain its own outer <section> — the
+    # JS swap does ``panel.innerHTML = html`` against the existing
+    # ``<section id="admin-sessions-panel">``. If the partial wraps
+    # itself in another section, the page renders with a duplicate
+    # nested panel and the search/filter toolbar gets pushed out of
+    # the parent layout (this was the bug reported).
+    assert 'id="admin-sessions-panel"' not in body
+    assert 'data-pagination-panel="admin_sessions"' not in body
     # Sanity: the fragment includes the sessions header.
     assert "Sesiones recientes" in body
