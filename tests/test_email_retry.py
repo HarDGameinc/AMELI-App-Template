@@ -480,12 +480,15 @@ def test_send_with_retry_normalizes_naive_expires_at(settings):
     """Callers that pass datetime.utcnow() + delta (naive) should not
     crash inside process_email_queue when it compares expires_at to
     timezone.now() (aware). ``send_with_retry`` coerces to UTC-aware."""
-    from datetime import datetime
+    from datetime import UTC, datetime
     settings.AUDIT_HMAC_KEY = "k"
     from ameli_web.accounts.models import OutboundEmail
     from ameli_web.accounts.services import process_email_queue, send_with_retry
 
-    naive_future = datetime.utcnow() + timedelta(hours=1)
+    # ``datetime.utcnow()`` is deprecated on 3.12+. We intentionally
+    # want a NAIVE datetime here to exercise the coercion in
+    # ``send_with_retry``, so build it manually via replace.
+    naive_future = (datetime.now(UTC) + timedelta(hours=1)).replace(tzinfo=None)
     assert naive_future.tzinfo is None
     msg = EmailMessage("s", "b", "from@x", ["to@x"])
     with patch.object(EmailMessage, "send", side_effect=ConnectionError("boom")):

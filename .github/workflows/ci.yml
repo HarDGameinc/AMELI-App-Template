@@ -28,8 +28,16 @@ jobs:
       DJANGO_SETTINGS_MODULE: ameli_web.settings
       AMELI_APP_SECRET_KEY: ci-secret-key-not-for-production-xxxxxxxxxxxxxxx
       AMELI_APP_ALLOWED_HOSTS: "*"
-      AMELI_APP_TRUSTED_PROXIES: 127.0.0.1
-      AMELI_APP_AUDIT_HMAC_KEY: ci-audit-key
+      # Match the project default so tests that pin the loopback set
+      # (test_trusted_proxies_setting_present, test_default_trusts_loopback_only)
+      # keep working — overriding to just 127.0.0.1 would mask IPv6.
+      AMELI_APP_TRUSTED_PROXIES: "127.0.0.1,::1"
+      # ``AMELI_APP_AUDIT_HMAC_KEY`` is intentionally NOT set: leaving
+      # it empty makes record_audit write legacy (hmac="") rows during
+      # fixture setup, which verify_audit_chain correctly skips. Setting
+      # it to a CI-default key would stamp those fixture rows under the
+      # CI key, and any test that later flips ``settings.AUDIT_HMAC_KEY``
+      # would fail the chain at the pre-existing row.
       AMELI_APP_DEBUG: "false"
       AMELI_APP_SQLITE_PATH: ./ci.sqlite3
       PYTHONDONTWRITEBYTECODE: "1"
