@@ -199,6 +199,58 @@ The installer enables `ameli-app-template-<env>-maintenance.timer`
 by default — check its schedule with
 `systemctl list-timers | grep maintenance`.
 
+## Prometheus metrics (/metrics)
+
+`/metrics` exposes the operator-relevant counters in Prometheus
+text exposition format — gated by the same IP allowlist as
+`/health`, so Prometheus scraping happens on the operator network
+without any auth handshake. Implemented hand-rolled (no
+`prometheus_client` dependency) so the template stays
+dependency-free; swap in the library when you outgrow it.
+
+Metrics surfaced:
+
+| Name | Type | Description |
+|---|---|---|
+| `ameli_app_users_total` | gauge | Total registered users |
+| `ameli_app_users_active` | gauge | Users with `is_active=True` |
+| `ameli_app_users_locked` | gauge | Users with `locked_at` set (permanent lockout) |
+| `ameli_app_users_pending_password` | gauge | Users with `must_change_password=True` |
+| `ameli_app_sessions_total/active/revoked` | gauge | UserSession rollup |
+| `ameli_app_audit_events_total` | counter | All audit rows |
+| `ameli_app_audit_events_failed` | counter | Rows whose action ends in `_failed` |
+| `ameli_app_audit_chain_ok` | gauge | 1 if tail row hmac matches the configured key |
+| `ameli_app_email_queue_pending` | gauge | OutboundEmail rows waiting |
+| `ameli_app_email_queue_oldest_seconds` | gauge | Oldest pending row's age |
+| `ameli_app_email_queue_sent_24h` | gauge | Delivered in last 24 h |
+| `ameli_app_email_queue_failed_24h` | gauge | Permanently failed in last 24 h |
+| `ameli_app_email_queue_expired_24h` | gauge | Dropped before delivery in last 24 h |
+| `ameli_app_maintenance_mode_active` | gauge | 1 when MaintenanceMode.active |
+| `ameli_app_uptime_seconds` | counter | Seconds since process start |
+| `ameli_app_info{version,environment}` | gauge | Static build info |
+
+Sample alert rules:
+
+```yaml
+- alert: AmeliAuditChainBroken
+  expr: ameli_app_audit_chain_ok == 0
+  for: 5m
+  annotations:
+    summary: "Audit chain hmac mismatch — possible tampering"
+
+- alert: AmeliEmailQueueStuck
+  expr: ameli_app_email_queue_oldest_seconds > 3600
+  for: 10m
+  annotations:
+    summary: "Oldest pending OutboundEmail row > 1h — notifier may be down"
+
+- alert: AmeliMaintenanceLeftOn
+  expr: ameli_app_maintenance_mode_active == 1
+  for: 2h
+  annotations:
+    summary: "Maintenance mode active for > 2h, operator may have forgotten to disable"
+```
+
 ## Audit chain verification (H6)
 
 Enable the HMAC chain by setting `AMELI_APP_AUDIT_HMAC_KEY` in the env

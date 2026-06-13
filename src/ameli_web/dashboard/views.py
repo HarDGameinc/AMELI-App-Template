@@ -479,18 +479,43 @@ def metrics(request):
     from django.http import HttpResponse
     from django.utils import timezone
 
-    from ameli_web.accounts.models import User, UserSession
+    from ameli_web.accounts.models import OutboundEmail, User, UserSession
+    from ameli_web.accounts.services import (
+        get_maintenance_state,
+        summarize_email_queue,
+    )
     from ameli_web.audit.models import AuditEvent
 
     now = timezone.now()
     users_total = User.objects.count()
     users_active = User.objects.filter(is_active=True).count()
+    users_locked = User.objects.filter(locked_at__isnull=False).count()
     users_pending_password = User.objects.filter(must_change_password=True).count()
     sessions_total = UserSession.objects.count()
     sessions_active = UserSession.objects.filter(revoked_at__isnull=True).count()
     sessions_revoked = UserSession.objects.filter(revoked_at__isnull=False).count()
     audit_total = AuditEvent.objects.count()
     audit_failed = AuditEvent.objects.filter(action__endswith="_failed").count()
+
+    # Email queue rollup — reuses the same aggregation as the admin
+    # widget so dashboards / alerts pivot off the same numbers as the
+    # operator's "what is going on right now" view.
+    queue = summarize_email_queue()
+    queue_pending = int(queue.get("pending") or 0)
+    queue_oldest = int(queue.get("oldest_pending_age_seconds") or 0)
+    queue_sent_24h = int(queue.get("sent_last_24h") or 0)
+    queue_failed_24h = int(queue.get("failed_last_24h") or 0)
+    queue_expired_24h = int(queue.get("expired_last_24h") or 0)
+
+    # Audit chain smoke check (matches the /health logic so an alert on
+    # ``ameli_app_audit_chain_ok == 0`` fires exactly when the operator
+    # would also see DEGRADADO on the readiness probe).
+    audit_chain_ok = 1 if _check_audit_chain().get("ok") else 0
+
+    maint = get_maintenance_state()
+    maintenance_active = 1 if maint.get("active") else 0
+
+    uptime_seconds = _process_uptime_seconds()
 
     lines = [
         f"# HELP ameli_app_users_total Total registered users.",
@@ -499,6 +524,9 @@ def metrics(request):
         f"# HELP ameli_app_users_active Currently enabled users.",
         f"# TYPE ameli_app_users_active gauge",
         f"ameli_app_users_active {users_active}",
+        f"# HELP ameli_app_users_locked Users whose locked_at is set (permanent lockout).",
+        f"# TYPE ameli_app_users_locked gauge",
+        f"ameli_app_users_locked {users_locked}",
         f"# HELP ameli_app_users_pending_password Users that must rotate their password.",
         f"# TYPE ameli_app_users_pending_password gauge",
         f"ameli_app_users_pending_password {users_pending_password}",
@@ -517,6 +545,30 @@ def metrics(request):
         f"# HELP ameli_app_audit_events_failed Audit events whose action ends with _failed.",
         f"# TYPE ameli_app_audit_events_failed counter",
         f"ameli_app_audit_events_failed {audit_failed}",
+        f"# HELP ameli_app_audit_chain_ok 1 if the tail row's hmac matches the configured key, 0 otherwise.",
+        f"# TYPE ameli_app_audit_chain_ok gauge",
+        f"ameli_app_audit_chain_ok {audit_chain_ok}",
+        f"# HELP ameli_app_email_queue_pending OutboundEmail rows waiting for a worker tick.",
+        f"# TYPE ameli_app_email_queue_pending gauge",
+        f"ameli_app_email_queue_pending {queue_pending}",
+        f"# HELP ameli_app_email_queue_oldest_seconds Age of the oldest pending OutboundEmail row in seconds (0 when empty).",
+        f"# TYPE ameli_app_email_queue_oldest_seconds gauge",
+        f"ameli_app_email_queue_oldest_seconds {queue_oldest}",
+        f"# HELP ameli_app_email_queue_sent_24h OutboundEmail rows delivered in the last 24 hours.",
+        f"# TYPE ameli_app_email_queue_sent_24h gauge",
+        f"ameli_app_email_queue_sent_24h {queue_sent_24h}",
+        f"# HELP ameli_app_email_queue_failed_24h OutboundEmail rows permanently failed in the last 24 hours.",
+        f"# TYPE ameli_app_email_queue_failed_24h gauge",
+        f"ameli_app_email_queue_failed_24h {queue_failed_24h}",
+        f"# HELP ameli_app_email_queue_expired_24h OutboundEmail rows expired before delivery in the last 24 hours.",
+        f"# TYPE ameli_app_email_queue_expired_24h gauge",
+        f"ameli_app_email_queue_expired_24h {queue_expired_24h}",
+        f"# HELP ameli_app_maintenance_mode_active 1 when MaintenanceMode.active is set, 0 otherwise.",
+        f"# TYPE ameli_app_maintenance_mode_active gauge",
+        f"ameli_app_maintenance_mode_active {maintenance_active}",
+        f"# HELP ameli_app_uptime_seconds Seconds since the process started.",
+        f"# TYPE ameli_app_uptime_seconds counter",
+        f"ameli_app_uptime_seconds {uptime_seconds}",
         f"# HELP ameli_app_info Static info about this app build.",
         f"# TYPE ameli_app_info gauge",
         f'ameli_app_info{{version="{__version__}",environment="{settings.CFG.environment}"}} 1',

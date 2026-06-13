@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -111,3 +113,104 @@ def test_metrics_info_label_includes_environment_and_version(client, admin_user)
     body = _body(client.get("/metrics"))
     assert 'environment="' in body
     assert 'version="' in body
+
+
+@pytest.mark.django_db
+def test_metrics_exposes_email_queue_gauges(client, admin_user, settings):
+    """The queue metrics should show pending/sent/failed/expired/oldest
+    so an external Prometheus can alert on a stuck queue without
+    talking to the admin panel."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from ameli_web.accounts.models import OutboundEmail
+
+    settings.AUDIT_HMAC_KEY = "k"
+    # Two pending rows (one older).
+    OutboundEmail.objects.create(
+        subject="p1", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now() + timedelta(minutes=1),
+    )
+    p2 = OutboundEmail.objects.create(
+        subject="p2", body="b", to_emails=["a@x"],
+        next_retry_at=timezone.now() + timedelta(minutes=1),
+    )
+    OutboundEmail.objects.filter(pk=p2.pk).update(
+        created_at=timezone.now() - timedelta(minutes=15),
+    )
+    # One sent row in the last 24 h.
+    OutboundEmail.objects.create(
+        subject="s", body="", to_emails=[],
+        status=OutboundEmail.STATUS_SENT,
+        next_retry_at=timezone.now() - timedelta(hours=1),
+    )
+
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_email_queue_pending 2" in body
+    assert "ameli_app_email_queue_sent_24h 1" in body
+    assert "ameli_app_email_queue_failed_24h 0" in body
+    assert "ameli_app_email_queue_expired_24h 0" in body
+    # Oldest >= ~15 min in seconds.
+    m = re.search(r"ameli_app_email_queue_oldest_seconds (\d+)", body)
+    assert m is not None
+    assert int(m.group(1)) >= 60 * 14
+
+
+@pytest.mark.django_db
+def test_metrics_exposes_maintenance_flag(client, admin_user, settings):
+    from ameli_web.accounts.services import enable_maintenance
+
+    settings.AUDIT_HMAC_KEY = "k"
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_maintenance_mode_active 0" in body
+
+    enable_maintenance("admin", message="probando metrics")
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_maintenance_mode_active 1" in body
+
+
+@pytest.mark.django_db
+def test_metrics_exposes_audit_chain_status(client, admin_user, settings):
+    """audit_chain_ok flips to 0 when the tail row's hmac no longer
+    matches the recomputed value — same semantics as /health."""
+    from ameli_web.accounts.services import record_audit
+    from ameli_web.audit.models import AuditEvent
+
+    settings.AUDIT_HMAC_KEY = "k"
+    record_audit("metrics_probe")
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_audit_chain_ok 1" in body
+
+    tail = AuditEvent.objects.exclude(hmac="").order_by("-id").first()
+    AuditEvent.objects.filter(pk=tail.pk).update(payload={"tampered": True})
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_audit_chain_ok 0" in body
+
+
+@pytest.mark.django_db
+def test_metrics_exposes_uptime_and_locked_users(client, admin_user):
+    from ameli_web.accounts.models import User
+    from django.utils import timezone
+
+    User.objects.filter(username="admin").update(locked_at=timezone.now())
+
+    body = _body(client.get("/metrics"))
+    assert "ameli_app_users_locked 1" in body
+    m = re.search(r"ameli_app_uptime_seconds (\d+)", body)
+    assert m is not None
+    assert int(m.group(1)) >= 0
+
+
+@pytest.mark.django_db
+def test_metrics_exposition_format_has_help_and_type_for_every_metric(client, admin_user):
+    """Each metric must have its ``# HELP`` and ``# TYPE`` line before
+    the value — required by the Prometheus exposition spec."""
+    body = _body(client.get("/metrics"))
+    metric_names = [m for m in re.findall(r"^ameli_app_[a-z_0-9]+", body, re.MULTILINE)]
+    # Strip duplicates from the labeled ``ameli_app_info`` repetition.
+    seen = set()
+    for name in metric_names:
+        if name in seen:
+            continue
+        seen.add(name)
+        assert f"# HELP {name} " in body, f"missing HELP for {name}"
+        assert f"# TYPE {name} " in body, f"missing TYPE for {name}"
