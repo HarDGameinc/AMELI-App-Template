@@ -83,6 +83,38 @@
   </article>
 </section>
 
+<section class="panel" id="admin-maintenance-card" style="margin-bottom:16px;">
+  <div class="panel-header">
+    <div>
+      <div class="metric-label">Modo mantenimiento</div>
+      <p class="muted panel-copy">
+        Al activarlo se muestra un banner en toda la app y se devuelve <code>503</code> a peticiones de escritura de usuarios no-staff. <a href="/health" target="_blank" rel="noopener">/health</a> y <code>/admin/</code> siguen accesibles para que el operador pueda apagarlo despues.
+      </p>
+    </div>
+    <div>
+      <span class="src-badge {% if maintenance_state.active %}primary{% endif %}" data-maintenance-state>
+        {% if maintenance_state.active %}ACTIVO{% else %}INACTIVO{% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="form-grid-split" style="margin-top:8px;">
+    <article class="form-card">
+      <div class="modal-form-row">
+        <label class="modal-form-label" for="id_maintenance_message">Mensaje para el usuario (opcional)</label>
+        <input id="id_maintenance_message" class="modal-input" type="text"
+               placeholder="Estamos haciendo mantenimiento."
+               value="{{ maintenance_state.message|default:'' }}"
+               data-maintenance-message>
+      </div>
+      <div class="modal-form-row" style="display:flex;gap:12px;align-items:center;">
+        <button class="primary" type="button" data-maintenance-enable>Activar</button>
+        <button class="src-badge" type="button" data-maintenance-disable>Desactivar</button>
+        <span class="muted" data-maintenance-feedback></span>
+      </div>
+    </article>
+  </div>
+</section>
+
 <section class="panel" id="admin-email-queue-card"
          data-refresh-url="/admin/metrics/email-queue"
          style="margin-bottom:16px;">
@@ -497,6 +529,51 @@
 <script nonce="{{ csp_nonce }}">
 document.addEventListener("DOMContentLoaded", () => {
   const csrfToken = "{{ csrf_token }}";
+
+  // ---- Maintenance mode toggle ----
+  const maintCard = document.getElementById("admin-maintenance-card");
+  if (maintCard) {
+    const stateBadge = maintCard.querySelector("[data-maintenance-state]");
+    const messageInput = maintCard.querySelector("[data-maintenance-message]");
+    const enableBtn = maintCard.querySelector("[data-maintenance-enable]");
+    const disableBtn = maintCard.querySelector("[data-maintenance-disable]");
+    const feedback = maintCard.querySelector("[data-maintenance-feedback]");
+    const setState = (active) => {
+      if (!stateBadge) return;
+      stateBadge.textContent = active ? "ACTIVO" : "INACTIVO";
+      stateBadge.classList.toggle("primary", !!active);
+    };
+    const post = async (action) => {
+      feedback.textContent = "Procesando…";
+      try {
+        const res = await fetch("/admin/maintenance/", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+          },
+          body: JSON.stringify({
+            action,
+            message: messageInput ? messageInput.value : "",
+            read_only: true,
+          }),
+        });
+        if (res.status === 401) {
+          feedback.textContent = "Requiere sudo. Iniciá el modal y reintenta.";
+          return;
+        }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        setState(!!data.state && data.state.active);
+        feedback.textContent = "Listo.";
+      } catch (err) {
+        feedback.textContent = "Error: " + err.message;
+      }
+    };
+    enableBtn?.addEventListener("click", () => post("enable"));
+    disableBtn?.addEventListener("click", () => post("disable"));
+  }
 
   // ---- Email queue widget refresh ----
   // Polls /admin/metrics/email-queue every 30 s. Best-effort: a

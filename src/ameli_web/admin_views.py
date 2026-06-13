@@ -28,6 +28,9 @@ from ameli_web.accounts.services import (
     reset_user_password,
     revoke_session_record,
     serialize_user,
+    disable_maintenance,
+    enable_maintenance,
+    get_maintenance_state,
     summarize_email_queue,
     summarize_users,
     update_user_account,
@@ -183,6 +186,7 @@ def admin_panel(request: HttpRequest) -> HttpResponse:
         "current_user": serialize_user(request.user),
         "user_summary": summarize_users(),
         "email_queue_summary": summarize_email_queue(),
+        "maintenance_state": get_maintenance_state(),
         "recent_sessions": sessions_page.items,
         "sessions_pagination": sessions_page.as_context(
             page_param="admin_sessions_page",
@@ -252,6 +256,35 @@ def admin_audit(request: HttpRequest) -> JsonResponse:
             "items": list_recent_audit_entries(limit=limit, actor_username=actor, target_username=target),
         }
     )
+
+
+@require_POST
+@superadmin_required
+@sudo_required
+def admin_maintenance_toggle(request: HttpRequest) -> JsonResponse:
+    """Flip maintenance on/off. Requires sudo because the consequences
+    (503 to writes) are operator-grade."""
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return _json_error("invalid json body")
+    action = str(body.get("action") or "").strip().lower()
+    actor = request.user.username
+    if action == "enable":
+        message = str(body.get("message") or "").strip()
+        read_only = bool(body.get("read_only", True))
+        return JsonResponse(
+            enable_maintenance(actor, message=message, read_only=read_only),
+        )
+    if action == "disable":
+        return JsonResponse(disable_maintenance(actor))
+    return _json_error("action must be 'enable' or 'disable'")
+
+
+@require_GET
+@superadmin_required
+def admin_maintenance_status(request: HttpRequest) -> JsonResponse:
+    return JsonResponse({"ok": True, "state": get_maintenance_state()})
 
 
 @require_GET

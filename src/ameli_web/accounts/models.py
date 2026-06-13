@@ -257,3 +257,31 @@ class OutboundEmail(models.Model):
 
     def __str__(self) -> str:
         return f"{self.status}::{self.subject}->{self.to_emails}"
+
+
+class MaintenanceMode(models.Model):
+    """Single-row table holding the maintenance-mode flag.
+
+    When ``active`` is true the middleware shows a banner on every
+    rendered page and, if ``read_only`` is also true, returns 503 to
+    write requests (POST/PUT/PATCH/DELETE) from non-staff users. The
+    intent is to keep the app reachable as a read-only window while
+    a migration / deploy / DB maintenance runs, without dropping
+    visitors entirely.
+
+    The single-row guarantee is enforced by always reading/writing
+    pk=1 from the service layer.
+    """
+
+    SINGLETON_PK = 1
+
+    active = models.BooleanField(default=False)
+    read_only = models.BooleanField(default=True)
+    message = models.TextField(blank=True, default="")
+    activated_at = models.DateTimeField(null=True, blank=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+    activated_by_username = models.CharField(max_length=150, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"MaintenanceMode(active={self.active}, read_only={self.read_only})"

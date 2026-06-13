@@ -4,6 +4,7 @@ import secrets
 
 from django.conf import settings
 from django.contrib import messages
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 
 from .services import record_audit, sync_request_session
@@ -268,3 +269,62 @@ class DjangoAdminSudoGateMiddleware:
             "Para entrar al admin nativo necesitas re-autenticarte. Usa el boton 'Admin nativo Django' del panel.",
         )
         return redirect("/admin/")
+
+
+class MaintenanceModeMiddleware:
+    """Surface the maintenance flag to templates; 503 writes when active.
+
+    GET/HEAD requests pass through so visitors can still read the app
+    during a planned window. Writes (POST/PUT/PATCH/DELETE) are blocked
+    with HTTP 503 unless the requesting user is staff — operators need
+    to stay able to flip the flag back off and to keep using the admin.
+
+    Paths under the operational allowlist (``/health``, ``/admin/``,
+    ``/login/``, ``/logout/``) are never blocked so the loadbalancer
+    health probe and the operator's own login don't get tarpit'd.
+    """
+
+    SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+    BYPASS_PREFIXES = (
+        "/health", "/api/health", "/admin/", "/django-admin/",
+        "/login/", "/logout/", "/static/", "/media/",
+    )
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def _state(self):
+        # Lazy import + swallow errors so a broken DB / unmigrated
+        # install never bricks the request pipeline. Without this
+        # guard the very first migrate would fail because the
+        # middleware tries to read a table that doesn't exist yet.
+        try:
+            from .services import get_maintenance_state
+
+            return get_maintenance_state()
+        except Exception:  # noqa: BLE001
+            return {"active": False, "read_only": True, "message": ""}
+
+    def __call__(self, request):
+        state = self._state()
+        request.maintenance_state = state  # type: ignore[attr-defined]
+        if not state.get("active"):
+            return self.get_response(request)
+        if request.method in self.SAFE_METHODS:
+            return self.get_response(request)
+        if not state.get("read_only"):
+            return self.get_response(request)
+        if any(request.path.startswith(p) for p in self.BYPASS_PREFIXES):
+            return self.get_response(request)
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False) and getattr(user, "is_staff", False):
+            return self.get_response(request)
+        payload = {
+            "ok": False,
+            "error": "service in maintenance",
+            "message": state.get("message") or "Servicio en mantenimiento, intenta nuevamente en unos minutos.",
+        }
+        wants_json = "application/json" in (request.headers.get("Accept", "") or "")
+        if wants_json:
+            return JsonResponse(payload, status=503)
+        return HttpResponse(payload["message"], status=503, content_type="text/plain; charset=utf-8")

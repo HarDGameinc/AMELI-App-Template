@@ -11,6 +11,11 @@
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
   </head>
   <body>
+    {% if request.maintenance_state.active %}
+    <div role="status" style="background:#d6336c;color:#fff;padding:10px 16px;font-weight:600;text-align:center;">
+      Mantenimiento activo{% if request.maintenance_state.message %}: {{ request.maintenance_state.message }}{% else %}. Algunas acciones estaran temporalmente deshabilitadas.{% endif %}
+    </div>
+    {% endif %}
     <header>
       <div>
         <h1>{% block header_title %}{{ app_name }}{% endblock %}</h1>

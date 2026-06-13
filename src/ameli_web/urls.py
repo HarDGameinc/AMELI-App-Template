@@ -31,6 +31,8 @@ urlpatterns = [
     path("admin/users/export/", admin_views.admin_users_export, name="admin-users-export"),
     path("admin/sessions", admin_views.admin_sessions, name="admin-sessions"),
     path("admin/metrics/email-queue", admin_views.admin_email_queue_metrics, name="admin-email-queue-metrics"),
+    path("admin/maintenance/", admin_views.admin_maintenance_toggle, name="admin-maintenance-toggle"),
+    path("admin/maintenance/status/", admin_views.admin_maintenance_status, name="admin-maintenance-status"),
     path("admin/sessions/<str:session_key>/revoke", admin_views.admin_revoke_session, name="admin-revoke-session"),
     path("admin/users/<str:username>", admin_views.admin_update_user, name="admin-update-user"),
     path(

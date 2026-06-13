@@ -163,6 +163,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "ameli_web.accounts.middleware.UserSessionMiddleware",
+    "ameli_web.accounts.middleware.MaintenanceModeMiddleware",
     "ameli_web.accounts.middleware.MustChangePasswordMiddleware",
     "ameli_web.accounts.middleware.AdminAccessAuditMiddleware",
     "ameli_web.accounts.middleware.DjangoAdminSudoGateMiddleware",
