@@ -45,8 +45,9 @@ if [[ -n "${DATABASE_URL:-}" ]] && [[ "${DATABASE_URL}" == postgres* ]]; then
   log "Dumping Postgres -> ${db_dump_path}"
   if ! pg_dump --format=custom --no-owner --no-acl \
       --file="${db_dump_path}" "${DATABASE_URL}"; then
-    fail "pg_dump failed" 2>&1
-    exit 2
+    # Exit code 2 lets the operator's monitor distinguish a DB dump
+    # failure from generic script errors (which exit 1 via ``fail``).
+    fail 2 "pg_dump failed"
   fi
 elif [[ -n "${AMELI_APP_SQLITE_PATH:-}" ]] && [[ -f "${AMELI_APP_SQLITE_PATH}" ]]; then
   db_dump_path="${workdir}/db.sqlite3"

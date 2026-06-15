@@ -121,6 +121,21 @@ class SecurityHeadersMiddleware:
             response["Cross-Origin-Opener-Policy"] = "same-origin"
         if "Cross-Origin-Resource-Policy" not in response:
             response["Cross-Origin-Resource-Policy"] = "same-origin"
+        # ASVS V8.2: authenticated responses must not be cached on shared
+        # intermediaries (CDN, corporate proxy, browser back-button after
+        # logout). We only stamp the header when the response did not
+        # already declare an explicit Cache-Control, so cacheable assets
+        # served behind login (e.g. an export the operator marked public)
+        # can still opt in.
+        user = getattr(request, "user", None)
+        if (
+            user is not None
+            and getattr(user, "is_authenticated", False)
+            and "Cache-Control" not in response
+        ):
+            response["Cache-Control"] = "no-store, max-age=0"
+            if "Pragma" not in response:
+                response["Pragma"] = "no-cache"
         return response
 
 

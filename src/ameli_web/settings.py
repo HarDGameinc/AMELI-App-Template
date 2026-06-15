@@ -313,9 +313,17 @@ if _proxy_ssl_header:
     SECURE_PROXY_SSL_HEADER = (_proxy_header_name.strip(), _proxy_header_value.strip())
 
 # HSTS: only meaningful when the deploy is reachable over HTTPS, and
-# easy to lock yourself out of staging if you set it too early. Off by
-# default. Enable when TLS is stable.
-SECURE_HSTS_SECONDS = 0
+# easy to lock yourself out of staging if you set it too early. The
+# default outside dev is one year + includeSubDomains + preload-eligible
+# because every real deploy should be HTTPS-only; an operator can set
+# ``AMELI_APP_HSTS_SECONDS=0`` explicitly to opt out during initial
+# rollout when TLS is still being wired up. ``preload`` itself is left
+# off so the operator can choose whether to submit to hstspreload.org
+# (the submission is functionally irreversible).
+_hsts_default = 0 if ENV_NAME == "dev" else 31_536_000
+SECURE_HSTS_SECONDS = int(os.environ.get("AMELI_APP_HSTS_SECONDS", str(_hsts_default)))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD = False
 
 # The project-wide CSP is built per request by SecurityHeadersMiddleware
 # so it can stamp a unique ``nonce-...`` token in script-src and

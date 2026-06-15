@@ -87,3 +87,37 @@ jobs:
 
       - name: Pytest
         run: pytest -q --tb=short
+
+  supply-chain-audit:
+    name: Supply chain audit (pip-audit)
+    runs-on: ubuntu-latest
+    # Run only on the canonical branches — PRs from forks get the same
+    # signal from the lint-and-test matrix above without spending a
+    # second budget on the audit job. ``continue-on-error: true`` keeps
+    # a freshly-disclosed CVE from blocking unrelated merges while we
+    # patch; a real-world CI policy should harden this once the
+    # baseline is clean.
+    if: github.event_name == 'push'
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Audit declared deps
+        # ``--strict`` exits non-zero when a vulnerability is found OR
+        # the audit metadata is incomplete (e.g. no version pin). We
+        # use the requirements files directly so the audit runs on
+        # exactly the set the runtime installs.
+        run: |
+          pip-audit --strict -r requirements.txt
+          pip-audit --strict -r requirements-dev.txt

@@ -40,9 +40,20 @@ def _run_retention(settings: Settings) -> dict[str, Any]:
     from ameli_web.accounts.services import run_retention_sweep
 
     audit_max = getattr(settings, "audit_retention_max_age_days", None)
-    return run_retention_sweep(
-        audit_max_age_days=audit_max if isinstance(audit_max, int) else None,
-    )
+    try:
+        return run_retention_sweep(
+            audit_max_age_days=audit_max if isinstance(audit_max, int) else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Any DB / migration / disk failure inside the sweep must land
+        # as a structured ``{ok:false, error:...}`` so the systemd
+        # journal still carries an actionable tick line — a bare crash
+        # would mark the unit failed but leave operators grepping for
+        # missing output.
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def run_once(settings: Settings) -> dict[str, Any]:

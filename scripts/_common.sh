@@ -93,8 +93,18 @@ log() {
 }
 
 fail() {
+  # Honour an explicit exit code passed as the FIRST positional arg if
+  # it looks numeric — callers like backup.sh document distinct codes
+  # so a monitor can categorise the failure (1 = generic, 2 = DB dump
+  # failed, etc.). Without the arg we exit 1 by default, matching the
+  # historical behaviour.
+  local code=1
+  if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+    code="$1"
+    shift
+  fi
   echo "ERROR: $*" >&2
-  exit 1
+  exit "$code"
 }
 
 bool_is_true() {

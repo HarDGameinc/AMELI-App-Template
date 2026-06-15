@@ -87,10 +87,25 @@ def _audit_canonical(*, prev_hmac: str, action: str, actor_username: str,
     """Stable byte serialisation used as input to HMAC. ``sort_keys`` and
     a fixed separator keep the JSON representation deterministic; the
     ISO timestamp is normalised to UTC.
+
+    We round-trip the payload through ``DjangoJSONEncoder`` + ``json.loads``
+    before hashing so a value the caller passes in a richer Python type
+    (``Decimal``, ``datetime``, ``UUID``, ``tuple``) lands in its JSON
+    form before HMAC — the same form the DB will round-trip back on
+    verify. Without this, ``record_audit`` hashed the in-memory dict
+    while ``verify_audit_chain`` re-hashed the JSON-decoded version
+    and reported a phantom tamper on the affected row.
     """
     import json
 
-    payload_blob = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    raw = payload or {}
+    payload_blob = json.dumps(
+        json.loads(json.dumps(raw, cls=DjangoJSONEncoder)),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     ts = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
     return "|".join([
         prev_hmac,
@@ -118,6 +133,23 @@ def _audit_hmac(*, key: bytes, prev_hmac: str, action: str, actor_username: str,
     return hmac_lib.new(key, body, hashlib.sha256).hexdigest()
 
 
+def _normalise_audit_payload(payload: dict | None) -> dict:
+    """Round-trip the payload through ``DjangoJSONEncoder`` + ``json.loads``
+    so a value the caller passes in a richer Python type (``Decimal``,
+    ``datetime``, ``UUID``, ``tuple``) lands as the JSON form the DB
+    will round-trip back on verify. Without this normalisation,
+    ``record_audit`` hashed the in-memory dict while ``verify_audit_chain``
+    re-hashed the JSON-decoded version and reported a phantom tamper
+    on the affected row (and the INSERT itself fails for some types
+    because the default JSONField encoder cannot serialise them).
+    """
+    import json
+
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    return json.loads(json.dumps(payload or {}, cls=DjangoJSONEncoder))
+
+
 def record_audit(action: str, *, actor=None, target_username: str | None = None, payload: dict[str, Any] | None = None) -> AuditEvent:
     """Write an audit row, optionally stamped with a per-row HMAC that
     chains back to the previous row.
@@ -135,7 +167,7 @@ def record_audit(action: str, *, actor=None, target_username: str | None = None,
 
     actor_username = getattr(actor, "username", None) or ""
     target = target_username or ""
-    payload_dict = dict(payload or {})
+    payload_dict = _normalise_audit_payload(payload)
     # Stamp the audit row with the current request id (if any) so the
     # operator can correlate a single user action across multiple
     # log lines and audit events. Outside an HTTP request the value
@@ -3394,3 +3426,103 @@ def send_sudo_email_code(user) -> dict[str, Any]:
     if not user.mfa_email_enabled:
         raise ValueError("email 2fa no esta activado para esta cuenta")
     return send_mfa_email_login_code(user)
+
+
+# ============================ PII lifecycle ============================
+#
+# Two paths to drop a user record + scrub the associated identifiers:
+# the operator-side CLI prune (``purge_inactive_users``) for accounts
+# that have been disabled long enough to count as stale, and the
+# user-side self-service request (``delete_my_account``) that the
+# /profile/delete-account endpoint exposes.
+#
+# Both produce a tombstone audit row so the chain still records "this
+# user existed and was removed" — the row's payload only carries the
+# username (which the operator already had access to), never the
+# email, display_name or any other PII the user gave us.
+
+
+def purge_inactive_users(*, days: int = 365, dry_run: bool = False) -> dict[str, Any]:
+    """Delete users that have been ``is_active=False`` longer than ``days``.
+
+    The sweep is operator-initiated (CLI) rather than worker-scheduled
+    because deleting a user is a destructive PII action that benefits
+    from explicit operator intent. Returns a structured summary that
+    the CLI prints so the operator can confirm before re-running
+    without ``--dry-run``.
+
+    Superadmin accounts are never touched, even if disabled — losing
+    them silently would brick the deploy. Operators who really want
+    a superadmin gone must run ``ameli-app create-user`` against a
+    fresh username first.
+    """
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(days=max(1, days))
+    qs = User.objects.filter(
+        is_active=False,
+        updated_at__lt=cutoff,
+    ).exclude(role=User.ROLE_SUPERADMIN)
+    candidates = list(qs.values_list("username", flat=True))
+    if dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "candidates": candidates,
+            "count": len(candidates),
+            "cutoff": cutoff.isoformat(),
+        }
+    deleted = 0
+    for username in candidates:
+        # Re-fetch in the loop so we can record the tombstone with
+        # the actual username, then delete. ``cascade`` removes the
+        # user's sessions + outbound emails + email-change records
+        # via the FK defaults declared on those models.
+        user = User.objects.filter(username=username).first()
+        if user is None:
+            continue
+        username_snapshot = user.username
+        user.delete()
+        record_audit(
+            "user_purged_for_inactivity",
+            actor=None,
+            target_username=username_snapshot,
+            payload={"reason": f"inactive >{days}d"},
+        )
+        deleted += 1
+    return {
+        "ok": True,
+        "dry_run": False,
+        "deleted": deleted,
+        "cutoff": cutoff.isoformat(),
+    }
+
+
+def delete_my_account(*, user, password: str) -> dict[str, Any]:
+    """User-initiated account deletion. Requires the current password
+    so a stolen cookie alone cannot wipe the account.
+
+    Superadmins cannot self-delete — they must promote another
+    superadmin first and then run the CLI prune. This avoids the
+    lockout where the only operator deletes themselves.
+    """
+    if not (user and user.is_authenticated):
+        raise ValueError("autenticacion requerida")
+    if user.role == User.ROLE_SUPERADMIN:
+        raise ValueError(
+            "los superadmin no pueden auto-eliminarse; promove a otro "
+            "superadmin y usa el CLI"
+        )
+    if not user.check_password(password or ""):
+        raise ValueError("contrasena incorrecta")
+    username_snapshot = user.username
+    # Audit BEFORE delete so the row references the user pk that
+    # is about to disappear via the snapshot in target_username.
+    record_audit(
+        "user_self_deleted",
+        actor=user,
+        target_username=username_snapshot,
+        payload={},
+    )
+    user.delete()
+    return {"ok": True, "deleted_username": username_snapshot}

@@ -31,6 +31,8 @@ urlpatterns = [
     path("profile/change-password", views.change_password_view),
     path("profile/sessions/revoke-others/", views.revoke_other_sessions_view, name="profile-revoke-others"),
     path("profile/sessions/revoke-others", views.revoke_other_sessions_view),
+    path("profile/delete-account/", views.delete_my_account_view, name="profile-delete-account"),
+    path("profile/delete-account", views.delete_my_account_view),
     path("profile/sessions/<str:session_key>/revoke/", views.revoke_session_view, name="profile-revoke-session"),
     path("profile/sessions/<str:session_key>/revoke", views.revoke_session_view),
     path("profile/mfa/start/", views.mfa_start_view, name="profile-mfa-start"),

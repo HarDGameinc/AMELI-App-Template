@@ -88,6 +88,22 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("notify-once", help="Run one notifier/dispatch cycle.")
     sub.add_parser("maintenance", help="Run one maintenance cycle.")
 
+    purge_users = sub.add_parser(
+        "purge-inactive-users",
+        help="Delete users disabled longer than --days (PII purge).",
+    )
+    purge_users.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Disabled (is_active=False) AND updated_at older than this many days.",
+    )
+    purge_users.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report which users would be deleted without touching the DB.",
+    )
+
     bootstrap = sub.add_parser("bootstrap-admin", help="Create the initial superadmin.")
     bootstrap.add_argument("--username", required=True, help="Superadmin username.")
     bootstrap.add_argument("--password", required=True, help="Superadmin password.")
@@ -414,6 +430,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 must_change_password=args.must_change_password,
             )
         )
+        return 0
+    if args.command == "purge-inactive-users":
+        _bootstrap_django(args)
+        from ameli_web.accounts.services import purge_inactive_users
+
+        _json(purge_inactive_users(days=args.days, dry_run=args.dry_run))
         return 0
     if args.command == "create-user":
         return _handle_create_user(args)
