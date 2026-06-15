@@ -874,53 +874,89 @@ def _prune_audit_with_anchor(*, cutoff) -> int:
     naively deleting the head would orphan the tail. We:
 
     1. Delete the rows older than ``cutoff`` in one transaction.
-    2. Demote every still-chained surviving row to legacy (``hmac=""``
-       and ``prev_hmac=""``). ``verify_audit_chain`` skips rows
-       without an hmac, so the surviving tail becomes pre-chain
-       history (no longer cryptographically anchored to the deleted
-       head, which is what the operator chose by enabling the prune).
+    2. Re-chain every surviving row that already carried an hmac
+       under the LIVE key: the first survivor restarts with
+       ``prev_hmac=""``, subsequent rows chain forward through the
+       new hmacs. This keeps post-prune rows cryptographically
+       anchored — a DB-write attacker that edits a surviving row
+       cannot rehash it without the key — while accepting that we
+       lose the cryptographic link back to the now-deleted head.
+       Rows that pre-dated the chain (``hmac=""``) stay legacy and
+       reset the prev pointer the same way :func:`verify_audit_chain`
+       does.
     3. Write a ``retention_audit_anchor`` row that becomes the new
-       head of the chain — fresh ``prev_hmac=""`` + a new hmac
-       derived from the live key. Subsequent ``record_audit`` rows
-       chain from this anchor.
+       head of the chain, chained from the last re-chained survivor.
 
-    Step 2 is the price of the prune: it sacrifices verifiability of
-    the rows that "lived through the cut" in exchange for a clean
-    chain going forward. Operators that need stronger guarantees
-    should archive the audit table externally rather than running
-    this prune.
+    Old behaviour demoted survivors to ``hmac=""`` which made the
+    post-prune tail invisible to ``verify_audit_chain`` and let any
+    attacker with DB write access tamper undetected; the re-chain
+    above preserves that guarantee going forward. Operators that
+    need to keep the original hmacs (e.g. proof of integrity over
+    the pruned window) should archive the audit table externally
+    before running this prune — the prune still re-stamps surviving
+    rows, so the canonical bytes change.
     """
     from django.db import transaction
 
     deleted = 0
     with transaction.atomic():
         deleted, _ = AuditEvent.objects.filter(created_at__lt=cutoff).delete()
-        if deleted:
-            # 2) Surviving rows become legacy.
-            AuditEvent.objects.filter(created_at__gte=cutoff).update(
-                hmac="", prev_hmac="",
+        if not deleted:
+            return 0
+
+        key = _audit_hmac_key()
+        new_prev = ""
+        if key:
+            # 2) Walk survivors in id order, re-chain each chained row.
+            survivors = (
+                AuditEvent.objects.filter(created_at__gte=cutoff)
+                .order_by("id")
             )
-            # 3) Fresh anchor.
-            key = _audit_hmac_key()
-            event = AuditEvent.objects.create(
-                actor_username="",
-                target_username="",
-                action="retention_audit_anchor",
-                payload={"deleted_rows": deleted, "cutoff": cutoff.isoformat()},
-                prev_hmac="",
-            )
-            if key:
-                event.refresh_from_db(fields=["created_at"])
-                event.hmac = _audit_hmac(
+            for row in survivors.iterator(chunk_size=500):
+                if not row.hmac:
+                    # Pre-chain legacy row; mirror verify_audit_chain
+                    # by leaving it alone and restarting prev.
+                    new_prev = ""
+                    continue
+                new_hmac = _audit_hmac(
                     key=key,
-                    prev_hmac="",
-                    action=event.action,
-                    actor_username=event.actor_username,
-                    target_username=event.target_username,
-                    payload=event.payload,
-                    created_at=event.created_at,
+                    prev_hmac=new_prev,
+                    action=row.action,
+                    actor_username=row.actor_username,
+                    target_username=row.target_username,
+                    payload=row.payload,
+                    created_at=row.created_at,
                 )
-                event.save(update_fields=["hmac"])
+                AuditEvent.objects.filter(pk=row.pk).update(
+                    prev_hmac=new_prev, hmac=new_hmac,
+                )
+                new_prev = new_hmac
+        else:
+            # No key configured: the chain is already empty, so
+            # surviving rows have nothing to re-stamp. Reset prev
+            # so the anchor still writes with prev_hmac="".
+            AuditEvent.objects.filter(created_at__gte=cutoff).update(prev_hmac="")
+
+        # 3) Fresh anchor chained from the last re-chained survivor.
+        event = AuditEvent.objects.create(
+            actor_username="",
+            target_username="",
+            action="retention_audit_anchor",
+            payload={"deleted_rows": deleted, "cutoff": cutoff.isoformat()},
+            prev_hmac=new_prev,
+        )
+        if key:
+            event.refresh_from_db(fields=["created_at"])
+            event.hmac = _audit_hmac(
+                key=key,
+                prev_hmac=new_prev,
+                action=event.action,
+                actor_username=event.actor_username,
+                target_username=event.target_username,
+                payload=event.payload,
+                created_at=event.created_at,
+            )
+            event.save(update_fields=["hmac"])
     return deleted
 
 
@@ -2596,6 +2632,45 @@ def _read_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
     return row.count if row else 0
 
 
+def _read_throttle_counter_sliding(*, scope: str, key: str, window_seconds: int) -> int:
+    """Sliding-window approximation of the counter.
+
+    The fixed-bucket pattern that :func:`_read_throttle_counter` reads
+    lets an attacker burst ~2x the configured cap by straddling a
+    bucket boundary: 4 attempts at t=window_end-1 land in bucket A,
+    then 5 more at t=window_end+1 land in bucket B — both under the
+    cap, total ~9 in two seconds.
+
+    This helper folds in a time-weighted portion of the previous
+    bucket so the effective rate stays near the documented cap
+    regardless of where in the window the attempts land. It is the
+    classic "sliding window counter" approximation used by rate
+    limiters that want stronger guarantees than a fixed bucket
+    without paying the cost of a per-event log.
+    """
+    from datetime import datetime
+
+    from .models import ThrottleCounter
+
+    now = timezone.now()
+    epoch = int(now.timestamp())
+    window_seconds = max(1, window_seconds)
+    bucket = (epoch // window_seconds) * window_seconds
+    cur_start = datetime.fromtimestamp(bucket, tz=UTC)
+    prev_start = datetime.fromtimestamp(bucket - window_seconds, tz=UTC)
+
+    rows = ThrottleCounter.objects.filter(
+        scope=scope, key=key, window_start__in=[cur_start, prev_start]
+    ).values_list("window_start", "count")
+    counts = {ws: c for ws, c in rows}
+    cur_count = counts.get(cur_start, 0)
+    prev_count = counts.get(prev_start, 0)
+
+    elapsed = epoch - bucket
+    prev_weight = max(0.0, (window_seconds - elapsed) / window_seconds)
+    return cur_count + int(prev_count * prev_weight)
+
+
 def record_login_failure(*, username: str = "", ip: str = "") -> None:
     """Increment the failure counters that :func:`check_login_throttle`
     reads. Both keys (IP and username) get their own row so a brute
@@ -2739,10 +2814,16 @@ def check_forgot_password_throttle(*, ip: str) -> None:
     ip_window = int(getattr(
         django_settings, "FORGOT_PASSWORD_IP_WINDOW", FORGOT_PASSWORD_IP_WINDOW_DEFAULT
     ))
-    new_count = _bump_throttle_counter(
+    _bump_throttle_counter(
         scope="forgot_password_ip", key=ip, window_seconds=ip_window
     )
-    if new_count > ip_max:
+    # Sliding-window read so an attacker cannot burst ~2x the cap by
+    # straddling the bucket boundary; the previous fixed-bucket read
+    # let a 5-cap window admit 9 requests in two seconds.
+    sliding = _read_throttle_counter_sliding(
+        scope="forgot_password_ip", key=ip, window_seconds=ip_window
+    )
+    if sliding > ip_max:
         raise LoginThrottled(
             _(
                 "Demasiados pedidos de recuperacion desde esta direccion. "
@@ -2765,10 +2846,15 @@ def check_mfa_resend_throttle(*, ip: str) -> None:
     ip_window = int(getattr(
         django_settings, "MFA_RESEND_IP_WINDOW", MFA_RESEND_IP_WINDOW_DEFAULT
     ))
-    new_count = _bump_throttle_counter(
+    _bump_throttle_counter(
         scope="mfa_resend_ip", key=ip, window_seconds=ip_window
     )
-    if new_count > ip_max:
+    # Sliding read closes the bucket-boundary burst — see the longer
+    # rationale on :func:`_read_throttle_counter_sliding`.
+    sliding = _read_throttle_counter_sliding(
+        scope="mfa_resend_ip", key=ip, window_seconds=ip_window
+    )
+    if sliding > ip_max:
         raise LoginThrottled(
             _(
                 "Demasiados reenvios desde esta direccion. "
@@ -2903,7 +2989,7 @@ def check_login_throttle(*, username: str, ip: str) -> None:
             )
 
     if ip:
-        ip_fails = _read_throttle_counter(
+        ip_fails = _read_throttle_counter_sliding(
             scope="login_fail_ip", key=ip, window_seconds=cfg["ip_window"]
         )
         if ip_fails >= cfg["ip_max"]:
@@ -2913,7 +2999,7 @@ def check_login_throttle(*, username: str, ip: str) -> None:
             )
 
     if username:
-        user_fails = _read_throttle_counter(
+        user_fails = _read_throttle_counter_sliding(
             scope="login_fail_user",
             key=username.lower(),
             window_seconds=cfg["user_window"],

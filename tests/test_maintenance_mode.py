@@ -59,7 +59,15 @@ def test_enable_disable_round_trip(settings, admin_user):
 def test_non_staff_write_returns_503_when_maintenance_is_on(client, public_user):
     enable_maintenance("admin", message="Build in progress")
     client.force_login(public_user)
-    response = client.post("/profile/password/", {"current_password": "x", "new_password": "y"})
+    # ``/profile/preferences/`` exercises the generic non-staff write
+    # path. ``/profile/password/`` is intentionally bypassed by
+    # ``BYPASS_PREFIXES`` so a must_change_password user is not
+    # stranded mid-rotation; the maintenance 503 still applies to
+    # every other writable endpoint.
+    response = client.post(
+        "/profile/preferences/",
+        {"display_name": "newname", "theme_preference": "auto"},
+    )
     assert response.status_code == 503
     # The body echoes the operator's message (set when enabling).
     assert b"Build in progress" in response.content
@@ -69,7 +77,10 @@ def test_non_staff_write_returns_503_when_maintenance_is_on(client, public_user)
 def test_non_staff_write_503_falls_back_to_default_message(client, public_user):
     enable_maintenance("admin", message="")
     client.force_login(public_user)
-    response = client.post("/profile/password/", {"current_password": "x", "new_password": "y"})
+    response = client.post(
+        "/profile/preferences/",
+        {"display_name": "newname", "theme_preference": "auto"},
+    )
     assert response.status_code == 503
     assert b"mantenimiento" in response.content.lower()
 

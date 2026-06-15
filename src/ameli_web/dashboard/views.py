@@ -264,11 +264,22 @@ def _process_uptime_seconds() -> int:
 
 def _operational_allowlist_block(request):
     """Refuse a request when ``HEALTH_METRICS_ALLOWLIST`` is configured
-    and the client IP is not in it.
+    and neither the immediate caller (``REMOTE_ADDR``) nor the upstream
+    client (``X-Forwarded-For`` head when the proxy is trusted) is in
+    the allowlist.
 
     Returns an :class:`HttpResponse` to short-circuit the view, or
     ``None`` to let the view body run. Empty list means "no restriction"
     so existing deploys behind a trusted reverse proxy keep working.
+
+    Why match both: an operator who sets ``HEALTH_METRICS_ALLOWLIST=
+    ['127.0.0.1']`` expects local loadbalancer probes routed through
+    Caddy to pass. ``client_ip`` honours ``X-Forwarded-For`` from
+    trusted proxies and would return the LB's public IP instead, so
+    matching only the upstream silently 403s every local probe.
+    Matching ``REMOTE_ADDR`` first means "any caller hitting us
+    directly is allowed"; the ``client_ip`` fallback still lets an
+    operator allowlist a remote upstream by its real public IP.
     """
     raw = getattr(settings, "HEALTH_METRICS_ALLOWLIST", None) or []
     allowlist = {str(item).strip() for item in raw if str(item).strip()}
@@ -276,8 +287,11 @@ def _operational_allowlist_block(request):
         return None
     from ameli_web.accounts.services import client_ip
 
-    ip = client_ip(request)
-    if ip in allowlist:
+    remote = str(request.META.get("REMOTE_ADDR") or "")
+    if remote and remote in allowlist:
+        return None
+    upstream = client_ip(request)
+    if upstream and upstream in allowlist:
         return None
     return HttpResponse(b"forbidden\n", status=403, content_type="text/plain; charset=utf-8")
 

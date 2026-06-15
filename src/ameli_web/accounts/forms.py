@@ -20,9 +20,14 @@ class TemplateAuthenticationForm(AuthenticationForm):
 
 
 class ProfilePreferencesForm(forms.ModelForm):
+    # Email rotates through the double-opt-in flow at
+    # ``/profile/email-change/``; this form covers only what the user
+    # can change in place. Including ``email`` here used to render an
+    # editable input the view silently discarded, so the user was told
+    # 'Perfil actualizado.' while their address never moved.
     class Meta:
         model = User
-        fields = ["display_name", "email", "theme_preference"]
+        fields = ["display_name", "theme_preference"]
         widgets = {
             "display_name": forms.TextInput(
                 attrs={
@@ -32,24 +37,12 @@ class ProfilePreferencesForm(forms.ModelForm):
                     "autocomplete": "nickname",
                 }
             ),
-            "email": forms.EmailInput(
-                attrs={
-                    "class": "modal-input",
-                    "maxlength": 254,
-                    "placeholder": "tu@dominio.com",
-                    "autocomplete": "email",
-                }
-            ),
             "theme_preference": forms.Select(attrs={"class": "modal-input"}),
         }
         labels = {
             "display_name": "Alias visible",
-            "email": "Email",
             "theme_preference": "Tema preferido",
         }
-
-    def clean_email(self):
-        return (self.cleaned_data.get("email") or "").strip().lower()
 
 
 class AvatarUploadForm(forms.Form):

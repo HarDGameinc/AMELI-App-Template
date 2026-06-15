@@ -319,10 +319,6 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
 
     form = ProfilePreferencesForm(request.POST, instance=request.user)
     if form.is_valid():
-        # Email rotates through the double-opt-in flow exposed at
-        # ``/profile/email-change/``; this form is only for display_name
-        # and theme. Quietly discard any email value the user may have
-        # typed here so a stale UI never bypasses the confirmation flow.
         request.user.display_name = form.cleaned_data["display_name"]
         request.user.theme_preference = form.cleaned_data["theme_preference"]
         request.user.save(update_fields=["display_name", "theme_preference", "updated_at"])
@@ -451,6 +447,8 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
 
     form = ProfilePasswordForm(request.user, request.POST)
     if form.is_valid():
+        from .services import revoke_sudo
+
         result = change_password_for_user(
             request.user.username,
             form.cleaned_data["old_password"],
@@ -459,6 +457,10 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
         )
         user = User.objects.get(pk=request.user.pk)
         update_session_auth_hash(request, user)
+        # Same invariant as the JSON branch above: a password rotation
+        # must drop any open sudo grant so a stolen sudo'd session does
+        # not survive the legitimate user's credential change.
+        revoke_sudo(request.session)
         revoked = int(result["revoked_sessions"])
         messages.success(request, f"Contrasena actualizada. Otras sesiones revocadas: {revoked}.")
     else:

@@ -284,9 +284,17 @@ class MaintenanceModeMiddleware:
     """
 
     SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+    # ``/profile/password/`` stays open during read-only maintenance: a
+    # user forced into a rotation (``must_change_password=True``) would
+    # otherwise be bounced between the must-change redirect and a 503,
+    # with no way out until the operator disables the window. The
+    # email-change confirm/cancel endpoints are the legitimate way to
+    # back out of a pending change started before the window and are
+    # safe to keep reachable too.
     BYPASS_PREFIXES = (
         "/health", "/api/health", "/admin/", "/django-admin/",
         "/login/", "/logout/", "/static/", "/media/",
+        "/profile/password/", "/profile/email-change/",
     )
 
     def __init__(self, get_response):

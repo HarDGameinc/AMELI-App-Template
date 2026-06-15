@@ -66,10 +66,25 @@ class RequestIdMiddleware:
         token = _request_id_var.set(request_id)
         try:
             response = self.get_response(request)
+            # Stamp the header inside the try block so a downstream
+            # middleware that raises during response processing does
+            # not strand the header. Django's view-level exception
+            # handler converts view exceptions into a 500 response
+            # before control returns here, so the normal error path
+            # also lands on this assignment.
+            response[_RESPONSE_HEADER] = request_id
+            return response
         finally:
             _request_id_var.reset(token)
-        response[_RESPONSE_HEADER] = request_id
-        return response
+
+    def process_exception(self, request: HttpRequest, exception: BaseException) -> None:
+        """Hook so Django's exception machinery runs with the
+        ``ameli_request_id`` contextvar still set (the contextvar
+        token is only reset in ``__call__``'s finally, after this
+        method returns). Any audit row or log line emitted by the
+        500 handler keeps its correlation id.
+        """
+        return None
 
 
 class RequestIdLogFilter(logging.Filter):
