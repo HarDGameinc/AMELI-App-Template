@@ -46,7 +46,15 @@ class User(AbstractUser):
     # brute-force attempt cannot eventually wait it out.
     locked_at = models.DateTimeField(blank=True, null=True)
     locked_reason = models.CharField(max_length=64, blank=True, default="")
-    mfa_secret = models.CharField(max_length=64, blank=True, default="")
+    # ``mfa_secret`` may hold either a raw base32 TOTP secret (legacy /
+    # dev / CI) or a Fernet ciphertext (when ``AMELI_APP_MFA_ENCRYPTION_KEY``
+    # is configured). Storage is mediated by
+    # ``ameli_web.accounts.mfa.encrypt_secret`` /
+    # ``decrypt_secret`` so callers do not handle the raw column.
+    # max_length=255 leaves headroom for the Fernet token (~100 chars
+    # for a 32-char base32 input) plus future re-keying schemes that
+    # may prefix a key id.
+    mfa_secret = models.CharField(max_length=255, blank=True, default="")
     mfa_enabled = models.BooleanField(default=False)
     mfa_required = models.BooleanField(default=False)
     mfa_totp_enabled = models.BooleanField(default=False)

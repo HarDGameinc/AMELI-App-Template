@@ -22,6 +22,18 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
         else:
             monkeypatch.setenv(key, value)
     monkeypatch.setenv("APP_ENV", env)
+    # ASVS V2.8 boot guard requires AMELI_APP_MFA_ENCRYPTION_KEY outside
+    # dev. Tests that don't explicitly probe that guard get a default
+    # so they exercise the OTHER guard they care about (email backend,
+    # SECRET_KEY, ALLOWED_HOSTS, etc.) without colliding.
+    if env != "dev" and "AMELI_APP_MFA_ENCRYPTION_KEY" not in env_vars:
+        # Static value so the cached helper inside ``mfa.py`` does not
+        # need re-instantiating between tests; a real Fernet key works
+        # under cryptography.fernet without side effects on the test DB.
+        monkeypatch.setenv(
+            "AMELI_APP_MFA_ENCRYPTION_KEY",
+            "kj9_Vh-rExdXrPm7TZWQ8a9oU8gPpYHN-mDz2LfqHy0=",
+        )
 
     # Drop any cached settings module so the module-level guards re-run.
     for cached in ("ameli_web.settings",):
@@ -114,3 +126,28 @@ def test_non_dev_boots_with_explicit_safe_config(monkeypatch):
     assert "metro.lan" in settings.ALLOWED_HOSTS
     assert "10.0.0.5" in settings.ALLOWED_HOSTS
     assert settings.TRUSTED_PROXIES == {"127.0.0.1", "::1"}
+
+
+def test_non_dev_refuses_empty_mfa_encryption_key(monkeypatch):
+    """ASVS V2.8 boot guard — outside dev, the MFA encryption key
+    must be set so TOTP secrets do not land in the DB as plaintext.
+    """
+    with pytest.raises(RuntimeError, match="AMELI_APP_MFA_ENCRYPTION_KEY"):
+        _reload_settings(
+            monkeypatch,
+            env="prod",
+            AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+            AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+            AMELI_APP_DJANGO_DEBUG="false",
+            AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+            AMELI_APP_EMAIL_BACKEND="smtp",
+            AMELI_APP_EMAIL_HOST="smtp.example.com",
+            # Explicitly empty — must trip the guard.
+            AMELI_APP_MFA_ENCRYPTION_KEY="",
+        )
+
+
+def test_dev_boots_without_mfa_encryption_key(monkeypatch):
+    """Mirror property: in dev, the key is optional (pass-through mode)."""
+    settings = _reload_settings(monkeypatch, env="dev")
+    assert getattr(settings, "MFA_ENCRYPTION_KEY", "") == ""

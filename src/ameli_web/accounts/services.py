@@ -1547,7 +1547,9 @@ def start_mfa_enrollment(actor_username: str) -> dict[str, Any]:
     if user.mfa_totp_enabled:
         raise ValueError("totp mfa is already enabled; disable it before re-enrolling")
     secret = mfa.generate_secret()
-    user.mfa_secret = secret
+    # Persist encrypted; ``mfa.encrypt_secret`` pass-throughs when no
+    # MFA_ENCRYPTION_KEY is configured (dev / CI).
+    user.mfa_secret = mfa.encrypt_secret(secret)
     user.save(update_fields=["mfa_secret", "updated_at"])
     issuer = django_settings.CFG.app_name
     uri = mfa.provisioning_uri(secret, username=user.username, issuer=issuer)
@@ -1575,7 +1577,7 @@ def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
         raise ValueError("totp mfa is already enabled")
     if not user.mfa_secret:
         raise ValueError("no pending enrollment; start enrollment first")
-    if not mfa.verify_totp(user.mfa_secret, code):
+    if not mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
         raise ValueError("invalid verification code")
     was_enabled = user.mfa_enabled
     user.mfa_totp_enabled = True
@@ -3407,7 +3409,7 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
     code = (mfa_code or "").strip()
     if not code:
         raise ValueError("codigo 2fa requerido")
-    if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(user.mfa_secret, code):
+    if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
         return
     if user.mfa_email_enabled and consume_email_mfa_code(user, code):
         return

@@ -839,7 +839,7 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
         if method == "email":
             success = consume_email_mfa_code(user, digits_only)
         else:
-            success = mfa_lib.verify_totp(user.mfa_secret, digits_only)
+            success = mfa_lib.verify_totp(mfa_lib.decrypt_secret(user.mfa_secret), digits_only)
     if not success:
         if consume_recovery_code(user, candidate):
             success = True

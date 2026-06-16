@@ -247,6 +247,26 @@ HIBP_PASSWORD_CHECK = os.environ.get("AMELI_APP_HIBP_PASSWORD_CHECK", "").strip(
 # verification.
 AUDIT_HMAC_KEY = os.environ.get("AMELI_APP_AUDIT_HMAC_KEY", "").strip()
 
+# TOTP shared secrets are wrapped with Fernet (AES-128-CBC + HMAC-SHA256)
+# before they hit the DB. The key is a 32-byte url-safe base64 token —
+# generate with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# and paste it into AMELI_APP_MFA_ENCRYPTION_KEY in the env file.
+#
+# Leave blank to keep the secret in plaintext (dev / CI convenience).
+# Outside ``dev`` the boot guard below refuses to start without a key.
+# Encryption is a different secret from SECRET_KEY and AUDIT_HMAC_KEY
+# on purpose — losing one should not compromise the others.
+MFA_ENCRYPTION_KEY = os.environ.get("AMELI_APP_MFA_ENCRYPTION_KEY", "").strip()
+
+if not _IS_DEV_ENV and not MFA_ENCRYPTION_KEY:
+    raise RuntimeError(
+        "AMELI_APP_MFA_ENCRYPTION_KEY is empty outside the dev environment. "
+        "Without it, TOTP secrets land in the DB as plaintext (ASVS V2.8 gap). "
+        "Generate one with `python -c 'from cryptography.fernet import Fernet; "
+        "print(Fernet.generate_key().decode())'` and set it in the env file."
+    )
+
 LANGUAGE_CODE = "es-cl"
 TIME_ZONE = CFG.timezone or "America/Santiago"
 USE_I18N = True

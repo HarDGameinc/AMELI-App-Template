@@ -70,7 +70,40 @@ distinct rotation playbook.
   in `accounts/services.py`); keep an external archive before pruning
   if you need to retain the original HMACs.
 
-### 3. `AMELI_APP_BACKUP_GPG_RECIPIENT`
+### 3. `AMELI_APP_MFA_ENCRYPTION_KEY`
+
+- **Purpose**: Fernet (AES-128-CBC + HMAC-SHA256) symmetric key that
+  wraps the TOTP shared secret on the `User` row at rest. Closes ASVS
+  V2.8.1-2.8.6.
+- **Rotation cadence**: 12 months OR on suspected compromise.
+- **Procedure**:
+  1. Generate a new key:
+     ```bash
+     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+     ```
+  2. Set the new value in `app.env` on every node.
+  3. Run a one-shot re-encrypt sweep against the DB using the data
+     migration `accounts.0012_mfa_secret_encrypt` (the forward path
+     detects rows under the previous key as "not Fernet under live
+     key" and treats them as plaintext, so a rotation without an
+     intermediate "decrypt under old, re-encrypt under new" step
+     LOSES the existing secrets and forces every user to re-enroll
+     TOTP). For a controlled rotation: load the OLD key first, run
+     `migrate accounts 0011` to decrypt to plaintext, swap to NEW
+     key, run `migrate accounts 0012` to re-encrypt. Operators should
+     drain auth traffic during this window.
+  4. Restart the systemd unit. Active TOTP authenticators on user
+     phones continue to work — the shared secret is unchanged, only
+     the wrap is.
+- **Caveat**: This key is distinct from `SECRET_KEY` and
+  `AUDIT_HMAC_KEY` by design (ASVS expects key separation). Losing
+  one must not compromise the others.
+- **Caveat 2**: Without this key configured outside `dev`, the boot
+  guard in `settings.py` refuses to start. In `dev` the wrap
+  pass-throughs to plaintext so the test suite + CI keep working
+  without operator setup.
+
+### 4. `AMELI_APP_BACKUP_GPG_RECIPIENT`
 
 - **Purpose**: GPG identity that encrypts every backup archive that
   leaves the host.
@@ -97,7 +130,7 @@ Each is something the operator can choose to remediate or accept.
 
 | ID | Risk | Status | Mitigation |
 | --- | --- | --- | --- |
-| R-01 | TOTP shared secret stored unencrypted in the `User` row | Accepted | Operator can wrap with Fernet using a separate env secret. Tracked as ASVS V2.8 gap. |
+| R-01 | TOTP shared secret stored unencrypted in the `User` row | **Closed 2026-06-16** | Fernet wrap keyed off `AMELI_APP_MFA_ENCRYPTION_KEY`. Boot guard refuses to start outside `dev` without the key. Migration `accounts.0012_mfa_secret_encrypt` re-encrypts legacy rows. |
 | R-02 | Audit retention prune re-stamps surviving rows under the live key (original HMACs are lost) | Accepted by design | The prune is opt-in (`audit_max_age_days=None` by default). Archive externally before pruning. |
 | R-03 | Static asset SRI hashes default to empty for Swagger/ReDoc | Accepted | Pin a vendored copy under `static/` or supply hashes via `OPENAPI_SWAGGER_SRI` / `OPENAPI_REDOC_SRI`. |
 | R-04 | Dependency pins use `>=` rather than `==` with hashes | Mitigation pending | Tracked separately; see `docs/COMPLIANCE_ASVS_L2_2026-06-15.md` roadmap item #1. |

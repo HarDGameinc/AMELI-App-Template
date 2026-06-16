@@ -20,7 +20,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | Chapter | PASS | GAP | N/A | DEFERRED | Δ vs 2026-06-15 |
 | --- | ---: | ---: | ---: | ---: | --- |
 | V1 Architecture, design and threat modelling | 10 | 1 | 0 | 2 | +4 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1) |
-| V2 Authentication | 19 | 2 | 1 | 0 | unchanged |
+| V2 Authentication | 20 | 1 | 1 | 0 | +1 PASS (2.8.x closed 2026-06-16) |
 | V3 Session management | 15 | 1 | 0 | 1 | unchanged |
 | V4 Access control | 9 | 1 | 1 | 0 | unchanged |
 | V5 Validation, sanitization and encoding | 13 | 2 | 1 | 0 | unchanged |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **135** | **14** | **9** | **11** | — |
+| **Total** | **136** | **13** | **9** | **11** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -134,7 +134,7 @@ No control regressed.
 | 2.6.1-2.6.3 | Out-of-band auth (MFA) | PASS | TOTP at `mfa.py:38 verify_totp`; email MFA at `mfa.py:96 generate_email_code`. |
 | 2.7.1-2.7.3 | OTP cryptographically secure | PASS | TOTP via pyotp; email codes via `secrets.randbelow`. |
 | 2.7.6 | OTP rate limited | PASS | `EMAIL_CODE_RESEND_INTERVAL_SECONDS=60` + hourly limit. |
-| 2.8.1-2.8.6 | TOTP encrypted at rest, single-use | **GAP** | TOTP `secret` stored plaintext on `User`. Roadmap item #1: wrap with Fernet keyed by a new env secret. |
+| 2.8.1-2.8.6 | TOTP encrypted at rest, single-use | **PASS** | Wrapped with Fernet (AES-128-CBC + HMAC-SHA256) via `ameli_web/accounts/mfa.py:encrypt_secret`/`decrypt_secret`, keyed by `AMELI_APP_MFA_ENCRYPTION_KEY`. Boot guard refuses to start outside `dev` without the key. Schema bumped to `max_length=255` + data migration `accounts.0012_mfa_secret_encrypt` re-encrypts legacy plaintext rows. Tests at `tests/test_mfa_secret_encryption.py` cover round-trip, backward-compat, key absence pass-through, rotation safety. |
 | 2.9.x | Cryptographic 2FA (WebAuthn) | N/A | Out of scope; TOTP+email satisfy L2. |
 | 2.10.1-2.10.3 | Service auth (token storage) | PASS | API tokens not implemented (deliberately removed in `641ece1`); service-account passwords use Argon2 like users. |
 
@@ -358,7 +358,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 
 | # | Gap (ASVS ref) | Effort | Status | Suggested fix |
 | --- | --- | --- | --- | --- |
-| 1 | **2.8.x** TOTP secret unencrypted at rest | M | open | Wrap `mfa_totp_secret` with Fernet keyed off a new env secret + migration. |
+| 1 | **2.8.x** TOTP secret unencrypted at rest | M | **closed-2026-06-16** | Fernet wrap via `mfa.encrypt_secret`/`decrypt_secret`, new env `AMELI_APP_MFA_ENCRYPTION_KEY`, boot guard outside `dev`, migration `accounts.0012_mfa_secret_encrypt`. |
 | 2 | **2.2.3** no email alert on auth-failure burst | S | open | After N consecutive failures (counter exists), queue email to user. |
 | 3 | **3.3.3** no absolute session ceiling | S | open | `SESSION_ABSOLUTE_MAX_AGE` (default 30 d), enforce in `UserSessionMiddleware`. |
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | open | Resolve avatar from session user + admin only. |
