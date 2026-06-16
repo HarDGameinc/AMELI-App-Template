@@ -1,5 +1,23 @@
 # AMELI App Template: canonical handoff
 
+## Reading order for any new session
+
+1. This file (`AGENTS.md`) — purpose, architecture, policies.
+2. [`docs/HANDOFF_TEMPLATE.md`](docs/HANDOFF_TEMPLATE.md) — the
+   canonical structure every session handoff follows + the skills
+   playbook (S-01 to S-08) for reusable plays.
+3. The most recent `docs/CLAUDE_HANDOFF_YYYY-MM-DD_*.md` — the
+   session-specific context the next session continues from.
+4. [`docs/SECURITY.md`](docs/SECURITY.md) +
+   [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — security
+   posture and STRIDE-style trust boundaries.
+5. [`docs/COMPLIANCE_ASVS_L2_2026-06-15.md`](docs/COMPLIANCE_ASVS_L2_2026-06-15.md)
+   — current ASVS L2 gap analysis; gaps drive the roadmap numbered
+   list every handoff inherits.
+
+When the new session is by an LLM agent, also read `CLAUDE.md` for
+the per-project instruction overrides.
+
 ## Purpose
 
 This repository is the canonical Django-first template for AMELI applications
