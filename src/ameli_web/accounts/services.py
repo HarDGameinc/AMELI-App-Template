@@ -637,6 +637,19 @@ def serialize_user(user) -> dict[str, Any]:
 
 
 def serialize_session(session: UserSession, *, current_session_key: str | None = None) -> dict[str, Any]:
+    # ASVS V3.3.3 — surface the absolute ceiling timestamp so the user
+    # can see when re-auth will be forced. Computed from ``created_at +
+    # SESSION_ABSOLUTE_MAX_AGE_SECONDS``; ``None`` when the ceiling is
+    # disabled (setting == 0).
+    from datetime import timedelta
+
+    from django.conf import settings as django_settings
+
+    max_age = int(getattr(django_settings, "SESSION_ABSOLUTE_MAX_AGE_SECONDS", 0) or 0)
+    if max_age > 0:
+        absolute_expires_at = session.created_at + timedelta(seconds=max_age)
+    else:
+        absolute_expires_at = None
     return {
         "username": session.user.username,
         "session_key": session.session_key,
@@ -648,6 +661,8 @@ def serialize_session(session: UserSession, *, current_session_key: str | None =
         "display_last_seen_at": format_timestamp_ui(session.last_seen_at),
         "revoked_at": format_timestamp_ui(session.revoked_at),
         "display_revoked_at": format_timestamp_ui(session.revoked_at),
+        "absolute_expires_at": format_timestamp_ui(absolute_expires_at) if absolute_expires_at else "",
+        "display_absolute_expires_at": format_timestamp_ui(absolute_expires_at) if absolute_expires_at else "",
         "user_agent": session.user_agent,
         "display_user_agent": session.user_agent,
         "ip_address": session.ip_address,

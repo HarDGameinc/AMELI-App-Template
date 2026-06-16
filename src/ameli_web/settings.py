@@ -307,6 +307,18 @@ SESSION_SAVE_EVERY_REQUEST = bool(CFG.session_idle_renewal)
 # Expire on browser close when set; defaults to False so refreshing a tab
 # doesn't lose the session (matches the rest of the Template's UX).
 SESSION_EXPIRE_AT_BROWSER_CLOSE = bool(CFG.session_expire_at_browser_close)
+# Absolute session ceiling (ASVS V3.3.3): even with continuous activity,
+# the session expires this many seconds after the original login (the
+# ``UserSession.created_at`` anchor). The user is forced to re-authenticate
+# on the next request after the ceiling is crossed. ``SESSION_COOKIE_AGE``
+# above is the IDLE timeout — this one is the ABSOLUTE timeout.
+#
+# Default: 30 days (2_592_000 s). Operators can shorten for sensitive
+# deploys via ``AMELI_APP_SESSION_ABSOLUTE_MAX_AGE_SECONDS`` or set to 0
+# to disable (back-compat with deploys that have never enforced this).
+SESSION_ABSOLUTE_MAX_AGE_SECONDS = int(
+    os.environ.get("AMELI_APP_SESSION_ABSOLUTE_MAX_AGE_SECONDS", "2592000")
+)
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 CSRF_COOKIE_HTTPONLY = True  # we read the token from the {% csrf_token %} tag, not from JS.
 CSRF_COOKIE_SAMESITE = "Lax"

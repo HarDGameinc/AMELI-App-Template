@@ -29,6 +29,7 @@ helper can swap just this fragment without reloading the whole profile.
     </div>
     <div class="session-meta-line">
       <span class="session-meta-item">Ultima actividad: {{ session.last_seen_at }}</span>
+      {% if not session.revoked and session.absolute_expires_at %}<span class="session-meta-item">Expira: {{ session.absolute_expires_at }}</span>{% endif %}
       {% if session.ip_address %}<span class="session-meta-item">IP: {{ session.ip_address }}</span>{% endif %}
       {% if session.user_agent %}<span class="session-meta-item">{{ session.user_agent|truncatechars:72 }}</span>{% endif %}
     </div>

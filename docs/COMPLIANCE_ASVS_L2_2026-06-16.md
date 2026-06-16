@@ -21,7 +21,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | --- | ---: | ---: | ---: | ---: | --- |
 | V1 Architecture, design and threat modelling | 10 | 1 | 0 | 2 | +4 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1) |
 | V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
-| V3 Session management | 15 | 1 | 0 | 1 | unchanged |
+| V3 Session management | 16 | 0 | 0 | 1 | +1 PASS (3.3.3 closed 2026-06-16) |
 | V4 Access control | 9 | 1 | 1 | 0 | unchanged |
 | V5 Validation, sanitization and encoding | 13 | 2 | 1 | 0 | unchanged |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **137** | **12** | **9** | **11** | — |
+| **Total** | **138** | **11** | **9** | **11** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -151,7 +151,7 @@ No control regressed.
 | 3.2.4 | Random over the wire when generated | PASS | TLS via Caddy. |
 | 3.3.1 | Logout terminates session server-side | PASS | `views.py:175 logout_view` calls `auth_logout` + `revoke_sudo`. |
 | 3.3.2 | Idle timeout | PASS | `SESSION_SAVE_EVERY_REQUEST=True` + `SESSION_COOKIE_AGE` default 43200s. |
-| 3.3.3 | Absolute timeout | **GAP** | Session can be renewed indefinitely. Roadmap item #3: `SESSION_ABSOLUTE_MAX_AGE`. |
+| 3.3.3 | Absolute timeout | **PASS** | `UserSessionMiddleware` (middleware.py) checks `now - session_record.created_at` against `settings.SESSION_ABSOLUTE_MAX_AGE_SECONDS` (default 30 days, env `AMELI_APP_SESSION_ABSOLUTE_MAX_AGE_SECONDS`, `0` disables for back-compat). Expired sessions are forced through `auth_logout` + redirect to `/login/`, plus a `session_expired_absolute` audit row. The `/profile/sessions/` panel surfaces `absolute_expires_at` so users see the upcoming forced re-auth. Tests at `tests/test_session_absolute_ceiling.py` cover in-window pass-through, expired session redirect + audit payload, exact-threshold edge, disabled-setting back-compat, serializer exposure, and the cycle_key policy. |
 | 3.3.4 | Concurrent session control | PASS | `services.py:revoke_other_sessions` + admin revoke. |
 | 3.4.1 | Cookie `Secure` | PASS | `SESSION_COOKIE_SECURE=True` outside dev. |
 | 3.4.2 | Cookie `HttpOnly` | PASS | `SESSION_COOKIE_HTTPONLY=True`. |
@@ -360,7 +360,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | --- | --- | --- | --- | --- |
 | 1 | **2.8.x** TOTP secret unencrypted at rest | M | **closed-2026-06-16** | Fernet wrap via `mfa.encrypt_secret`/`decrypt_secret`, new env `AMELI_APP_MFA_ENCRYPTION_KEY`, boot guard outside `dev`, migration `accounts.0012_mfa_secret_encrypt`. |
 | 2 | **2.2.3** no email alert on auth-failure burst | S | **closed-2026-06-16** | `_send_auth_failures_alert` triggered from `record_login_failure` at the moment the username crosses `LOGIN_LOCKOUT_USER_MAX`; 24 h cooldown on `User.last_auth_alert_sent_at` prevents spam. |
-| 3 | **3.3.3** no absolute session ceiling | S | open | `SESSION_ABSOLUTE_MAX_AGE` (default 30 d), enforce in `UserSessionMiddleware`. |
+| 3 | **3.3.3** no absolute session ceiling | S | **closed-2026-06-16** | `SESSION_ABSOLUTE_MAX_AGE_SECONDS` (default 30 d, env override), middleware check + forced logout + `session_expired_absolute` audit + UI panel surfaces `absolute_expires_at`. |
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | open | Resolve avatar from session user + admin only. |
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | open | Vendor Swagger/ReDoc to `static/`, or ship default SRI values. |
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | open | Add `bandit -ll` + ruff `S310` to CI. |

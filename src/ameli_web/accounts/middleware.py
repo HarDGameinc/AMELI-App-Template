@@ -160,6 +160,48 @@ class UserSessionMiddleware:
             if session_record is not None and session_record.revoked_at is not None:
                 messages.warning(request, "Tu sesión fue revocada y necesitas iniciar sesión de nuevo.")
                 return redirect("accounts:login")
+            # ASVS V3.3.3 absolute session ceiling: a session that has
+            # lived past ``SESSION_ABSOLUTE_MAX_AGE_SECONDS`` (measured
+            # from ``UserSession.created_at``, the original login moment)
+            # is forced to re-authenticate even with continuous activity.
+            # ``SESSION_COOKIE_AGE`` covers idle timeout — this covers
+            # absolute timeout.
+            #
+            # The ceiling check runs after ``sync_request_session`` so we
+            # are guaranteed a session_record. Settings = 0 disables the
+            # ceiling for back-compat with deploys that have never
+            # enforced this.
+            if session_record is not None:
+                from django.conf import settings as django_settings
+
+                max_age = int(getattr(django_settings, "SESSION_ABSOLUTE_MAX_AGE_SECONDS", 0) or 0)
+                if max_age > 0:
+                    from django.utils import timezone
+
+                    age = (timezone.now() - session_record.created_at).total_seconds()
+                    if age >= max_age:
+                        from django.contrib.auth import logout as auth_logout
+
+                        # Audit BEFORE logout so the row is attributed to
+                        # the user whose session we're about to terminate.
+                        username = request.user.username
+                        record_audit(
+                            "session_expired_absolute",
+                            actor=request.user,
+                            target_username=username,
+                            payload={
+                                "session_key": session_record.session_key,
+                                "session_age_seconds": int(age),
+                                "max_age_seconds": max_age,
+                            },
+                        )
+                        auth_logout(request)
+                        messages.warning(
+                            request,
+                            "Tu sesión expiró por política de seguridad. "
+                            "Vuelve a iniciar sesión.",
+                        )
+                        return redirect("accounts:login")
         return self.get_response(request)
 
 
