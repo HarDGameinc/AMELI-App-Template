@@ -198,15 +198,15 @@ def test_throttle_sliding_window_folds_in_previous_bucket(settings):
     the sliding read strictly exceeds the legacy fixed read in this
     configuration, which is the property that closes the burst.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from unittest.mock import patch
 
+    from ameli_web.accounts.models import ThrottleCounter
     from ameli_web.accounts.services import (
         _read_throttle_counter,
         _read_throttle_counter_sliding,
         _window_start_for,
     )
-    from ameli_web.accounts.models import ThrottleCounter
 
     window = 300
     fixed_now = _window_start_for(window)  # start of current bucket
