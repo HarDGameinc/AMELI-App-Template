@@ -1,7 +1,7 @@
 # Top-level dev / test dependencies. See requirements.txt for the
 # pinning policy.
-httpx~=0.27
-pytest~=8.0
-pytest-django~=4.9
-ruff~=0.6
-pip-audit~=2.7
+httpx>=0.27,<2
+pytest>=9.0,<11
+pytest-django>=4.9,<6
+ruff>=0.6,<2
+pip-audit>=2.7,<4
