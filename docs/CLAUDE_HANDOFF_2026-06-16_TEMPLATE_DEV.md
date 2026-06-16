@@ -135,8 +135,13 @@ Detalles en §8a.
 ## §5. Metricas al cierre
 
 - Tests: 693 → 693 (unchanged; el fix de lint no toco logica)
-- ASVS L2 score: 69/102 PASS → 70/102 PASS (V1.1.3 closing colateral
-  via LICENSE; el resto unchanged)
+- ASVS L2 score: 90.6% PASS de las 149 rows activas (re-evaluado en
+  `docs/COMPLIANCE_ASVS_L2_2026-06-16.md` con metodologia row-counted
+  consistente). Subio respecto al 15-06 por los 8 controles cerrados
+  en `42efbd4` (V1.1.1, V1.1.2, V1.5.x, V1.6.1, V6.3.x, V8.2.1,
+  V8.3.3, V8.3.4, V9.1.2, V14.4.5) + 2 partials (V14.2.1, V14.2.2).
+  14 GAPs strict pendientes (= items #1..#15 menos las dobles del
+  roadmap), todos sin severidad HIGH.
 - Open code-review findings: 0 HIGH / 0 MEDIUM / 0 LOW de las sesiones
   del 15-16. El backup OPS gap esta etiquetado OPS en §6, no
   code-review.
