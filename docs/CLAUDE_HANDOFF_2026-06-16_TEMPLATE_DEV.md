@@ -153,8 +153,55 @@ Detalles en §8a.
     pin)
   - **Major upgrade** (security): pytest 8.4 → 9.1 (tras el `>=9.0,<11` pin)
   - **New dev dep**: pip-audit `>=2.7,<4`
+  - **New runtime dep** (PM session): cryptography `>=48.0.1,<50`
+    (closes 6 CVEs in 45.x, backs Fernet for ASVS V2.8).
   - Resto: unchanged.
 - License declared: MIT (era: undefined).
+
+## §5b. Wire validation 2026-06-16 PM (items #1 + #2)
+
+Despues del cierre formal del 2026-06-16 AM, la sesion del PM cerro
+los items #1 y #2 del roadmap end-to-end con smoke test en
+`ha-report2` (HEAD `8d9ab91`).
+
+### Items cerrados
+
+| # | ASVS | Commits | Tests | Wire evidence |
+|---|---|---|---|---|
+| 1 | V2.8.1-2.8.6 (TOTP encrypt at rest) | `1523904` + `6ab443a` | +14 (`tests/test_mfa_secret_encryption.py`) | admin's `mfa_secret` re-encrypted in DB (db_len=140, fernet_shape=True), runtime decrypts back to 32-char base32 |
+| 2 | V2.2.3 (auth-failures alert) | `56e7046` | +11 (`tests/test_auth_failures_alert.py`) | 5 fails on `tester` user fired exactly one `auth_failures_alert_sent` audit row + email delivered to real inbox (carlos.urbina@agnov.cl) |
+| — | Runbook + migration hardening | `8d9ab91` | suite stays green | bash env-loader IFS bug fixed in HANDOFF_2026-06-16 §8c; migration 0012 now raises with operator-actionable message when key is unparseable |
+
+### Lecciones operacionales aprendidas
+
+1. **Bash `IFS='='` come trailing `=`**. El runbook del 2026-06-16 AM
+   shippeo un snippet de carga de env que perdia silenciosamente el
+   `=` final de valores como las Fernet keys (44 chars -> 43 chars).
+   Fix en `8d9ab91`: usar `IFS= read -r line` + `${line%%=*}` /
+   `${line#*=}`. Cualquier sesion futura que use el handoff template
+   ya no tropieza con esto.
+2. **`pip-audit` lower bound debe ir contra current CVE-clean
+   floor**. La primera pin de `cryptography>=43,<46` (commit `1523904`)
+   pinneo el lower bound al rango que el unit test estaba ejecutando,
+   no al rango CVE-libre. Resultado: CI red en `supply-chain-audit`
+   por 6 CVEs en `cryptography 45.x`. Fix en `6ab443a`: bumpear
+   lower bound al primer release CVE-clean (`48.0.1`). Esta lesson
+   se incorpora al S-08 checklist para la proxima vez.
+3. **Cuando una key se "pega en el chat" para diagnostico**, hay que
+   tratarla como comprometida para el environment de produccion.
+   Para `dev` aceptable (la conversation no se publica, el deploy
+   es interno); cuando promovamos a prod hay que generar key NUEVA
+   y NO copiarla al chat.
+
+### Estado tras el cierre PM
+
+- `main == dev == 8d9ab91`
+- Suite: **718/718 green**, ruff clean, pip-audit clean
+- CI: ultimos 4 runs (`#21..#24`) todos green
+- ASVS L2: **137/149 PASS = 91.9%**, **12 strict GAPs restantes**, **0 HIGH**
+- Server `ha-report2`: HEAD `8d9ab91`, migraciones 0012 + 0013
+  aplicadas, MFA encryption key configurada (entorno dev), `tester`
+  user recibio email de prueba del ASVS V2.2.3 trigger.
 
 ## §6. Hallazgos / findings
 
