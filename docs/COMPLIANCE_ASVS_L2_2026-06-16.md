@@ -20,7 +20,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | Chapter | PASS | GAP | N/A | DEFERRED | Δ vs 2026-06-15 |
 | --- | ---: | ---: | ---: | ---: | --- |
 | V1 Architecture, design and threat modelling | 10 | 1 | 0 | 2 | +4 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1) |
-| V2 Authentication | 20 | 1 | 1 | 0 | +1 PASS (2.8.x closed 2026-06-16) |
+| V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
 | V3 Session management | 15 | 1 | 0 | 1 | unchanged |
 | V4 Access control | 9 | 1 | 1 | 0 | unchanged |
 | V5 Validation, sanitization and encoding | 13 | 2 | 1 | 0 | unchanged |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **136** | **13** | **9** | **11** | — |
+| **Total** | **137** | **12** | **9** | **11** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -122,7 +122,7 @@ No control regressed.
 | 2.1.9 | No password truncation | PASS | Argon2 handles arbitrary length; `strip=False` on password fields. |
 | 2.2.1 | Anti-automation: throttle + lockout | PASS | `services.py:check_login_throttle`; sliding window in `_read_throttle_counter_sliding`; permanent lockout after N consecutive windows. |
 | 2.2.2 | Lockout uses out-of-band recovery | PASS | Admin unlock via `services.py:admin_unlock_user` (requires sudo). |
-| 2.2.3 | Notify user of failed auth attempt | **GAP** | No email alert on failed login attempts to the affected user. Counter already tracked in `_consecutive_lockouts_for`. Roadmap item #2. |
+| 2.2.3 | Notify user of failed auth attempt | **PASS** | `_send_auth_failures_alert` (services.py) fires from `record_login_failure` exactly at the moment the per-username throttle counter crosses `LOGIN_LOCKOUT_USER_MAX`. The alert is throttled by a configurable cooldown (default 24 h, `AUTH_FAILURES_ALERT_COOLDOWN_HOURS`) anchored on `User.last_auth_alert_sent_at` so an attacker cannot weaponise the alert pipeline as a spam channel. Template at `templates/accounts/auth_failures_alert.txt`. Tests at `tests/test_auth_failures_alert.py` cover threshold crossing, cooldown enforcement + suppression audit, expired cooldown re-fires, no-email skip, unknown-username skip, SMTP failure queueing. |
 | 2.2.4 | Impersonation resistance — MFA required for privileged | PASS | `User.mfa_required` field; admin disable of MFA gated by sudo + email alert. |
 | 2.3.1 | System-generated credentials randomness | PASS | `pyotp.random_base32`; recovery codes via `secrets.choice`. |
 | 2.3.2 | Enrollment credentials short-lived | PASS | `PASSWORD_RESET_TIMEOUT` default 3600s. |
@@ -359,7 +359,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | # | Gap (ASVS ref) | Effort | Status | Suggested fix |
 | --- | --- | --- | --- | --- |
 | 1 | **2.8.x** TOTP secret unencrypted at rest | M | **closed-2026-06-16** | Fernet wrap via `mfa.encrypt_secret`/`decrypt_secret`, new env `AMELI_APP_MFA_ENCRYPTION_KEY`, boot guard outside `dev`, migration `accounts.0012_mfa_secret_encrypt`. |
-| 2 | **2.2.3** no email alert on auth-failure burst | S | open | After N consecutive failures (counter exists), queue email to user. |
+| 2 | **2.2.3** no email alert on auth-failure burst | S | **closed-2026-06-16** | `_send_auth_failures_alert` triggered from `record_login_failure` at the moment the username crosses `LOGIN_LOCKOUT_USER_MAX`; 24 h cooldown on `User.last_auth_alert_sent_at` prevents spam. |
 | 3 | **3.3.3** no absolute session ceiling | S | open | `SESSION_ABSOLUTE_MAX_AGE` (default 30 d), enforce in `UserSessionMiddleware`. |
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | open | Resolve avatar from session user + admin only. |
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | open | Vendor Swagger/ReDoc to `static/`, or ship default SRI values. |

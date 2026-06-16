@@ -59,6 +59,12 @@ class User(AbstractUser):
     mfa_required = models.BooleanField(default=False)
     mfa_totp_enabled = models.BooleanField(default=False)
     mfa_email_enabled = models.BooleanField(default=False)
+    # Anchor for the ASVS V2.2.3 "notify user of failed auth burst"
+    # cooldown — see ``_send_auth_failures_alert`` in services.py.
+    # Null means "no alert has ever fired"; an attacker that sustains
+    # the burst across multiple lockout windows still gets one alert
+    # per cooldown period (default 24h).
+    last_auth_alert_sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

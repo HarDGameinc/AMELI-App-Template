@@ -1,0 +1,15 @@
+Hola @{{ username }},
+
+Detectamos {{ failure_count }} intentos de inicio de sesion fallidos consecutivos contra tu cuenta en {{ app_name }} dentro de los ultimos {{ window_minutes }} minutos. Por seguridad, tu cuenta esta temporalmente bloqueada — la proxima vez que ingreses tu contrasena correcta vas a poder acceder normalmente.
+
+Si vos NO intentaste ingresar:
+- Cambia tu contrasena cuanto antes desde tu perfil ({{ change_password_url }}).
+- Avisa a tu administrador para que revise la actividad reciente.
+
+Si vos SI intentaste ingresar y olvidaste tu contrasena:
+- Usa el flujo de recuperacion ({{ reset_password_url }}) para volver a definirla.
+
+Este aviso se envia una sola vez cada {{ cooldown_hours }} horas. Si el patron sigue ocurriendo recibiras un nuevo correo recien despues de ese periodo.
+
+Saludos,
+{{ app_name }}
