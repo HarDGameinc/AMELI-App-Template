@@ -43,7 +43,23 @@ def encrypt_existing_secrets(apps, schema_editor):
 
     from cryptography.fernet import Fernet
 
-    fernet = Fernet(key.encode("utf-8") if isinstance(key, str) else key)
+    try:
+        fernet = Fernet(key.encode("utf-8") if isinstance(key, str) else key)
+    except Exception as exc:  # noqa: BLE001 — bad key, surface a friendly error
+        # The schema part of this migration (``AlterField``) already
+        # applied before this RunPython step. Raising here aborts the
+        # migration AFTER the column was widened — that's safe because
+        # the runtime helpers tolerate plaintext rows under a configured
+        # key (the rollout-window fallback). Operators fix the key and
+        # re-run; rows stay readable in the meantime.
+        raise RuntimeError(
+            "AMELI_APP_MFA_ENCRYPTION_KEY is set but does not look like "
+            "a valid Fernet key (must be 32 url-safe base64 bytes). "
+            "Generate a fresh one with `python -c \"from cryptography.fernet "
+            "import Fernet; print(Fernet.generate_key().decode())\"` and "
+            "set it in the env file. Underlying error: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
     User = apps.get_model("accounts", "User")
     qs = User.objects.exclude(mfa_secret="")
     for user in qs.iterator(chunk_size=200):

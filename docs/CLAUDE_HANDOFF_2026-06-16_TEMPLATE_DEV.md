@@ -287,14 +287,20 @@ git fetch origin && git reset --hard origin/dev
 systemctl restart ameli-app-template-dev-api.service
 ```
 
-Cargar el env del systemd en una shell para correr `python` directo:
+Cargar el env del systemd en una shell para correr `python` directo.
+**IMPORTANTE**: la version anterior de este snippet usaba
+``IFS='='`` + ``read key value`` lo cual COME el trailing ``=`` de
+valores como las Fernet keys (descubierto el 2026-06-16 wire-testing
+item #1). La version correcta lee la linea entera y parte por el
+primer ``=`` con expansion de parametros:
 
 ```bash
 set -a
-while IFS='=' read -r key value; do
-    case "$key" in ''|'#'*) continue ;; esac
-    key="${key%%[[:space:]]*}"
-    value="${value#\"}"; value="${value%\"}"
+while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ -z "$key" ]] && continue
     declare "$key=$value"
 done < /etc/ameli-app-template-dev/app.env
 set +a
