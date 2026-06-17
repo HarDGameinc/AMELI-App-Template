@@ -44,10 +44,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -104,18 +104,19 @@ jobs:
     runs-on: ubuntu-latest
     # Run only on the canonical branches — PRs from forks get the same
     # signal from the lint-and-test matrix above without spending a
-    # second budget on the audit job. ``continue-on-error: true`` keeps
-    # a freshly-disclosed CVE from blocking unrelated merges while we
-    # patch; a real-world CI policy should harden this once the
-    # baseline is clean.
+    # second budget on the audit job.
+    #
+    # Hard-fail since 2026-06-17 (roadmap #15 + #22 closed). The baseline
+    # is clean and the operator has a single-screen path forward on a
+    # surprise CVE: bump the lower bound of the affected dep in
+    # requirements.txt to the first CVE-clean release and re-run.
     if: github.event_name == 'push'
-    continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 

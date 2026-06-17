@@ -32,8 +32,8 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V11 Business logic | 5 | 1 | 0 | 0 | unchanged |
 | V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
-| V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **143** | **6** | **9** | **10** | — |
+| V14 Configuration | 23 | 0 | 0 | 3 | +3 PASS (14.2.1, 14.2.2, 14.4.5 closed; 14.2.2 promoted to full PASS 2026-06-17) |
+| **Total** | **144** | **5** | **9** | **10** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -331,7 +331,7 @@ No control regressed.
 | 14.1.4 | Out-of-band notification of config changes | DEFERRED | Operator concern. |
 | 14.1.5 | All app deps from approved repos | PASS | Standard PyPI. |
 | 14.2.1 | Dependencies managed and minimised | **PASS** (partial) | `requirements.txt` + `requirements-dev.txt` use `>=X.Y,<N+2` so Dependabot can ship security majors (e.g. Pillow 11→12 to clear CVE-2026-25990) without PR while a truly new generation (Django 7, Pillow 13) still requires explicit approval. Lockfile with hashes is roadmap #14. |
-| 14.2.2 | Deprecated / vulnerable components removed | **PASS** (partial) | `.github/workflows/ci.yml:91-123` runs `pip-audit --strict` on both requirements files. Currently `continue-on-error: true` (soft fail) while baseline stabilises; promotion to hard-fail is roadmap items #15/#22. As of 2026-06-16 the audit reports zero known vulnerabilities. |
+| 14.2.2 | Deprecated / vulnerable components removed | **PASS** | `.github/workflows/ci.yml` runs `pip-audit --strict` on both requirements files as a HARD-FAIL job since 2026-06-17 (`continue-on-error: true` dropped per roadmap items #15 + #22). Baseline is clean. Operator remediation path on a surprise CVE: bump the lower bound of the affected dep in `requirements.txt` to the first CVE-clean release and re-run. |
 | 14.2.3 | Third-party signature/integrity verified | **GAP** | No SBOM yet; no `pip install --require-hashes`. Roadmap item #14: `pip-compile --generate-hashes`. |
 | 14.2.4 | Deprecated functions removed | PASS | Ruff lints in CI; `from __future__ import annotations` throughout. |
 | 14.2.5 | Sandbox / least-priv runtime | PASS | systemd units in `deploy/systemd/` separate services per concern. |
@@ -372,14 +372,14 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 12 | **3.4.4** `__Host-` prefix not enforced | S | open | Default `SESSION_COOKIE_NAME = "__Host-ameli_session"` when SECURE + no path/domain. |
 | 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | open | `RedactingFilter` that masks `password`, `token`, `authorization`, `secret`, `mfa_code` keys. |
 | 14 | **14.2.3** no lockfile with hashes | M | open | `pip-compile --generate-hashes` flow. |
-| 15 | **14.2.2** promote `pip-audit` to hard fail | XS | open | Drop `continue-on-error: true` from `.github/workflows/ci.yml`. |
+| 15 | **14.2.2** promote `pip-audit` to hard fail | XS | **closed-2026-06-17** | Dropped `continue-on-error: true` from `supply-chain-audit` job. Same change as #22. |
 | 16 | Doc drift in older handoffs | S | open | Add footer note to handoffs `<2026-06-13` that mentions webhooks/tokens were removed in `641ece1`. |
 | 17 | Add `ruff check .` to local pre-push runbook | XS | **closed-2026-06-16** | Documented in `docs/HANDOFF_TEMPLATE.md` S-08; pre-commit hook pending. |
 | 18 | Install `backup.timer` + service on `ha-report2` | S | open | OPS — systemd unit + cron-style schedule. |
 | 19 | PG TCP listener on `ha-report2` or backup runs as user with PG role | S | open | OPS. |
 | 20 | `manage.py` auto-loads `APP_CONFIG` | S | open | Code — pre-load via `ameli_app.config.load_settings()`. |
-| 21 | Bump `actions/checkout@v4` → v5+, `setup-python@v5` → v6+ when Node-24 release lands | XS | open | HYGIENE (deadline 2026-09-16). |
-| 22 | Promote `supply-chain-audit` job to hard-fail | XS | open | Same change as #15. |
+| 21 | Bump `actions/checkout@v4` → v5+, `setup-python@v5` → v6+ when Node-24 release lands | XS | **closed-2026-06-17** | Bumped to `checkout@v5` + `setup-python@v6` (both Node-24 native). |
+| 22 | Promote `supply-chain-audit` job to hard-fail | XS | **closed-2026-06-17** | Same change as #15. |
 | 23 | Enable branch protection on `main` (require PR + CI green) | S | open | GitHub repo settings. |
 
 Closed since 2026-06-15:
