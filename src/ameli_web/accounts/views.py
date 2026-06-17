@@ -961,14 +961,14 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
         )
         try:
             request_password_reset(identifier, base_url=_build_public_base_url(request))
-        except Exception:  # noqa: BLE001 - never leak sending errors to the form
+        except Exception:  # noqa: BLE001, S110 - never leak sending errors to the form
             pass
 
         from django.conf import settings as django_settings
 
         target_ms = int(getattr(django_settings, "FORGOT_PASSWORD_MIN_RESPONSE_MS", 1000))
         if target_ms > 0:
-            target = target_ms / 1000.0 + random.uniform(0, 0.08)
+            target = target_ms / 1000.0 + random.uniform(0, 0.08)  # noqa: S311 - timing jitter, not crypto
             elapsed = time.monotonic() - start
             remaining = target - elapsed
             if remaining > 0:

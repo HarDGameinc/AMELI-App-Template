@@ -373,7 +373,12 @@ def _handle_shell(args) -> int:
     namespace = _shell_namespace()
 
     if args.shell_snippet:
-        exec(compile(args.shell_snippet, "<ameli-app shell -c>", "exec"), namespace)
+        # ``ameli-app shell -c "<snippet>"`` is the operator's interactive
+        # Python — equivalent to ``django-admin shell -c``. Input comes
+        # from the local shell that already has full process privileges;
+        # ``exec`` here is by design. Annotated to silence bandit B102 /
+        # ruff S102 without disabling them globally.
+        exec(compile(args.shell_snippet, "<ameli-app shell -c>", "exec"), namespace)  # noqa: S102  # nosec B102
         return 0
 
     if args.script:
@@ -382,7 +387,10 @@ def _handle_shell(args) -> int:
             print(f"shell: script not found: {script_path}", file=sys.stderr)
             return 2
         source = script_path.read_text(encoding="utf-8")
-        exec(compile(source, str(script_path), "exec"), namespace)
+        # Same rationale as the -c branch above: operator-supplied script
+        # in a local privileged shell. Annotated to silence bandit B102 /
+        # ruff S102.
+        exec(compile(source, str(script_path), "exec"), namespace)  # noqa: S102  # nosec B102
         return 0
 
     import code

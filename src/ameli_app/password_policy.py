@@ -4,7 +4,7 @@ import secrets
 import string
 
 MIN_PASSWORD_LENGTH = 12
-ALLOWED_PASSWORD_SYMBOLS = "!@#$%^&*()-_=+?"
+ALLOWED_PASSWORD_SYMBOLS = "!@#$%^&*()-_=+?"  # noqa: S105 - allowlist constant, not a credential
 ALLOWED_PASSWORD_CHARACTERS = (
     string.ascii_uppercase + string.ascii_lowercase + string.digits + ALLOWED_PASSWORD_SYMBOLS
 )

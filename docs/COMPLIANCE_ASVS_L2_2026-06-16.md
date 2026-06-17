@@ -23,17 +23,17 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
 | V3 Session management | 16 | 0 | 0 | 1 | +1 PASS (3.3.3 closed 2026-06-16) |
 | V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
-| V5 Validation, sanitization and encoding | 13 | 2 | 1 | 0 | unchanged |
+| V5 Validation, sanitization and encoding | 14 | 1 | 1 | 0 | +1 PASS (5.2.8 closed 2026-06-16) |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
 | V7 Error handling and logging | 9 | 1 | 0 | 1 | unchanged |
 | V8 Data protection | 7 | 0 | 0 | 1 | +3 PASS (8.2.1, 8.3.3, 8.3.4) |
 | V9 Communications | 3 | 0 | 0 | 1 | +1 PASS (9.1.2) |
-| V10 Malicious code | 2 | 0 | 0 | 1 | +1 PASS (10.3.x closed 2026-06-16) |
+| V10 Malicious code | 3 | 0 | 0 | 0 | +2 PASS (10.1.1 + 10.3.x closed 2026-06-16) |
 | V11 Business logic | 5 | 1 | 0 | 0 | unchanged |
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **140** | **9** | **9** | **11** | — |
+| **Total** | **142** | **7** | **9** | **10** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -192,7 +192,7 @@ No control regressed.
 | 5.1.4 | Structured data validated | PASS | ModelForms. |
 | 5.1.5 | URL redirect uses safe-URL check | PASS | `url_has_allowed_host_and_scheme`. |
 | 5.2.1-5.2.7 | Sanitization of HTML, CSV, URLs, SMTP, LDAP | PASS | Auto-escape; ORM only. |
-| 5.2.8 | SSRF prevention | **GAP** | `validators.py:urlopen` to HIBP is the only outbound; no SSRF guard library. Webhooks were removed in `641ece1`. If re-introduced, port the documented RFC1918/metadata reject list. Roadmap item #6 (covers V10.1.1 + V5.2.8 via `bandit + ruff S310`). |
+| 5.2.8 | SSRF prevention | **PASS** | The single outbound HTTP site (`validators.py:_query_hibp`) targets a compile-time-constant URL with operator-supplied input limited to a 5-hex-char prefix. Ruff `S310` + bandit `B310` enforce in CI that no NEW unconstrained `urlopen` lands without an explicit annotation + rationale. If webhooks return (removed in `641ece1`), the same lint blocks them until the RFC1918 / metadata reject list is wired. |
 | 5.3.1-5.3.3 | Output encoding | PASS | Auto-escape; CSP nonce. |
 | 5.3.4 | SQL injection: parameterised | PASS | ORM only; no raw SQL. |
 | 5.3.5 | Command injection prevention | PASS | No `shell=True`/`os.system`. |
@@ -266,7 +266,7 @@ No control regressed.
 
 | ID | Requirement | Status | Evidence |
 | --- | --- | --- | --- |
-| 10.1.1 | Code analysed for backdoors | DEFERRED | No SAST in CI yet. Roadmap item #6 (`bandit -ll` + ruff S310 hard fail). |
+| 10.1.1 | Code analysed for backdoors | **PASS** | CI runs `ruff check .` with the `S` (bandit-equivalent) ruleset enabled in `pyproject.toml` + `bandit -r src/ -ll -ii` as a separate step. Two engines, same catalog: a gap in one catches the other. Every finding gets either a real fix, a `# noqa: SXXX` (ruff) + `# nosec BXXX` (bandit) annotation with a one-line rationale, or a per-file blanket suppression in `pyproject.toml` with a doc string explaining why the rule does not apply to that surface. Hard fail in CI. |
 | 10.2.1-10.2.6 | No hardcoded back-door / time-bomb | PASS | Code-review pass: no hardcoded master credential outside `_INSECURE_DEFAULT_SECRET` (rejected outside dev). |
 | 10.3.1-10.3.3 | Auto-update / integrity for client code | **PASS** | `/docs` and `/redoc` views refuse to render with HTTP 503 outside `dev` when any SRI hash in `CDN_SRI_HASHES` is empty (`dashboard/views.py:_docs_sri_ready` + `_docs_sri_required`). Operator override via `AMELI_APP_OPENAPI_SRI_REQUIRED`. Helper script `tools/sri_compute.py` generates the four sha384 digests from any host with public internet access. The 503 body lists the missing env vars + the fix command so an operator hitting prod for the first time has a single-screen remediation. Tests at `tests/test_openapi_sri_policy.py` cover dev pass-through, prod refuse, explicit opt-out, explicit opt-in, partial-SRI dev rendering, and the 503 payload content. **Wire-verified 2026-06-16** on `ha-report2`: 4 endpoint paths confirmed (dev no-SRI → 200, prod no-SRI → 503 with full body, prod opt-out → 200, prod with hashes → 200 with `integrity=` count 3) + `tools/sri_compute.py` ran successfully against jsdelivr from the server and emitted the 4 verified sha384 digests for swagger-ui-dist@5.20.0 + redoc@2.1.5. |
 
@@ -363,7 +363,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 3 | **3.3.3** no absolute session ceiling | S | **closed-2026-06-16** | `SESSION_ABSOLUTE_MAX_AGE_SECONDS` (default 30 d, env override), middleware check + forced logout + `session_expired_absolute` audit + UI panel surfaces `absolute_expires_at`. |
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | **closed-2026-06-16** | Avatar slug parsed from filename + owner-or-superadmin check; malformed → 404; denied path emits `media_access_denied` audit row. |
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | **closed-2026-06-16** | `/docs` and `/redoc` refuse to render outside `dev` when any SRI is empty (503 + operator-actionable body). Helper `tools/sri_compute.py` generates the hashes. Operator can opt out via `AMELI_APP_OPENAPI_SRI_REQUIRED=false`. |
-| 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | open | Add `bandit -ll` + ruff `S310` to CI. |
+| 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | **closed-2026-06-16** | Ruff `S` ruleset + bandit `-ll -ii` in CI, hard-fail. Triaged baseline annotated. |
 | 7 | **12.4.1** no AV scan on uploads | M | open | Optional `AMELI_APP_AV_ENDPOINT` (clamd) pre-persist. |
 | 8 | **7.4.1** no custom 404/500 handlers | S | open | Add `handler404`, `handler500` returning generic branded page. |
 | 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |

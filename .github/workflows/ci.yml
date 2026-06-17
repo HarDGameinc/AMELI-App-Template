@@ -62,6 +62,10 @@ jobs:
           pip install -e .
 
       - name: Ruff (lint)
+        # ``ruff check .`` carries the ``S`` (bandit-like) ruleset
+        # enabled in ``pyproject.toml`` — ASVS V10.1.1 + V5.2.8 hard
+        # fail the build when a security pattern lands without an
+        # explicit ``# noqa: SXXX`` rationale.
         run: ruff check .
 
       - name: Ruff (format check)
@@ -70,6 +74,13 @@ jobs:
         # block CI on. Remove ``|| true`` once the codebase is fully
         # formatted.
         run: ruff format --check . || true
+
+      - name: Bandit (SAST)
+        # ``-ll -ii`` filters to medium+ severity AND medium+ confidence
+        # — anything weaker is noise that the ruff S ruleset already
+        # surfaces. Bandit + ruff S together is belt-and-braces: a gap
+        # in one catalog gets caught by the other.
+        run: bandit -r src/ -ll -ii
 
       - name: Django system checks
         working-directory: src

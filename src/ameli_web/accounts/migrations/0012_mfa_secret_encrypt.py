@@ -91,7 +91,7 @@ def decrypt_existing_secrets(apps, schema_editor):
     for user in qs.iterator(chunk_size=200):
         try:
             plain = fernet.decrypt(user.mfa_secret.encode("ascii")).decode("utf-8")
-        except Exception:
+        except Exception:  # noqa: S112, BLE001 - intentional fallback; see comment below
             # Already plaintext (legacy row that never got encrypted)
             # or encrypted under a key we don't hold — leave alone.
             continue

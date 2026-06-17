@@ -86,7 +86,7 @@ class AvatarUploadForm(forms.Form):
         finally:
             try:
                 avatar.file.seek(0)
-            except Exception:  # pragma: no cover - some upload streams aren't seekable
+            except Exception:  # noqa: S110, BLE001 - some upload streams aren't seekable; best-effort cleanup
                 pass
         return avatar
 

@@ -2352,7 +2352,7 @@ def _email_retry_delay_seconds(attempts: int) -> int:
     else:
         idx = min(attempts - 1, len(_EMAIL_RETRY_SCHEDULE_SECONDS) - 1)
         base = _EMAIL_RETRY_SCHEDULE_SECONDS[idx]
-    return int(base * random.uniform(0.8, 1.2))
+    return int(base * random.uniform(0.8, 1.2))  # noqa: S311 - jitter, not cryptographic
 
 
 def _build_email_message(row: OutboundEmail) -> EmailMessage:

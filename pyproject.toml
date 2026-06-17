@@ -52,7 +52,13 @@ line-length = 100
 extend-exclude = [".test-deps", ".venv", ".venv-*", "data", "logs", "backups"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B"]
+# "S" enables bandit-equivalent security checks (ASVS V10.1.1 +
+# V5.2.8). Findings either get a real fix or an explicit ``# noqa:
+# SXXX`` annotation with a one-line rationale — the discipline is to
+# never silently disable a rule globally. Tests carry their own
+# blanket suppressions in the per-file ignores below because asserts,
+# fake passwords and ``shell=True`` are valid test idioms.
+select = ["E", "W", "F", "I", "UP", "B", "S"]
 # E501 is the historic line-length pattern (audit messages, long
 # template strings, docstrings). Tightening it later is a separate
 # cleanup pass; CI shouldn't block on it today.
@@ -64,4 +70,18 @@ ignore = ["E501"]
 # and they import inside test bodies so the per-test setup is local.
 # UP031 fires on percent-format strings that are otherwise readable
 # enough in test fixtures.
-"tests/*" = ["F841", "E402", "UP031"]
+"tests/*" = [
+    "F841", "E402", "UP031",
+    # ``S`` rules: tests legitimately use ``assert`` for invariants
+    # (S101), hardcode fake passwords / tokens (S105, S106, S107),
+    # call ``random`` for jitter (S311), trigger try/except/pass
+    # idioms (S110), spawn subprocesses with partial paths (S603,
+    # S607) and exercise SHA1 for non-security paths like SRI
+    # fixtures (S324) — all valid test patterns.
+    "S101", "S105", "S106", "S107", "S110", "S311",
+    "S324", "S603", "S607",
+]
+# ``tools/sri_compute.py`` runs ``urllib.request.urlopen`` against
+# operator-controlled CDN URLs — that's the script's whole point,
+# not a security smell.
+"tools/sri_compute.py" = ["S310"]

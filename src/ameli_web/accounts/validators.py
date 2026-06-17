@@ -32,14 +32,18 @@ def _query_hibp(prefix: str, *, timeout: float = 3.0) -> str:
 
     We do NOT use ``requests`` to keep the template dependency-free.
     """
-    req = Request(
+    req = Request(  # noqa: S310 - HIBP URL is a compile-time constant, prefix is 5 hex chars
         HIBP_API_URL.format(prefix=prefix),
         headers={
             "User-Agent": "AMELI-App-Template-HIBP",
             "Add-Padding": "true",  # HIBP returns extra padding entries when set
         },
     )
-    with urlopen(req, timeout=timeout) as response:
+    # Target is the constant HIBP API URL (allow-listed by construction);
+    # the only operator-supplied input is the 5-char prefix that goes into
+    # the URL path. Annotated to silence bandit B310 / ruff S310 without
+    # disabling the rule globally.
+    with urlopen(req, timeout=timeout) as response:  # noqa: S310  # nosec B310
         return response.read().decode("utf-8", errors="replace")
 
 
@@ -81,7 +85,10 @@ class HIBPPasswordValidator:
         plaintext = str(password or "")
         if not plaintext:
             return
-        digest = hashlib.sha1(plaintext.encode("utf-8")).hexdigest().upper()
+        # SHA1 is the HIBP k-anonymity protocol — not used for security
+        # decisions, only as a query-prefix for the public API. Annotated
+        # to silence bandit B324 / ruff S324 without disabling them globally.
+        digest = hashlib.sha1(plaintext.encode("utf-8"), usedforsecurity=False).hexdigest().upper()  # noqa: S324
         prefix, suffix = digest[:5], digest[5:]
         try:
             body = _query_hibp(prefix)

@@ -5,3 +5,8 @@ pytest>=9.0,<11
 pytest-django>=4.9,<6
 ruff>=0.6,<2
 pip-audit>=2.7,<4
+# bandit runs the same security pattern catalog ruff exposes via the
+# "S" lints, but with a different rule engine. CI runs both so a gap
+# in one catches the other; if bandit catches something ruff misses
+# the operator gets a fix path either way.
+bandit>=1.7,<3
