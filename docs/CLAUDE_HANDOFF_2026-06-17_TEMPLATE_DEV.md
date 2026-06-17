@@ -35,7 +35,50 @@ roadmap sin esfuerzo arquitectural.
 
 | Commit | Tema | Tests |
 |---|---|---|
-| `<this>` | Item #7 — ASVS V12.4.1 AV scan opcional sobre avatares | 745 → 766 (+21) |
+| `8a45724` | Item #7 — ASVS V12.4.1 AV scan opcional sobre avatares | 745 → 766 (+21) |
+| `bc9f1c9` | Hotfix CI rojo: `# nosec B310` faltante en `av.py` HTTP transport | suite stays green |
+| `<this>` | Wire validation evidence + handoff updates | suite stays green |
+
+### Wire validation 2026-06-17 — item #7
+
+Smoke test en `ha-report2` con ephemeral user (sin
+``must_change_password`` ni ``locked_at``) contra un mock HTTP AV
+server in-process (ephemeral port):
+
+| Path | Status | Audit Δ | Detalle |
+|---|---|---|---|
+| DISABLED | 302 | 0 | sin endpoint → AV block bypassed |
+| CHECK_FAILED (TCP closed) | 302 | 1 | fail-open + audit `connectionrefusederror`, scheme=tcp |
+| OK (HTTP mock) | 302 | 0 | clean scan, no audit |
+| INFECTED (HTTP mock) | 400 | 1 | reject + body "rechazada por antivirus" + audit con sig `Wire-Test-EICAR`, scheme=http |
+
+Propiedades verificadas:
+- ``endpoint_scheme`` solo guarda el scheme, no la URL completa (no
+  leak de hosts internos al audit chain).
+- Body de error genérico, signature solo en audit chain (no
+  fingerprint del catalog AV via response).
+- ``request_id`` correlation en ambos audit paths (`_check_failed`,
+  `_rejected`).
+- Ephemeral user creado + eliminado en el mismo script — DB state
+  matches pre-smoke snapshot.
+
+### Lecciones operacionales del item #7
+
+1. **Wire test users requieren estado limpio**. El primer intento
+   uso el ``tester`` user que tenia ``must_change_password=True``
+   + ``locked_at``. El ``MustChangePasswordMiddleware`` redirigia a
+   ``/profile/#profile-tab-security`` antes que la view del avatar
+   ejecutara, dando 302 sin que se llamara ``scan_bytes``. Fix:
+   crear ephemeral user para cada wire test (patron ya usado en
+   item #4). Lesson incorporada al S-04 del playbook.
+2. **Annotation grammar discipline (lesson #6 del 16-jun ratificada)**.
+   El commit `8a45724` shippeo solo ``# noqa: S310`` en el HTTP
+   transport de av.py, sin el matching ``# nosec B310``. CI red
+   en bandit. Confirma que la regla del 16-jun es vinculante: cada
+   linea que dispara una regla de ruff S **debe** llevar tanto
+   ``# noqa: SXXX`` como ``# nosec BXXX`` (cuando bandit tambien la
+   marque). El doc del HANDOFF_TEMPLATE va a necesitar un checklist
+   item explicito al respecto en la proxima revision.
 
 ### Item #7 — V12.4.1 AV scan
 
