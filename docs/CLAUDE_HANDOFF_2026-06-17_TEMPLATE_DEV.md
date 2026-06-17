@@ -38,7 +38,8 @@ roadmap sin esfuerzo arquitectural.
 | `8a45724` | Item #7 — ASVS V12.4.1 AV scan opcional sobre avatares | 745 → 766 (+21) |
 | `bc9f1c9` | Hotfix CI rojo: `# nosec B310` faltante en `av.py` HTTP transport | suite stays green |
 | `e873185` | Wire validation evidence + handoff updates | suite stays green |
-| `<this>` | Items #15 + #21 + #22 — XS hygiene bundle (pip-audit hard-fail + actions bumps) | suite stays green |
+| `f278ac1` | Items #15 + #21 + #22 — XS hygiene bundle (pip-audit hard-fail + actions bumps) | suite stays green |
+| `<this>` | Item #8 — ASVS V7.4.1 branded HTTP error handlers (404/500/403/400) | 766 → 776 (+10) |
 
 ### Wire validation 2026-06-17 — item #7
 

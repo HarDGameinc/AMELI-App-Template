@@ -25,7 +25,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
 | V5 Validation, sanitization and encoding | 14 | 1 | 1 | 0 | +1 PASS (5.2.8 closed 2026-06-16) |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
-| V7 Error handling and logging | 9 | 1 | 0 | 1 | unchanged |
+| V7 Error handling and logging | 10 | 0 | 0 | 1 | +1 PASS (7.4.x closed 2026-06-17) |
 | V8 Data protection | 7 | 0 | 0 | 1 | +3 PASS (8.2.1, 8.3.3, 8.3.4) |
 | V9 Communications | 3 | 0 | 0 | 1 | +1 PASS (9.1.2) |
 | V10 Malicious code | 3 | 0 | 0 | 0 | +2 PASS (10.1.1 + 10.3.x closed 2026-06-16) |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 23 | 0 | 0 | 3 | +3 PASS (14.2.1, 14.2.2, 14.4.5 closed; 14.2.2 promoted to full PASS 2026-06-17) |
-| **Total** | **144** | **5** | **9** | **10** | — |
+| **Total** | **145** | **4** | **9** | **10** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -232,7 +232,7 @@ No control regressed.
 | 7.3.1 | Logs protected from injection | PASS (partial) | JSON formatter escapes; text formatter may fold newlines (usernames validated, low risk). |
 | 7.3.2 | Logs cannot be silently modified | PASS | `AuditEvent` rows are HMAC-chained; `verify_audit_chain` detects edits, deletes, reorders. **Hardened in `0077fb0`**: `_prune_audit_with_anchor` re-chains survivors under the live key (was: demote to `hmac=""`), so tampering still detected post-prune. |
 | 7.3.3 | Time-synchronised logs | DEFERRED | Operator NTP. |
-| 7.4.1-7.4.3 | Error handlers do not leak | **GAP** | `DEBUG=False` enforced outside dev, but no custom `handler404`/`handler500`. Roadmap item #8. |
+| 7.4.1-7.4.3 | Error handlers do not leak | **PASS** | `ameli_web/error_views.py` ships branded `handler_400`/`handler_403`/`handler_404`/`handler_500` registered at the bottom of `ameli_web/urls.py`. All four share `_render` which extends `base.html` and surfaces only `request_id` (for support tickets) + project app_name. NO traceback, NO request payload, NO headers echoed back. The fallback path (when `render_to_string` itself raises) emits a minimal inline HTML doc with the correct status code so `handler500` is bullet-proof even against a broken template loader. Tests at `tests/test_error_handlers.py` cover the URL resolver path (404), direct calls for 400/403/500, the fallback-path status-code preservation, and the leak-free guarantees (querystring, headers). |
 
 ---
 
@@ -365,7 +365,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | **closed-2026-06-16** | `/docs` and `/redoc` refuse to render outside `dev` when any SRI is empty (503 + operator-actionable body). Helper `tools/sri_compute.py` generates the hashes. Operator can opt out via `AMELI_APP_OPENAPI_SRI_REQUIRED=false`. |
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | **closed-2026-06-16** | Ruff `S` ruleset + bandit `-ll -ii` in CI, hard-fail. Triaged baseline annotated. |
 | 7 | **12.4.1** no AV scan on uploads | M | **closed-2026-06-17** | `accounts/av.py` clamd-TCP + HTTP transports, opt-in via `AMELI_APP_AV_ENDPOINT`. Fail-open with audit on outage; reject + audit on INFECTED. |
-| 8 | **7.4.1** no custom 404/500 handlers | S | open | Add `handler404`, `handler500` returning generic branded page. |
+| 8 | **7.4.1** no custom 404/500 handlers | S | **closed-2026-06-17** | `error_views.py` + `error_generic.html` + `handler400/403/404/500` registered in urls.py. Bullet-proof fallback when template loader is broken. |
 | 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |
 | 10 | **13.2.2** OpenAPI doc hand-written | S | open | Contract test: every documented path responds; every documented schema matches. |
 | 11 | **5.5.1** pickle-storage of messages possible | S | open | Boot-guard that refuses non-JSON `MESSAGE_STORAGE`. |

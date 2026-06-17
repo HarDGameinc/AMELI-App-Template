@@ -192,3 +192,13 @@ urlpatterns += [
     re_path(r"^static/(?P<path>.*)$", _serve_static),
     re_path(r"^media/(?P<path>.*)$", _authenticated_media),
 ]
+
+# Branded HTTP error handlers (ASVS V7.4.1). Django invokes these
+# only when ``DEBUG=False`` — in dev the yellow screen of death wins.
+# All four go through ``ameli_web.error_views._render`` which extends
+# ``base.html`` and surfaces the ``request_id`` so the user can quote
+# it in support. See module docstring for the full rationale.
+handler400 = "ameli_web.error_views.handler_400"
+handler403 = "ameli_web.error_views.handler_403"
+handler404 = "ameli_web.error_views.handler_404"
+handler500 = "ameli_web.error_views.handler_500"

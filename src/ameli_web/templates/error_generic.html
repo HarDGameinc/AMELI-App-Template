@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% comment %}
+Branded error page shared by all four handlers (404 / 500 / 403 / 400)
+configured in ``ameli_web/urls.py``. The view in
+``ameli_web/error_views.py`` passes the matching ``status_code``,
+``title``, ``description`` and ``request_id`` for the case being
+rendered. Keep the markup minimal — this page may render when the
+rest of the app is degraded.
+{% endcomment %}
+{% block content %}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <div class="metric-label">Error {{ status_code }}</div>
+      <h1 style="margin:8px 0 6px 0;">{{ title }}</h1>
+      <p class="muted panel-copy">{{ description }}</p>
+    </div>
+  </div>
+  {% if request_id %}
+  <div class="session-meta-line">
+    <span class="session-meta-item">
+      Referencia: <code>{{ request_id }}</code>
+    </span>
+  </div>
+  {% endif %}
+  <div style="margin-top:18px;">
+    <a class="icon-action" href="/">
+      <span class="material-symbols-rounded icon-glyph" aria-hidden="true">home</span>
+      <span>Volver al inicio</span>
+    </a>
+  </div>
+</section>
+{% endblock %}
