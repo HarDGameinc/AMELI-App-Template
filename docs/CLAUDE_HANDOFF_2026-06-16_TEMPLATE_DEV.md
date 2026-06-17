@@ -197,7 +197,7 @@ los items #1 y #2 del roadmap end-to-end con smoke test en
    es interno); cuando promovamos a prod hay que generar key NUEVA
    y NO copiarla al chat.
 
-### Estado tras el cierre PM
+### Estado tras el cierre PM (post-#2; mantenido como snapshot intermedio)
 
 - `main == dev == 8d9ab91`
 - Suite: **718/718 green**, ruff clean, pip-audit clean
@@ -206,6 +206,153 @@ los items #1 y #2 del roadmap end-to-end con smoke test en
 - Server `ha-report2`: HEAD `8d9ab91`, migraciones 0012 + 0013
   aplicadas, MFA encryption key configurada (entorno dev), `tester`
   user recibio email de prueba del ASVS V2.2.3 trigger.
+
+### Estado FINAL al cierre del 2026-06-16 (post-#6)
+
+La sesion siguio mucho mas alla del snapshot intermedio anterior.
+Items #3 a #6 se cerraron tambien dentro del mismo dia con la
+misma disciplina (closed-and-wire-verified + CI-verified).
+
+- `main == dev == 846fd5d`
+- Suite: **745/745 green** (+27 sobre el snapshot intermedio); ruff
+  con S-ruleset clean; bandit `-ll -ii` Medium 0 / High 0 (3 issues
+  skipped via `# nosec`); pip-audit clean.
+- CI: ultimos 12 runs (`#33..#44`) todos verde — 6 commits
+  funcionales + 6 wire-evidence commits.
+- ASVS L2: **142/149 active PASS = 95.3%** (era 91.9%). **7 strict
+  GAPs restantes** (era 12). **0 HIGH** severidad.
+- Capitulos completos al bar L2: **V2, V3, V4, V5 (1 GAP remaining),
+  V10** (capitulo V10 entero PASS, cero gaps cero deferred).
+- Server `ha-report2`: HEAD `846fd5d`, migraciones aplicadas, MFA key
+  configurada, todos los smoke tests verdes (admin TOTP encrypted +
+  decrypted, tester recibio el email del auth-failures alert,
+  session-ceiling cierra a los 31 dias, avatar IDOR bloqueado +
+  audit, OpenAPI SRI 4 paths confirmados + helper script corrio
+  exitosamente desde el server).
+
+### Items cerrados en el dia (6 roadmap + 2 ASVS controls en #6)
+
+| # | ASVS | Functional commit | Wire-evidence commit | Tests Δ |
+|---|---|---|---|---|
+| 1 | V2.8.1-2.8.6 | `1523904` + `6ab443a` | `d35e6a0` | +14 |
+| 2 | V2.2.3 | `56e7046` | `d35e6a0` | +11 |
+| 3 | V3.3.3 | `f6e7232` | `82edebd` | +8 |
+| 4 | V4.2.1 | `c39d750` | `6e4fc48` | +7 |
+| 5 | V10.3.x | `148518b` | `b6e0cfc` | +12 |
+| 6 | V10.1.1 + V5.2.8 | `c72b40e` | `846fd5d` | suite-only |
+| — | infra hardening | `8d9ab91` | — | — |
+
+Trabajo total del dia: **6 items cerrados, 7 ASVS controls
+promovidos a PASS, 52 tests nuevos, 19 commits a `main`**.
+
+### Lecciones nuevas (post-#3) que cierran disciplinas para el futuro
+
+4. **Cuando un sub-agente devuelve un nombre de campo erroneo**,
+   confiar pero verificar. La sesion del item #1 uso un Explore
+   agent que reporto `totp_enabled` pero el campo real era
+   `mfa_enabled` — los tests fallaron en el primer run hasta que
+   abrimos el `models.py` manualmente. Lesson: cuando spawneamos
+   un Explore, los nombres de identificadores criticos (fields,
+   funciones) que el sub-agente reporta hay que verificarlos en
+   el archivo real ANTES de redactar codigo que los referencia.
+5. **Fail-closed por default es preferible a "shippear hashes
+   inverificables"**. Cuando el sandbox de la sesion no pudo
+   descargar los bundles del CDN para computar los SRI hashes,
+   la tentacion era shippear hashes "tentativos". La decision
+   correcta (item #5) fue fail-closed outside dev + helper
+   script para que el operator genere los hashes localmente. El
+   wire test confirmo que el server SI tiene egress al CDN y el
+   helper corrio limpio — la decision es robusta en ambos casos.
+6. **Los annotations de bandit y ruff son diferentes**. Bandit
+   usa `# nosec BXXX`, ruff usa `# noqa: SXXX`. Para silenciar
+   ambos engines en una linea: `# noqa: SXXX  # nosec BXXX` (los
+   dos en orden). Esto va al S-07 del playbook como sub-pattern
+   cuando hagamos un nuevo bandit/ruff lift.
+7. **`cycle_key()` resetea el ceiling absoluto y eso esta bien**.
+   Cada cycle_key site en el codebase esta gateado por una
+   re-autenticacion fresca (MFA, sudo). Resetear el ceiling ahi
+   es consistente con ASVS V3.3.3 ("max session lifetime without
+   re-authentication"). Pinneado por
+   `test_ceiling_anchor_is_per_user_session_row` para que un
+   futuro intento de "preservar anchor original" se cazasse en
+   code review.
+
+### Carry-over al 2026-06-17
+
+Items pendientes del roadmap (numeracion estable):
+
+| # | Gap | Effort | Status |
+|---|---|---|---|
+| 7 | **12.4.1** AV scan opcional sobre avatares | M | open |
+| 8 | **7.4.1** custom handler404 / handler500 | S | open |
+| 9 | **1.4.4** authz centralizada en `accounts/permissions.py` | M | open |
+| 10 | **13.2.2** contract test OpenAPI vs realidad | S | open |
+| 11 | **5.5.1** boot-guard contra `MESSAGE_STORAGE` no-JSON | S | open |
+| 12 | **3.4.4** cookie prefix `__Host-` por default | S | open |
+| 13 | **7.1.1** `RedactingFilter` para PII en logs | S | open |
+| 14 | **14.2.3** lockfile con hashes (`pip-compile --generate-hashes`) | M | open |
+| 15 | **14.2.2** promover `pip-audit` a hard-fail (drop `continue-on-error`) | XS | open |
+| 16 | Doc drift en handoffs viejos (webhooks/tokens removidos) | S | open |
+| 17 | `ruff check .` en runbook pre-push | XS | **closed-2026-06-16** |
+| 18 | Instalar `backup.timer` en `ha-report2` | S | open (ops) |
+| 19 | PG TCP listener en `ha-report2` o user con rol PG | S | open (ops) |
+| 20 | `manage.py` auto-loadea `APP_CONFIG` | S | open (code) |
+| 21 | Bump `actions/checkout@v5+`, `setup-python@v6+` cuando Node-24 release | XS | open (hygiene) |
+| 22 | Promover `supply-chain-audit` a hard-fail | XS | open |
+| 23 | Branch protection en `main` (require PR + CI green) | S | open (gh) |
+
+Orden recomendado para el 17:
+
+1. Arrancar fresco con el handoff `CLAUDE_HANDOFF_2026-06-17`
+   leyendo en orden: `AGENTS.md` → `HANDOFF_TEMPLATE.md` → este
+   handoff → SECURITY.md → COMPLIANCE_ASVS_L2_2026-06-16.md
+   (todos en el repo).
+2. Recargar el env del server con el snippet corregido (S-04 + el
+   IFS-fix del 2026-06-16).
+3. Confirmar `main == dev == 846fd5d`, suite verde, CI verde.
+4. Frente recomendado: arrancar con #15 (XS, ya hay baseline limpio
+   de `pip-audit`) + #21 (XS) + #22 (XS) en un solo commit para
+   cerrar los XS hygiene de un saque. Despues #8 (S handler404),
+   #11 (S boot guard), #12 (S `__Host-` cookie), #13 (S PII
+   redact). Despues los M reales (#7 AV scan, #9 authz, #14
+   lockfile-hashes).
+
+### Comandos utiles para arrancar el 17
+
+Sync del server al ultimo HEAD:
+
+```bash
+cd /opt/ameli-app-template-dev
+git fetch origin dev && git reset --hard origin/dev
+git rev-parse HEAD   # esperado: 846fd5d (o posterior)
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+systemctl restart ameli-app-template-dev-api.service
+```
+
+Cargar env (IFS-fix obligatorio para que el `=` final de Fernet keys
+no se coma):
+
+```bash
+set -a
+while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; value="${line#*=}"
+    [[ -z "$key" ]] && continue
+    declare "$key=$value"
+done < /etc/ameli-app-template-dev/app.env
+set +a
+export APP_CONFIG=/etc/ameli-app-template-dev/app.yaml
+export DJANGO_SETTINGS_MODULE=ameli_web.settings
+```
+
+Smoke baseline (S-04 abreviado):
+
+```bash
+.venv/bin/python -m ruff check .          # All checks passed!
+.venv/bin/python -m bandit -r src/ -ll -ii # Medium 0 / High 0
+.venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
+curl -s http://10.100.100.16:18080/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['ok'], d['checks']['audit_chain']['detail']['match'])"
+```
 
 ## §6. Hallazgos / findings
 
