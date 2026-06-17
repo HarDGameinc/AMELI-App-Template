@@ -181,6 +181,61 @@ def _sri(name: str) -> str:
     return f' integrity="{digest}" crossorigin="anonymous"'
 
 
+# Keys that MUST have an SRI hash for the docs panel to be served.
+# Mirrors the ``CDN_SRI_HASHES`` dict built in ``settings.py``.
+_SRI_REQUIRED_KEYS = ("swagger_ui_css", "swagger_ui_bundle",
+                      "swagger_ui_preset", "redoc_bundle")
+
+
+def _docs_sri_ready() -> tuple[bool, list[str]]:
+    """Return ``(ready, missing_keys)``. The docs panel is "ready"
+    when every required CDN bundle has a configured SRI hash. ASVS
+    V10.3.x requires integrity protections on third-party code
+    loaded into the application; without these hashes a CDN
+    compromise injects JS into the operator's browser.
+    """
+    hashes = getattr(settings, "CDN_SRI_HASHES", {}) or {}
+    missing = [k for k in _SRI_REQUIRED_KEYS if not (hashes.get(k) or "").strip()]
+    return (len(missing) == 0, missing)
+
+
+def _docs_sri_required() -> bool:
+    """Is the operator REQUIRED to provide SRI before docs render?
+
+    Outside dev → yes (no unsigned CDN code in prod / staging).
+    Inside dev → no (DX preserved).
+    Operator override: ``AMELI_APP_OPENAPI_SRI_REQUIRED`` env var
+    forces the policy explicitly when the operator is running behind
+    an air-gapped CDN mirror that the hashes do not match.
+    """
+    explicit = getattr(settings, "OPENAPI_SRI_REQUIRED", None)
+    if explicit is not None:
+        return bool(explicit)
+    return getattr(settings, "ENV_NAME", "dev") != "dev"
+
+
+def _docs_unavailable_response(missing_keys: list[str], view_name: str):
+    """503 with operator-actionable message when the SRI policy
+    blocks the docs panel.
+    """
+    env_vars = ", ".join(f"AMELI_APP_SRI_{k.upper()}" for k in missing_keys)
+    return JsonResponse(
+        {
+            "ok": False,
+            "error": "docs panel refuses to expose unsigned CDN code "
+                     f"in {getattr(settings, 'ENV_NAME', 'unknown')!r}",
+            "missing_sri_keys": missing_keys,
+            "fix": (
+                "Run `python tools/sri_compute.py` to generate the "
+                f"hashes, then set: {env_vars}. To opt out, set "
+                "AMELI_APP_OPENAPI_SRI_REQUIRED=false (NOT recommended)."
+            ),
+            "view": view_name,
+        },
+        status=503,
+    )
+
+
 def _swagger_ui_html(nonce: str = "") -> str:
     title = f"{settings.CFG.app_name} API Docs"
     css = f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui.css"
@@ -599,6 +654,9 @@ def openapi_schema(request):
 def docs(request):
     if not settings.CFG.docs_enabled:
         return JsonResponse({"ok": False, "error": "docs disabled"}, status=404)
+    ready, missing = _docs_sri_ready()
+    if not ready and _docs_sri_required():
+        return _docs_unavailable_response(missing, view_name="swagger")
     nonce = getattr(request, "csp_nonce", "")
     return _docs_response(
         _swagger_ui_html(nonce=nonce),
@@ -613,6 +671,9 @@ def docs(request):
 def redoc(request):
     if not settings.CFG.redoc_enabled:
         return JsonResponse({"ok": False, "error": "redoc disabled"}, status=404)
+    ready, missing = _docs_sri_ready()
+    if not ready and _docs_sri_required():
+        return _docs_unavailable_response(missing, view_name="redoc")
     nonce = getattr(request, "csp_nonce", "")
     return _docs_response(
         _redoc_html(),

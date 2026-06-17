@@ -75,6 +75,21 @@ CDN_SRI_HASHES = {
     "redoc_bundle": os.environ.get("AMELI_APP_SRI_REDOC_BUNDLE", "").strip(),
 }
 
+# ASVS V10.3.x — by default the docs panel refuses to render outside
+# ``dev`` when ANY required SRI hash is empty. Operators that run
+# behind an air-gapped CDN mirror (whose bundles do not match the
+# upstream hashes) can opt out via ``AMELI_APP_OPENAPI_SRI_REQUIRED=false``;
+# operators that explicitly want SRI enforced even in dev can set it
+# to ``true``. ``None`` = default policy (dev: not required, others:
+# required). See ``dashboard/views.py:_docs_sri_required``.
+_openapi_sri_env = os.environ.get("AMELI_APP_OPENAPI_SRI_REQUIRED", "").strip().lower()
+if _openapi_sri_env in {"true", "1", "yes", "on"}:
+    OPENAPI_SRI_REQUIRED = True
+elif _openapi_sri_env in {"false", "0", "no", "off"}:
+    OPENAPI_SRI_REQUIRED = False
+else:
+    OPENAPI_SRI_REQUIRED = None  # follow the default policy
+
 # Operational endpoints (``/health``, ``/api/health``, ``/metrics``) are
 # public by default so probes and Prometheus scrapers reach them without
 # fuss. When this list has at least one entry, the views refuse any

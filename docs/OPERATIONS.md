@@ -295,6 +295,50 @@ Sample alert rules:
     summary: "Maintenance mode active for > 2h, operator may have forgotten to disable"
 ```
 
+## OpenAPI docs panel SRI (ASVS V10.3.x)
+
+The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles
+from `cdn.jsdelivr.net`. ASVS V10.3.x requires Subresource Integrity
+hashes on those bundles so a CDN compromise (or a misconfigured
+upstream proxy) cannot inject JS into the operator's browser.
+
+Out of the box:
+
+- In `dev`: the docs panel renders without SRI configured (operator
+  DX preserved; the panel is for local exploration).
+- Outside `dev`: the docs panel refuses to render with HTTP 503 when
+  any required SRI is missing. The 503 body names the missing env
+  vars and the helper command.
+
+To populate the four `AMELI_APP_SRI_*` env vars:
+
+```bash
+# From a workstation with public internet access (the helper fetches
+# the bundles from cdn.jsdelivr.net to compute their sha384 digest).
+python tools/sri_compute.py
+
+# Output (paste into your app.env):
+# AMELI_APP_SRI_SWAGGER_UI_CSS=sha384-...
+# AMELI_APP_SRI_SWAGGER_UI_BUNDLE=sha384-...
+# AMELI_APP_SRI_SWAGGER_UI_PRESET=sha384-...
+# AMELI_APP_SRI_REDOC_BUNDLE=sha384-...
+```
+
+Re-run whenever `SWAGGER_UI_VERSION` or `REDOC_VERSION` change in
+`dashboard/views.py` (the script reads those constants and bumps
+the URLs accordingly).
+
+Escape hatch for operators behind an air-gapped CDN mirror whose
+bundle bytes do not match the upstream hashes:
+
+```bash
+AMELI_APP_OPENAPI_SRI_REQUIRED=false
+```
+
+This is an informed risk acceptance — the docs panel will render
+without SRI even outside `dev`. Document the mirror's own integrity
+controls if you use this path.
+
 ## Audit chain verification (H6)
 
 Enable the HMAC chain by setting `AMELI_APP_AUDIT_HMAC_KEY` in the env

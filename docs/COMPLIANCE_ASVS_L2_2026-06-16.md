@@ -28,12 +28,12 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V7 Error handling and logging | 9 | 1 | 0 | 1 | unchanged |
 | V8 Data protection | 7 | 0 | 0 | 1 | +3 PASS (8.2.1, 8.3.3, 8.3.4) |
 | V9 Communications | 3 | 0 | 0 | 1 | +1 PASS (9.1.2) |
-| V10 Malicious code | 1 | 1 | 0 | 1 | unchanged |
+| V10 Malicious code | 2 | 0 | 0 | 1 | +1 PASS (10.3.x closed 2026-06-16) |
 | V11 Business logic | 5 | 1 | 0 | 0 | unchanged |
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **139** | **10** | **9** | **11** | — |
+| **Total** | **140** | **9** | **9** | **11** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -268,7 +268,7 @@ No control regressed.
 | --- | --- | --- | --- |
 | 10.1.1 | Code analysed for backdoors | DEFERRED | No SAST in CI yet. Roadmap item #6 (`bandit -ll` + ruff S310 hard fail). |
 | 10.2.1-10.2.6 | No hardcoded back-door / time-bomb | PASS | Code-review pass: no hardcoded master credential outside `_INSECURE_DEFAULT_SECRET` (rejected outside dev). |
-| 10.3.1-10.3.3 | Auto-update / integrity for client code | **GAP** | `STATICFILES_DIRS` JS served unsigned; CDN SRI hashes opt-in (`settings.py CDN_SRI_HASHES`) but no defaults shipped. Roadmap item #5: pin Swagger/ReDoc to vendored copy in `static/` OR ship default SRI values. |
+| 10.3.1-10.3.3 | Auto-update / integrity for client code | **PASS** | `/docs` and `/redoc` views refuse to render with HTTP 503 outside `dev` when any SRI hash in `CDN_SRI_HASHES` is empty (`dashboard/views.py:_docs_sri_ready` + `_docs_sri_required`). Operator override via `AMELI_APP_OPENAPI_SRI_REQUIRED`. Helper script `tools/sri_compute.py` generates the four sha384 digests from any host with public internet access. The 503 body lists the missing env vars + the fix command so an operator hitting prod for the first time has a single-screen remediation. Tests at `tests/test_openapi_sri_policy.py` cover dev pass-through, prod refuse, explicit opt-out, explicit opt-in, partial-SRI dev rendering, and the 503 payload content. |
 
 ---
 
@@ -362,7 +362,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 2 | **2.2.3** no email alert on auth-failure burst | S | **closed-2026-06-16** | `_send_auth_failures_alert` triggered from `record_login_failure` at the moment the username crosses `LOGIN_LOCKOUT_USER_MAX`; 24 h cooldown on `User.last_auth_alert_sent_at` prevents spam. |
 | 3 | **3.3.3** no absolute session ceiling | S | **closed-2026-06-16** | `SESSION_ABSOLUTE_MAX_AGE_SECONDS` (default 30 d, env override), middleware check + forced logout + `session_expired_absolute` audit + UI panel surfaces `absolute_expires_at`. |
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | **closed-2026-06-16** | Avatar slug parsed from filename + owner-or-superadmin check; malformed → 404; denied path emits `media_access_denied` audit row. |
-| 5 | **10.3.1** SRI hashes unset by default for CDN | S | open | Vendor Swagger/ReDoc to `static/`, or ship default SRI values. |
+| 5 | **10.3.1** SRI hashes unset by default for CDN | S | **closed-2026-06-16** | `/docs` and `/redoc` refuse to render outside `dev` when any SRI is empty (503 + operator-actionable body). Helper `tools/sri_compute.py` generates the hashes. Operator can opt out via `AMELI_APP_OPENAPI_SRI_REQUIRED=false`. |
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | open | Add `bandit -ll` + ruff `S310` to CI. |
 | 7 | **12.4.1** no AV scan on uploads | M | open | Optional `AMELI_APP_AV_ENDPOINT` (clamd) pre-persist. |
 | 8 | **7.4.1** no custom 404/500 handlers | S | open | Add `handler404`, `handler500` returning generic branded page. |
