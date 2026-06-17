@@ -171,6 +171,7 @@ los items #1 y #2 del roadmap end-to-end con smoke test en
 | 1 | V2.8.1-2.8.6 (TOTP encrypt at rest) | `1523904` + `6ab443a` | +14 (`tests/test_mfa_secret_encryption.py`) | admin's `mfa_secret` re-encrypted in DB (db_len=140, fernet_shape=True), runtime decrypts back to 32-char base32 |
 | 2 | V2.2.3 (auth-failures alert) | `56e7046` | +11 (`tests/test_auth_failures_alert.py`) | 5 fails on `tester` user fired exactly one `auth_failures_alert_sent` audit row + email delivered to real inbox (carlos.urbina@agnov.cl) |
 | 3 | V3.3.3 (absolute session ceiling) | `f6e7232` | +8 (`tests/test_session_absolute_ceiling.py`) | 18 sessions of `tester` backdated 31 days → next GET /profile/ returned 302 → /login/ + `session_expired_absolute` audit with `session_age_seconds=2678400, max_age_seconds=2592000` |
+| 4 | V4.2.1 (avatar IDOR closed) | `c39d750` | +7 (`tests/test_media_auth_gate.py`) | 4 wire paths confirmed: owner GET 200, superadmin GET 200, ephemeral other-user GET 403 + `media_access_denied` audit (target=tester, actor=smoke-other-#4, reason=not_owner), malformed → 404 |
 | — | Runbook + migration hardening | `8d9ab91` | suite stays green | bash env-loader IFS bug fixed in HANDOFF_2026-06-16 §8c; migration 0012 now raises with operator-actionable message when key is unparseable |
 
 ### Lecciones operacionales aprendidas
