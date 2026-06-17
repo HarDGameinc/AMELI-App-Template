@@ -151,7 +151,7 @@ def _scan_http(data: bytes, endpoint: str, *, timeout: float) -> tuple[str, str]
     intent is unambiguous — anything else falls back to
     ``("check_failed", "bad_response")``.
     """
-    req = Request(  # noqa: S310 - endpoint is operator-controlled, allowlisted by env
+    req = Request(  # noqa: S310  # nosec B310 - endpoint is operator-controlled, allowlisted by env
         endpoint,
         data=data,
         method="POST",
@@ -160,7 +160,7 @@ def _scan_http(data: bytes, endpoint: str, *, timeout: float) -> tuple[str, str]
             "User-Agent": "AMELI-App-Template-AV",
         },
     )
-    with urlopen(req, timeout=timeout) as response:  # noqa: S310
+    with urlopen(req, timeout=timeout) as response:  # noqa: S310  # nosec B310
         body = response.read()
     try:
         payload = json.loads(body.decode("utf-8", errors="replace"))
