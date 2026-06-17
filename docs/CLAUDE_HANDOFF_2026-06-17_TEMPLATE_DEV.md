@@ -39,7 +39,9 @@ roadmap sin esfuerzo arquitectural.
 | `bc9f1c9` | Hotfix CI rojo: `# nosec B310` faltante en `av.py` HTTP transport | suite stays green |
 | `e873185` | Wire validation evidence + handoff updates | suite stays green |
 | `f278ac1` | Items #15 + #21 + #22 — XS hygiene bundle (pip-audit hard-fail + actions bumps) | suite stays green |
-| `<this>` | Item #8 — ASVS V7.4.1 branded HTTP error handlers (404/500/403/400) | 766 → 776 (+10) |
+| `f724e21` | Item #8 — ASVS V7.4.1 branded HTTP error handlers (404/500/403/400) | 766 → 776 (+10) |
+| `c035c94` | Item #8 wire validation evidence | suite stays green |
+| `425220a` | Fix flake CI #56 — defensive ThrottleCounter cleanup in test_auth_failures_alert.py | suite stays green |
 
 ### Wire validation 2026-06-17 — item #7
 
@@ -81,6 +83,19 @@ Propiedades verificadas:
    ``# noqa: SXXX`` como ``# nosec BXXX`` (cuando bandit tambien la
    marque). El doc del HANDOFF_TEMPLATE va a necesitar un checklist
    item explicito al respecto en la proxima revision.
+3. **Tests que dependen de contador / reloj / random deben resetear
+   estado explicitamente**. CI #56 caught a flake on
+   ``test_first_threshold_crossing_queues_alert`` (mismo commit
+   `f724e21` paso en dev #55, fallo en main #56). El test asumia que
+   el ``ThrottleCounter`` empezaba en 0; un test anterior + el
+   straddling del window boundary de 300s (1 en ~3000 runs) hacen
+   que el bump retorne != ``LOGIN_LOCKOUT_USER_MAX`` y la condicion
+   ``new_count == max`` no fire. Los otros tests del modulo ya
+   defendian con ``ThrottleCounter.objects.filter(...).delete()``;
+   los dos primeros no. Fix en `425220a`. Regla general: el
+   isolation por transaccion de pytest-django NO garantiza
+   no-leak de side-effects que dependen de timing/random/contadores
+   — el reset explicito es obligatorio.
 
 ### Item #7 — V12.4.1 AV scan
 
