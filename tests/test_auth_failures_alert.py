@@ -60,6 +60,18 @@ def test_first_threshold_crossing_queues_alert(user, settings):
     """5 consecutive fails (default LOGIN_LOCKOUT_USER_MAX) fire the
     alert exactly once, on the 5th call. Earlier calls do nothing.
     """
+    # Defensive cleanup: the throttle counter is keyed by lowercase
+    # username + window-start timestamp; another test that ran earlier
+    # in the suite (or a flake where 5 calls straddle a window
+    # boundary) can leave residual rows that push ``new_count`` past
+    # ``LOGIN_LOCKOUT_USER_MAX`` and prevent the ``new_count == max``
+    # trigger from firing. The other tests in this file already
+    # delete the counter explicitly between phases for the same
+    # reason. CI #56 on f724e21 caught the original flake.
+    from ameli_web.accounts.models import ThrottleCounter
+
+    ThrottleCounter.objects.filter(scope="login_fail_user", key="alice").delete()
+
     settings.LOGIN_LOCKOUT_USER_MAX = 5
     for _ in range(4):
         record_login_failure(username="alice", ip="10.0.0.1")
@@ -87,6 +99,12 @@ def test_post_threshold_fail_does_not_re_fire_within_window(user, settings):
     alert — the trigger condition is ``new_count == LOGIN_LOCKOUT_USER_MAX``,
     and the counter is past that value.
     """
+    # Same defensive cleanup as the test above — the trigger only fires
+    # when the bump returns exactly ``LOGIN_LOCKOUT_USER_MAX``.
+    from ameli_web.accounts.models import ThrottleCounter
+
+    ThrottleCounter.objects.filter(scope="login_fail_user", key="alice").delete()
+
     settings.LOGIN_LOCKOUT_USER_MAX = 5
     for _ in range(5):
         record_login_failure(username="alice", ip="10.0.0.1")
