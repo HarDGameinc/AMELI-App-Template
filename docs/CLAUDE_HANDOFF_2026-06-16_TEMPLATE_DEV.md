@@ -172,6 +172,7 @@ los items #1 y #2 del roadmap end-to-end con smoke test en
 | 2 | V2.2.3 (auth-failures alert) | `56e7046` | +11 (`tests/test_auth_failures_alert.py`) | 5 fails on `tester` user fired exactly one `auth_failures_alert_sent` audit row + email delivered to real inbox (carlos.urbina@agnov.cl) |
 | 3 | V3.3.3 (absolute session ceiling) | `f6e7232` | +8 (`tests/test_session_absolute_ceiling.py`) | 18 sessions of `tester` backdated 31 days → next GET /profile/ returned 302 → /login/ + `session_expired_absolute` audit with `session_age_seconds=2678400, max_age_seconds=2592000` |
 | 4 | V4.2.1 (avatar IDOR closed) | `c39d750` | +7 (`tests/test_media_auth_gate.py`) | 4 wire paths confirmed: owner GET 200, superadmin GET 200, ephemeral other-user GET 403 + `media_access_denied` audit (target=tester, actor=smoke-other-#4, reason=not_owner), malformed → 404 |
+| 5 | V10.3.x (OpenAPI SRI policy) | `148518b` | +12 (`tests/test_openapi_sri_policy.py`) | 4 endpoint paths confirmed (dev no-SRI → 200, prod no-SRI → 503 with operator-actionable body, prod opt-out → 200, prod with hashes → 200 with 3× `integrity=`) + `tools/sri_compute.py` ran successfully from server and emitted verified sha384 digests for swagger-ui-dist@5.20.0 + redoc@2.1.5 |
 | — | Runbook + migration hardening | `8d9ab91` | suite stays green | bash env-loader IFS bug fixed in HANDOFF_2026-06-16 §8c; migration 0012 now raises with operator-actionable message when key is unparseable |
 
 ### Lecciones operacionales aprendidas
