@@ -22,7 +22,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V1 Architecture, design and threat modelling | 10 | 1 | 0 | 2 | +4 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1) |
 | V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
 | V3 Session management | 16 | 0 | 0 | 1 | +1 PASS (3.3.3 closed 2026-06-16) |
-| V4 Access control | 9 | 1 | 1 | 0 | unchanged |
+| V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
 | V5 Validation, sanitization and encoding | 13 | 2 | 1 | 0 | unchanged |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
 | V7 Error handling and logging | 9 | 1 | 0 | 1 | unchanged |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **138** | **11** | **9** | **11** | — |
+| **Total** | **139** | **10** | **9** | **11** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -173,7 +173,7 @@ No control regressed.
 | 4.1.3 | Principle of least privilege | PASS | `superadmin` vs `public` roles. |
 | 4.1.4 | Default-deny | PASS | `LOGIN_URL` enforced; `_authenticated_media` denies anon. |
 | 4.1.5 | Access-control fails closed | PASS | Middleware redirect rather than pass-through. |
-| 4.2.1 | Sensitive data/API protected against IDOR | **GAP** | `_authenticated_media` checks auth but not ownership. Roadmap item #4. |
+| 4.2.1 | Sensitive data/API protected against IDOR | **PASS** | `_authenticated_media` in `urls.py` now parses the avatar filename slug and refuses access unless the requester is the owner (slug match) or a superadmin. Malformed avatar paths return 404 (no owner-existence leak). Non-avatar paths keep the previous auth-only contract. Denied attempts emit a `media_access_denied` audit row keyed to the OWNER's slug + actor = requester, so an operator grep can answer "who probed whose resource?". Tests at `tests/test_media_auth_gate.py` cover owner allowed, other-user denied + audit, superadmin allowed, malformed → 404, non-avatar back-compat, anonymous unchanged, and the special-chars-in-username slug edge. |
 | 4.2.2 | CSRF protection on state-changing ops | PASS | `CsrfViewMiddleware`. |
 | 4.3.1 | Admin interfaces require stronger auth | PASS | `is_staff` + sudo grant. |
 | 4.3.2 | Directory browsing disabled | PASS | Django default. |
@@ -361,7 +361,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 1 | **2.8.x** TOTP secret unencrypted at rest | M | **closed-2026-06-16** | Fernet wrap via `mfa.encrypt_secret`/`decrypt_secret`, new env `AMELI_APP_MFA_ENCRYPTION_KEY`, boot guard outside `dev`, migration `accounts.0012_mfa_secret_encrypt`. |
 | 2 | **2.2.3** no email alert on auth-failure burst | S | **closed-2026-06-16** | `_send_auth_failures_alert` triggered from `record_login_failure` at the moment the username crosses `LOGIN_LOCKOUT_USER_MAX`; 24 h cooldown on `User.last_auth_alert_sent_at` prevents spam. |
 | 3 | **3.3.3** no absolute session ceiling | S | **closed-2026-06-16** | `SESSION_ABSOLUTE_MAX_AGE_SECONDS` (default 30 d, env override), middleware check + forced logout + `session_expired_absolute` audit + UI panel surfaces `absolute_expires_at`. |
-| 4 | **4.2.1** `/media/` auth-only, not owner-only | S | open | Resolve avatar from session user + admin only. |
+| 4 | **4.2.1** `/media/` auth-only, not owner-only | S | **closed-2026-06-16** | Avatar slug parsed from filename + owner-or-superadmin check; malformed → 404; denied path emits `media_access_denied` audit row. |
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | open | Vendor Swagger/ReDoc to `static/`, or ship default SRI values. |
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | open | Add `bandit -ll` + ruff `S310` to CI. |
 | 7 | **12.4.1** no AV scan on uploads | M | open | Optional `AMELI_APP_AV_ENDPOINT` (clamd) pre-persist. |

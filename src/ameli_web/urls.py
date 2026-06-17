@@ -89,18 +89,92 @@ def _serve_static(request, path):
     return serve(request, Path(absolute).name, document_root=str(Path(absolute).parent))
 
 
-def _authenticated_media(request, path):
-    """Gate ``/media/`` behind login.
+def _safe_username_slug(username: str) -> str:
+    """Mirror the slug logic used in ``accounts.models.avatar_upload_to``.
 
-    Avatars (and any future user-uploaded blob) live here. Without this
-    gate, anyone who guesses a filename can fetch it bypassing the rest
-    of the auth model. In production, Caddy/nginx is expected to enforce
-    the same rule and serve the bytes directly; this view is the
-    fallback when no reverse proxy is in front.
+    Kept here (instead of imported) to avoid a circular import between
+    ``urls.py`` and ``accounts.models``. If the upload-side slug logic
+    changes, this MUST be updated in lockstep — otherwise the ownership
+    check breaks for any user whose username contains non-alphanumeric
+    characters.
+    """
+    return "".join(ch.lower() if ch.isalnum() else "-" for ch in (username or "user")).strip("-") or "user"
+
+
+def _parse_avatar_filename(path: str):
+    """Extract ``(safe_username, token)`` from an avatar media path.
+
+    Returns ``None`` when the path does not match the
+    ``avatars/<slug>-<16hex>.<ext>`` shape produced by
+    ``avatar_upload_to``. A malformed avatar path is treated as a 404
+    upstream — never as a 403 — so the response does not leak whether
+    the file would have existed under a different request user.
+    """
+    import re
+
+    if not path.startswith("avatars/"):
+        return None
+    name = path[len("avatars/"):]
+    match = re.match(r"^(.+)-([0-9a-f]{16})\.[A-Za-z0-9]+$", name)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _authenticated_media(request, path):
+    """Gate ``/media/`` behind login + (for avatars) ownership.
+
+    ASVS V4.2.1 — sensitive resources protected against IDOR. The
+    previous implementation only checked authentication; any logged-in
+    user could fetch any other user's avatar by guessing the random
+    64-bit filename token (or by reading the token out of the admin
+    user-list JSON, which leaks ``avatar_url`` for every account).
+
+    The current implementation:
+
+    * Anonymous request → 403 (unchanged).
+    * Authenticated request for a NON-avatar path (e.g. a future blob
+      type) → unchanged auth-only gate; we keep the existing
+      ``tests/test_media_auth_gate.py`` contract green.
+    * Authenticated request for an avatar path:
+        - owner of the file (slug matches current user) → serve.
+        - superadmin (``is_staff``) → serve. An operator viewing the
+          admin user list may legitimately need to see avatars.
+        - malformed path → 404 (does not leak owner existence).
+        - other → 403 + ``media_access_denied`` audit row keyed to
+          the AVATAR OWNER's slug, not the requester (so an operator
+          grep-ing the audit chain can see "Carlos tried to fetch
+          Alice's avatar" rather than "Carlos tried something").
+
+    Defence in depth: when Caddy/nginx serves ``/media/`` directly in
+    production, it usually still proxies authenticated requests
+    through this view first; the view's verdict is the authoritative
+    one.
     """
     user = getattr(request, "user", None)
     if not (user and user.is_authenticated):
         return HttpResponseForbidden("authentication required")
+    parsed = _parse_avatar_filename(path)
+    if parsed is not None:
+        safe_username, _token = parsed
+        requester_slug = _safe_username_slug(user.username)
+        is_owner = requester_slug == safe_username
+        is_admin = bool(getattr(user, "is_staff", False))
+        if not (is_owner or is_admin):
+            # Deliberate: audit the OWNER's slug as the target so the
+            # audit chain answers "who was probed?" rather than just
+            # "who probed?". The requester is captured by ``actor``.
+            from ameli_web.accounts.services import record_audit
+
+            record_audit(
+                "media_access_denied",
+                actor=user,
+                target_username=safe_username,
+                payload={"path": path, "reason": "not_owner"},
+            )
+            return HttpResponseForbidden("access denied")
+    # Non-avatar paths and authorised avatar paths fall through to the
+    # same ``serve`` path the previous implementation used.
     try:
         return serve(request, path, document_root=str(media_root))
     except Http404:
