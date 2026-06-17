@@ -262,6 +262,19 @@ HIBP_PASSWORD_CHECK = os.environ.get("AMELI_APP_HIBP_PASSWORD_CHECK", "").strip(
 # verification.
 AUDIT_HMAC_KEY = os.environ.get("AMELI_APP_AUDIT_HMAC_KEY", "").strip()
 
+# ASVS V12.4.1 — optional antivirus scan for avatar uploads. Operator
+# opt-in by setting ``AMELI_APP_AV_ENDPOINT``. Two transports are
+# supported:
+#   - ``tcp://host:port`` — clamd over TCP (INSTREAM protocol)
+#   - ``http://...`` / ``https://...`` — HTTP endpoint that accepts
+#     POST of the raw bytes and returns JSON {"stream": "OK"|"FOUND"}
+# Empty = scanning disabled (current residual risk R-05). Failure
+# policy when the endpoint is set but unreachable: FAIL OPEN +
+# audit row ``avatar_upload_av_check_failed`` (precedent HIBP
+# ``validators.py``). Operators that want fail-closed wrap their own
+# upstream reverse-proxy with a health probe.
+AV_ENDPOINT = os.environ.get("AMELI_APP_AV_ENDPOINT", "").strip()
+
 # TOTP shared secrets are wrapped with Fernet (AES-128-CBC + HMAC-SHA256)
 # before they hit the DB. The key is a 32-byte url-safe base64 token —
 # generate with:

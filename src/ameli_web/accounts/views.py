@@ -364,23 +364,72 @@ def send_profile_test_email_view(request: HttpRequest) -> JsonResponse:
 @require_POST
 def update_avatar(request: HttpRequest) -> HttpResponse:
     form = AvatarUploadForm(request.POST, request.FILES)
-    if form.is_valid():
-        replace_avatar(request.user, form.cleaned_data["avatar"])
-        record_audit(
-            "update_my_preferences",
-            actor=request.user,
-            target_username=request.user.username,
-            payload={"avatar_updated": True},
-        )
-        if _expects_json(request):
-            return JsonResponse({"ok": True, "status": "updated", "user": serialize_user(request.user)})
-        messages.success(request, _("Imagen de perfil actualizada."))
-    else:
+    if not form.is_valid():
         errors = [error for group in form.errors.values() for error in group]
         if _expects_json(request):
             return _json_error("; ".join(errors) if errors else "No se pudo actualizar la imagen.")
         for error in errors:
             messages.error(request, error)
+        return redirect("accounts:profile")
+
+    avatar_file = form.cleaned_data["avatar"]
+
+    # ASVS V12.4.1 — antivirus scan when the operator has configured
+    # ``AMELI_APP_AV_ENDPOINT``. Unset → "disabled" → skip. INFECTED
+    # → reject + audit. ``check_failed`` (endpoint unreachable / bad
+    # response / timeout) → audit ``avatar_upload_av_check_failed``
+    # but PROCEED with the upload (fail-open policy, mirrors HIBP
+    # validator behaviour). Reading file.read() consumes the cursor,
+    # so we seek back to 0 before handing the file off to
+    # ``replace_avatar``.
+    from django.conf import settings as django_settings
+
+    from ameli_web.accounts import av
+
+    av_endpoint = getattr(django_settings, "AV_ENDPOINT", "") or ""
+    if av_endpoint:
+        try:
+            avatar_file.file.seek(0)
+        except Exception:  # noqa: BLE001, S110 — best-effort, some streams aren't seekable
+            pass
+        scan_data = avatar_file.file.read()
+        try:
+            avatar_file.file.seek(0)
+        except Exception:  # noqa: BLE001, S110
+            pass
+        verdict, detail = av.scan_bytes(scan_data, av_endpoint)
+        if verdict == "infected":
+            record_audit(
+                "avatar_upload_av_rejected",
+                actor=request.user,
+                target_username=request.user.username,
+                payload={"signature": detail, "endpoint_scheme": av_endpoint.split("://")[0]},
+            )
+            error_msg = "La imagen fue rechazada por el escaner antivirus."
+            if _expects_json(request):
+                return _json_error(error_msg)
+            messages.error(request, error_msg)
+            return redirect("accounts:profile")
+        if verdict == "check_failed":
+            # Fail-open with audit visibility: the upload proceeds, but
+            # the operator sees the scan outage in the audit chain.
+            record_audit(
+                "avatar_upload_av_check_failed",
+                actor=request.user,
+                target_username=request.user.username,
+                payload={"reason": detail, "endpoint_scheme": av_endpoint.split("://")[0]},
+            )
+
+    replace_avatar(request.user, avatar_file)
+    record_audit(
+        "update_my_preferences",
+        actor=request.user,
+        target_username=request.user.username,
+        payload={"avatar_updated": True},
+    )
+    if _expects_json(request):
+        return JsonResponse({"ok": True, "status": "updated", "user": serialize_user(request.user)})
+    messages.success(request, _("Imagen de perfil actualizada."))
     return redirect("accounts:profile")
 
 

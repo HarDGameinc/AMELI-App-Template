@@ -30,10 +30,10 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V9 Communications | 3 | 0 | 0 | 1 | +1 PASS (9.1.2) |
 | V10 Malicious code | 3 | 0 | 0 | 0 | +2 PASS (10.1.1 + 10.3.x closed 2026-06-16) |
 | V11 Business logic | 5 | 1 | 0 | 0 | unchanged |
-| V12 Files and resources | 9 | 1 | 1 | 0 | unchanged |
+| V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 22 | 1 | 0 | 3 | +2 PASS (14.2.1 partial, 14.2.2 partial, 14.4.5) |
-| **Total** | **142** | **7** | **9** | **10** | — |
+| **Total** | **143** | **6** | **9** | **10** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -296,7 +296,7 @@ No control regressed.
 | 12.3.1 | File path traversal | PASS | `models.py avatar_upload_to` builds path; no user-supplied. |
 | 12.3.2 | No execute permissions on uploads | PASS | `MEDIA_ROOT` no exec bit. |
 | 12.3.3 | Filenames sanitized against reserved | PASS | Username re-slugified. |
-| 12.4.1 | Uploaded content scanned | **GAP** | No ClamAV. Documented as residual risk R-05. Roadmap item #7. |
+| 12.4.1 | Uploaded content scanned | **PASS** | `accounts/av.py:scan_bytes` integrates with clamd over TCP (INSTREAM) or HTTP, opt-in via `AMELI_APP_AV_ENDPOINT`. Hook in `views.py:update_avatar` scans the avatar bytes BEFORE persistence. INFECTED → reject + `avatar_upload_av_rejected` audit. Endpoint unreachable / timeout / bad response → fail-open + `avatar_upload_av_check_failed` audit (precedent: HIBP password validator). Empty endpoint → scan disabled, behaviour unchanged. Tests at `tests/test_avatar_av_scan.py` cover all 4 verdict shapes, both transports' wire parsing, URL credential redaction, and the fail-open vs reject vs disabled policy. |
 | 12.5.1 | File-type by header, not extension | PASS | Pillow reads `img.format`. |
 | 12.5.2 | Files in known-safe location | PASS | `MEDIA_ROOT` outside webroot. |
 | 12.6.1 | SSRF prevention on file-fetch | N/A | Server does not fetch user-supplied URLs. |
@@ -364,7 +364,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 4 | **4.2.1** `/media/` auth-only, not owner-only | S | **closed-2026-06-16** | Avatar slug parsed from filename + owner-or-superadmin check; malformed → 404; denied path emits `media_access_denied` audit row. |
 | 5 | **10.3.1** SRI hashes unset by default for CDN | S | **closed-2026-06-16** | `/docs` and `/redoc` refuse to render outside `dev` when any SRI is empty (503 + operator-actionable body). Helper `tools/sri_compute.py` generates the hashes. Operator can opt out via `AMELI_APP_OPENAPI_SRI_REQUIRED=false`. |
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | **closed-2026-06-16** | Ruff `S` ruleset + bandit `-ll -ii` in CI, hard-fail. Triaged baseline annotated. |
-| 7 | **12.4.1** no AV scan on uploads | M | open | Optional `AMELI_APP_AV_ENDPOINT` (clamd) pre-persist. |
+| 7 | **12.4.1** no AV scan on uploads | M | **closed-2026-06-17** | `accounts/av.py` clamd-TCP + HTTP transports, opt-in via `AMELI_APP_AV_ENDPOINT`. Fail-open with audit on outage; reject + audit on INFECTED. |
 | 8 | **7.4.1** no custom 404/500 handlers | S | open | Add `handler404`, `handler500` returning generic branded page. |
 | 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |
 | 10 | **13.2.2** OpenAPI doc hand-written | S | open | Contract test: every documented path responds; every documented schema matches. |

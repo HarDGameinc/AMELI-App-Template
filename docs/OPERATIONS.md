@@ -295,6 +295,52 @@ Sample alert rules:
     summary: "Maintenance mode active for > 2h, operator may have forgotten to disable"
 ```
 
+## Avatar AV scan (ASVS V12.4.1)
+
+Avatar uploads can be funnelled through an antivirus scanner before
+they hit disk. Opt-in by setting ``AMELI_APP_AV_ENDPOINT`` to one of:
+
+- ``tcp://host:port`` — clamd over TCP (INSTREAM). The classic
+  deployment: ``apt install clamav-daemon`` on the same host, then
+  ``AMELI_APP_AV_ENDPOINT=tcp://127.0.0.1:3310``. Port defaults to
+  3310 if omitted.
+- ``http://...`` or ``https://...`` — an HTTP endpoint that accepts
+  ``POST`` of the raw bytes and returns JSON
+  ``{"stream": "OK"|"FOUND", "signature": "<name>"?}``. Suitable for
+  a sidecar (clamav-rest) or managed AV service.
+
+Unset → scanning is disabled (current residual risk R-05 stays
+closed only when the operator opts in).
+
+Verdicts:
+
+| Verdict | Behaviour | Audit row |
+|---|---|---|
+| ``ok`` | Upload proceeds normally | None |
+| ``infected`` | Upload rejected, generic error to user, signature stays in audit chain | ``avatar_upload_av_rejected`` with ``signature`` + ``endpoint_scheme`` |
+| ``check_failed`` (timeout, unreachable, bad response) | Upload PROCEEDS — fail-open with audit visibility | ``avatar_upload_av_check_failed`` with ``reason`` + ``endpoint_scheme`` |
+
+The fail-open policy mirrors the HIBP password validator: an AV
+outage MUST NOT lock users out of profile updates. Operators that
+require strict fail-closed behaviour deploy a reverse proxy with a
+health probe in front of clamd.
+
+Quick test with the EICAR test signature (a harmless file every AV
+must catch as a sanity check):
+
+```bash
+# On a host with clamd listening on 3310:
+echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
+    | python -c "import socket, struct, sys; \
+        data = sys.stdin.buffer.read(); \
+        s = socket.create_connection(('127.0.0.1', 3310)); \
+        s.sendall(b'zINSTREAM\\0'); \
+        s.sendall(struct.pack('!I', len(data)) + data); \
+        s.sendall(struct.pack('!I', 0)); \
+        print(s.recv(4096).decode())"
+# Expected: stream: Eicar-Test-Signature FOUND
+```
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles
