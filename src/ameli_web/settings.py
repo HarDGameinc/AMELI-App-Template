@@ -457,7 +457,35 @@ SECURE_HSTS_PRELOAD = False
 # because they do not have access to the nonce minted server-side for
 # that response. See accounts.middleware.build_csp.
 
-MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
+# ASVS V5.5.1 — safe serialization for the Django messages framework.
+# Django ships three first-party storages (session / cookie / fallback);
+# all three serialise message bodies as signed JSON (cookie/fallback)
+# or session-backed (which itself defaults to JSON). A third-party
+# storage that relied on ``pickle`` to ride the same path would be a
+# remote-code-execution gadget the moment the operator's
+# ``SECRET_KEY`` leaks.
+#
+# Default: session storage (the historic choice). Operator can swap
+# via ``AMELI_APP_MESSAGE_STORAGE`` but only to one of the three
+# allow-listed first-party paths. Anything else refuses to boot with
+# an actionable error.
+_ALLOWED_MESSAGE_STORAGES = frozenset({
+    "django.contrib.messages.storage.session.SessionStorage",
+    "django.contrib.messages.storage.cookie.CookieStorage",
+    "django.contrib.messages.storage.fallback.FallbackStorage",
+})
+MESSAGE_STORAGE = os.environ.get(
+    "AMELI_APP_MESSAGE_STORAGE",
+    "django.contrib.messages.storage.session.SessionStorage",
+).strip()
+if MESSAGE_STORAGE not in _ALLOWED_MESSAGE_STORAGES:
+    raise RuntimeError(
+        f"AMELI_APP_MESSAGE_STORAGE={MESSAGE_STORAGE!r} is not on the "
+        "allow-list of safe Django messages storages. Allowed values: "
+        f"{sorted(_ALLOWED_MESSAGE_STORAGES)}. A storage that uses "
+        "``pickle`` is a deserialisation RCE gadget; pick one of the "
+        "first-party signed-JSON storages or leave the env var unset."
+    )
 
 # --- Email / password reset --------------------------------------------------
 _EMAIL_BACKEND_MAP = {

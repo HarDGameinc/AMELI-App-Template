@@ -23,7 +23,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
 | V3 Session management | 17 | 0 | 0 | 0 | +1 PASS (3.4.4 closed 2026-06-17) |
 | V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
-| V5 Validation, sanitization and encoding | 14 | 1 | 1 | 0 | +1 PASS (5.2.8 closed 2026-06-16) |
+| V5 Validation, sanitization and encoding | 15 | 0 | 1 | 0 | +1 PASS (5.5.1 closed 2026-06-17) |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
 | V7 Error handling and logging | 10 | 0 | 0 | 1 | +1 PASS (7.4.x closed 2026-06-17) |
 | V8 Data protection | 7 | 0 | 0 | 1 | +3 PASS (8.2.1, 8.3.3, 8.3.4) |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
 | V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
 | V14 Configuration | 23 | 0 | 0 | 3 | +3 PASS (14.2.1, 14.2.2, 14.4.5 closed; 14.2.2 promoted to full PASS 2026-06-17) |
-| **Total** | **146** | **3** | **9** | **9** | — |
+| **Total** | **147** | **2** | **9** | **9** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -156,7 +156,7 @@ No control regressed.
 | 3.4.1 | Cookie `Secure` | PASS | `SESSION_COOKIE_SECURE=True` outside dev. |
 | 3.4.2 | Cookie `HttpOnly` | PASS | `SESSION_COOKIE_HTTPONLY=True`. |
 | 3.4.3 | Cookie `SameSite` | PASS | `SESSION_COOKIE_SAMESITE="Lax"`. |
-| 3.4.4 | Cookie `__Host-` prefix | **PASS** | `settings.py` defaults `SESSION_COOKIE_NAME` to `__Host-ameli_app_session` and `CSRF_COOKIE_NAME` to `__Host-ameli_csrf` outside `dev` (when `SECURE=True`, Domain unset, Path=`/` — the three browser-enforced constraints the prefix locks). Boot guards refuse to start if the operator names a cookie with `__Host-` but violates any of the three (Secure=False or Domain set). In `dev` the names stay unprefixed (`ameli_app_session` / `csrftoken`) so plain-HTTP localhost keeps working. Operator escape hatch: `AMELI_APP_SESSION_COOKIE_NAME` env or `auth.session_cookie_name` YAML wins for legacy bookmarks / reverse-proxy stripping. Tests at `tests/test_host_cookie_prefix.py` cover dev / prod / override / boot guards / CSRF mirror policy. |
+| 3.4.4 | Cookie `__Host-` prefix | **PASS** | `settings.py` defaults `SESSION_COOKIE_NAME` to `__Host-ameli_app_session` and `CSRF_COOKIE_NAME` to `__Host-ameli_csrf` outside `dev` (when `SECURE=True`, Domain unset, Path=`/` — the three browser-enforced constraints the prefix locks). Boot guards refuse to start if the operator names a cookie with `__Host-` but violates any of the three (Secure=False or Domain set). In `dev` the names stay unprefixed (`ameli_app_session` / `csrftoken`) so plain-HTTP localhost keeps working. Operator escape hatch: `AMELI_APP_SESSION_COOKIE_NAME` env or `auth.session_cookie_name` YAML wins for legacy bookmarks / reverse-proxy stripping. Tests at `tests/test_host_cookie_prefix.py` cover dev / prod / override / boot guards / CSRF mirror policy. **Wire-verified 2026-06-17** on `ha-report2`: GET /login/ in dev returns `Set-Cookie: csrftoken=...; HttpOnly; SameSite=Lax` (compat preserved); simulated `APP_ENV=prod` settings reload yields `SESSION_COOKIE_NAME=__Host-ameli_app_session`, `CSRF_COOKIE_NAME=__Host-ameli_csrf`, `SECURE=True`. Defense-in-depth bonus: the simulated-prod attempt without the MFA encryption key correctly failed the V2.8 boot guard from item #1 (caught at startup). |
 | 3.5.1 | Stateful tokens revocable | PASS | DB-backed `UserSession`; revocation at `services.py:549`. |
 | 3.5.2 | Stateful or signed | PASS | Django signed cookies for messages; DB for auth. |
 | 3.6.1 | Re-auth for sensitive ops | PASS | Sudo grant at `services.py:grant_sudo` with TTL. |
@@ -200,7 +200,7 @@ No control regressed.
 | 5.3.7 | XSS — CSP / nonce | PASS | `middleware.py:build_csp` per-request nonce. |
 | 5.3.8 | Stored XSS via uploads | PASS | Avatar whitelist (JPEG/PNG/WEBP/GIF — no SVG). |
 | 5.3.9 | Deserialisation: avoid pickle on untrusted | PASS | No `pickle.loads` in repo. |
-| 5.5.1 | Serialization safe | **GAP** | `messages.session` uses signed JSON cookie (safe), but no boot-guard against operator switching to `pickle`-backed storage. Roadmap item #11. |
+| 5.5.1 | Serialization safe | **PASS** | `MESSAGE_STORAGE` is constrained at boot to one of the three first-party Django storages (session / cookie / fallback — all signed-JSON-backed). Operator override via `AMELI_APP_MESSAGE_STORAGE` is allowed but boot-guarded against arbitrary paths; an unknown class refuses to boot with an error that names the allow-list and the `pickle` threat model. Tests at `tests/test_message_storage_guard.py` cover default + the two other safe options + 3 refusal paths (arbitrary class, allow-list mention in error, pickle wording). |
 
 ---
 
@@ -368,7 +368,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 8 | **7.4.1** no custom 404/500 handlers | S | **closed-2026-06-17** | `error_views.py` + `error_generic.html` + `handler400/403/404/500` registered in urls.py. Bullet-proof fallback when template loader is broken. |
 | 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |
 | 10 | **13.2.2** OpenAPI doc hand-written | S | open | Contract test: every documented path responds; every documented schema matches. |
-| 11 | **5.5.1** pickle-storage of messages possible | S | open | Boot-guard that refuses non-JSON `MESSAGE_STORAGE`. |
+| 11 | **5.5.1** pickle-storage of messages possible | S | **closed-2026-06-17** | Boot guard on `MESSAGE_STORAGE` with 3-element allow-list (session/cookie/fallback). |
 | 12 | **3.4.4** `__Host-` prefix not enforced | S | **closed-2026-06-17** | Default `SESSION_COOKIE_NAME = "__Host-ameli_app_session"` + `CSRF_COOKIE_NAME = "__Host-ameli_csrf"` outside dev; boot guards refuse Secure=False / Domain set; operator override via env still wins. |
 | 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | open | `RedactingFilter` that masks `password`, `token`, `authorization`, `secret`, `mfa_code` keys. |
 | 14 | **14.2.3** no lockfile with hashes | M | open | `pip-compile --generate-hashes` flow. |
