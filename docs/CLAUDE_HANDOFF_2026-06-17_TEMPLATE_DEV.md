@@ -281,22 +281,133 @@ re-derive la conclusion.
 
 ## §4. Decisiones tomadas
 
-(Pendiente.)
+1. **Orden de cierre L2**: bucket S cerrado completo (#13 → #10 →
+   #9 escalando S→S→M) antes de tocar Medium grandes. Razon: cada
+   S restante movia 1 PASS en la matriz por <1h de costo; los M
+   abiertos (#14 supply chain) tienen blast-radius mayor sobre el
+   lockfile de CI y conviene tenerlos en una sesion limpia.
+2. **No promover `dev → main` esta sesion**. CI lleva rojo desde
+   commit `a1fe164` (item #12, 2026-06-17) y la verdadera causa
+   (el test flaky de auditoria, ver §6) recien quedo
+   diagnosticada al final del dia. Promover con CI rojo
+   contradice el invariante "main = CI green" del S-05 del
+   playbook.
+3. **Branch de trabajo**: el setup del session asignaba
+   `claude/compassionate-meitner-ds2fs4`, pero el operador
+   ratifico la convencion canonica del proyecto: "solo
+   trabajamos en `dev`". A partir del `git checkout dev && git
+   merge --ff-only` de `6f7aad8`, todos los commits del dia
+   viven en `dev`. La branch claude/* quedo redundante (mismo
+   HEAD) y se puede borrar cuando el operador autorice.
+4. **Wire test path D — comportamiento aceptado, no es bug**.
+   Ver §6 finding 2. La expectativa del 403 JSON era erronea por
+   modelo mental incorrecto del chain de middleware; NO ajustar
+   el codigo para "arreglar" el path D.
 
 ## §5. Metricas al cierre
 
-(Pendiente al cierre del dia.)
+| Metrica | Inicio dia | Cierre dia | Δ |
+|---|---|---|---|
+| Suite local (excluyendo flake TZ) | 745 passed | **837 passed** | +92 |
+| Test files nuevos | — | 3 (`test_openapi_contract.py`, `test_permissions.py`, plus #13 already shipped) | — |
+| ASVS L2 active rows PASS | 142 | **150** | +8 |
+| ASVS L2 strict GAP roadmap-tracked | 7 | **0** | -7 |
+| Capitulos completos al bar L2 | 6 (V2,V3,V4,V5,V10,V12) | **8** (+V1,V7) | +2 |
+| Commits sobre `dev` | 0 (start at `72c37e8`) | 13 | — |
+| Commits propagados a `main` | 0 | 0 (pendiente promote) | — |
+| CI verde | last green @ `3bd2e7f` | red continuo desde `a1fe164` | -8 runs |
+| Wire validations | 1 (#4 carry-over) | 4 (#7, #8, #12, #9+#10) | +3 |
 
 ## §6. Hallazgos / findings
 
-(Pendiente.)
+1. **CI rojo crónico desde `a1fe164` (8 runs consecutivos) — root
+   cause encontrado**. El unico test que falla es
+   `tests/test_admin_audit_pagination.py:255
+   test_filtered_audit_queryset_respects_combined_filters`. El
+   error en CI (Python 3.11 Y 3.12) es identico: el queryset
+   filtrado por `action="login", date_to=ayer` devuelve 5 rows
+   en lugar de 1. Los 5 son `login_failed::admin` +
+   `login_success::admin × 3 + login_failed::admin`. No es un
+   problema TZ-dependent (yo lo deseleccionaba local pensando
+   que era America/Santiago vs UTC; pero CI corre en UTC y
+   tambien falla). Es el caso textual de la **lecccion #3 del
+   §3 de este handoff**: test depende de estado limpio
+   (`AuditEvent.objects.all().delete()` en setUp o fixture), no
+   lo tiene, y el isolation por transaccion de pytest-django no
+   lo cubre porque audit events salen del flujo normal de los
+   tests previos del mismo modulo. Fix probable: agregar
+   `AuditEvent.objects.all().delete()` al `setUp` o un
+   `@pytest.fixture(autouse=True)` en `test_admin_audit_pagination.py`.
+   **Es el item #1 del proximo agente** — sin esto, no se
+   puede promover dev->main, no se puede cerrar el dia.
+2. **Branch JSON de `superadmin_required` es dead code en
+   /admin/\***. Documentado en §"Wire validation #9 + #10
+   finding". El `AdminAccessAuditMiddleware` preempta cualquier
+   request `Accept: application/json` a `/admin/*` de
+   no-superadmin con `redirect("/profile/")` antes que el
+   decorator vea Accept. No es un bug — es defense in depth
+   redundante, pero conviene NO eliminar el branch del
+   decorator porque protege endpoints fuera de `/admin/*` que
+   en el futuro usen el mismo decorator.
+3. **Bash IFS bug re-aprendido (lesson #4 del §3)**. El patron
+   `set -a; . app.env; set +a` se rompe con valores que
+   contienen `(`, `)`, `!`. El `while IFS= read -r line` +
+   `declare` esta ahora canonizado en S-04 del HANDOFF_TEMPLATE
+   para que ningun futuro agente lo re-derive desde memoria.
 
 ## §7. Roadmap actualizado
 
 Heredado de la sesion del 2026-06-16, ver §"Carry-over al
-2026-06-17" en ese handoff. Items se marcan
-`closed-2026-06-17 <commit>` a medida que se cierran.
+2026-06-17" en ese handoff. Items cerrados hoy:
+
+| Item | ASVS | Commit | Wire |
+|---|---|---|---|
+| #7 V12.4.1 AV scan | PASS | `8a45724` + `bc9f1c9` | ✓ |
+| #8 V7.4.1 error handlers | PASS | `f724e21` | ✓ |
+| #15+#21+#22 hygiene bundle | PASS | `f278ac1` | n/a |
+| #11 V5.5.1 MESSAGE_STORAGE allow-list | PASS | `e84f57a` | n/a |
+| #12 V3.4.4 `__Host-` cookie | PASS | `a1fe164` | ✓ |
+| #13 V7.1.1 RedactingFilter | PASS | `8bde7c0` | n/a |
+| #10 V13.2.2 OpenAPI contract test | PASS | `e7e3653` | n/a |
+| #9 V1.4.4 authz centralizada | PASS | `6f7aad8` | ✓ |
+
+Items roadmap restantes:
+
+- **#14 V14.2.3** Lockfile con hashes (M, ~1h) — el ultimo
+  Medium real.
+- **Operacionales** sin impacto ASVS: #16 doc drift, #18 backup
+  timer, #19 PG TCP listener, #20 manage.py auto-load
+  APP_CONFIG, #23 branch protection.
 
 ## §8. Continuidad — para el proximo agente
 
-(Pendiente al cierre del dia.)
+**ORDEN ESTRICTO de arranque** — no saltearse:
+
+1. **FIX CI RED**. Antes de cualquier nueva feature, abrir
+   `tests/test_admin_audit_pagination.py` linea 255 y resolver
+   el flake. Hipotesis: agregar
+   `AuditEvent.objects.all().delete()` en setUp o introducir
+   una fixture `clean_audit` con `autouse=True`. Verificar
+   local con `--deselect` removido + correr el modulo completo.
+   El test ha fallado 8 veces seguidas (CI #63..#71), bloquea
+   la promocion a main.
+2. **Promote `dev → main`** una vez CI verde. Patron S-05:
+   `git checkout main && git merge --ff-only dev && git push`.
+   La distancia es `8bde7c0..e304114` (~5 commits propagables).
+3. **Wire-validar #14** despues. La feature toca el lockfile y
+   las github actions; debe pasar por el flujo full S-04.
+
+**Estado del bucket S de L2**: cerrado. Quedan solo M y
+operacionales — el ritmo del proximo dia puede ser mas pausado.
+
+**Patron de wire-test S-04**: ya esta canonizado en
+`HANDOFF_TEMPLATE.md` con el bloque "Environment prep". COPIAR
+ese bloque textual, NO re-derivar.
+
+**Lecciones del dia para incorporar** (S-04 / S-08):
+- Annotation grammar (ruff S + bandit B juntos siempre).
+- Test state isolation explicito en cualquier test que toque
+  un contador / clock / random / audit / throttle.
+- IFS-safe env loader en wire tests.
+- En CI rojo cronico, NUNCA asumir "es TZ" sin abrir el log
+  del runner CI — la causa real puede ser distinta.
