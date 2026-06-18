@@ -5,6 +5,66 @@ import logging
 import os
 from datetime import UTC, datetime
 
+_DEFAULT_REDACT_KEYS = frozenset({
+    "password", "passwd", "pwd",
+    "token", "access_token", "refresh_token", "api_token", "api_key",
+    "authorization", "auth", "bearer",
+    "secret", "client_secret",
+    "mfa_code", "totp", "totp_code", "recovery_code",
+    "session_key", "csrf",
+})
+_REDACTED = "***REDACTED***"
+
+
+def _load_redact_keys() -> frozenset[str]:
+    """Resolve the set of log fields to redact.
+
+    Defaults cover the obvious credential / session names. Operator
+    can extend (NOT replace) via ``AMELI_APP_LOG_REDACT_KEYS`` —
+    comma-separated lowercase names. The intent is "add to the
+    allow-list, don't shrink it" so a deploy never accidentally
+    weakens the default protections by misconfiguring.
+    """
+    extras = os.getenv("AMELI_APP_LOG_REDACT_KEYS", "").strip()
+    if not extras:
+        return _DEFAULT_REDACT_KEYS
+    extra_set = {token.strip().lower() for token in extras.split(",") if token.strip()}
+    return _DEFAULT_REDACT_KEYS | extra_set
+
+
+class RedactingFilter(logging.Filter):
+    """Scrub sensitive keys from ``extra=`` dicts before they hit the
+    formatter (ASVS V7.1.1).
+
+    A caller that writes
+    ``logger.info("login attempt", extra={"username": "alice", "password": "p"})``
+    used to ship the password verbatim into the JSON output. This
+    filter rewrites the offending attributes on the record to
+    ``"***REDACTED***"`` BEFORE either ``JsonFormatter`` or the text
+    formatter sees them.
+
+    Matching is case-insensitive on the attribute NAME. Substring
+    matches catch ``auth_token`` / ``authorization_header`` /
+    ``my_password_hash`` etc. — over-redaction is preferable to
+    under-redaction in security logs.
+    """
+
+    def __init__(self, keys: frozenset[str] | None = None):
+        super().__init__()
+        # Capture at construction so a deploy that twiddles the env
+        # var mid-flight gets the new value on the next
+        # ``configure_logging`` call (which rebuilds the filter).
+        self.keys = keys if keys is not None else _load_redact_keys()
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        for attr in list(record.__dict__.keys()):
+            if attr.startswith("_"):
+                continue
+            lowered = attr.lower()
+            if any(needle in lowered for needle in self.keys):
+                setattr(record, attr, _REDACTED)
+        return True
+
 
 class JsonFormatter(logging.Formatter):
     """Serialize each log record as a single JSON object per line.
@@ -78,6 +138,10 @@ def configure_logging(level: str = "INFO", *, format: str | None = None) -> None
     handler = logging.StreamHandler()
     if request_id_filter is not None:
         handler.addFilter(request_id_filter)
+    # ASVS V7.1.1 — scrub sensitive ``extra=`` keys before the formatter
+    # sees them. Runs unconditionally (operators may extend the key set
+    # via ``AMELI_APP_LOG_REDACT_KEYS`` but cannot drop the defaults).
+    handler.addFilter(RedactingFilter())
     if _should_use_json(format):
         handler.setFormatter(JsonFormatter())
     else:

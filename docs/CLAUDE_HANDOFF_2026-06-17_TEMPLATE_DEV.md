@@ -42,6 +42,9 @@ roadmap sin esfuerzo arquitectural.
 | `f724e21` | Item #8 — ASVS V7.4.1 branded HTTP error handlers (404/500/403/400) | 766 → 776 (+10) |
 | `c035c94` | Item #8 wire validation evidence | suite stays green |
 | `425220a` | Fix flake CI #56 — defensive ThrottleCounter cleanup in test_auth_failures_alert.py | suite stays green |
+| `a1fe164` | Item #12 — ASVS V3.4.4 `__Host-` cookie prefix (session + CSRF) | 776 → 782 (+6) |
+| `e84f57a` | Item #11 — ASVS V5.5.1 MESSAGE_STORAGE allow-list boot guard + wire evidence for #12 | 782 → 787 (+5) |
+| `<this>` | Item #13 — ASVS V7.1.1 RedactingFilter for PII in logs | 787 → 801 (+14) |
 
 ### Wire validation 2026-06-17 — item #7
 

@@ -223,7 +223,7 @@ No control regressed.
 
 | ID | Requirement | Status | Evidence |
 | --- | --- | --- | --- |
-| 7.1.1 | No sensitive data in logs | PASS (with risk) | No call-site logs secrets, but `JsonFormatter` (`logging_utils.py:28`) promotes every `extra=` key verbatim — no `password`/`token`/`authorization` scrub. Roadmap item #13. |
+| 7.1.1 | No sensitive data in logs | **PASS** | `RedactingFilter` in `ameli_app/logging_utils.py` runs BEFORE either the JSON or text formatter sees the record. Default key set (case-insensitive, substring match) covers `password`, `passwd`, `pwd`, `token`, `access_token`, `refresh_token`, `api_token`, `api_key`, `authorization`, `auth`, `bearer`, `secret`, `client_secret`, `mfa_code`, `totp`, `totp_code`, `recovery_code`, `session_key`, `csrf`. Operators can ADD via `AMELI_APP_LOG_REDACT_KEYS` (comma-separated) but cannot shrink the defaults. Tests at `tests/test_redacting_log_filter.py` cover each default key, case-insensitive matching, substring matching, env-var extension, neutral-key pass-through, and end-to-end JSON output. |
 | 7.1.2 | No payment / auth tokens in logs | PASS | Verified by grep. |
 | 7.1.3 | Logs contain enough to investigate | PASS | `AuditEvent` captures actor, action, payload, ts. |
 | 7.1.4 | Log source-identifying info (request id) | PASS | `request_id.py:64` injects `X-Request-Id` end-to-end (post-`0077fb0` fix moves the header into the try block + adds `process_exception` so correlation survives the error path). |
@@ -370,7 +370,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 10 | **13.2.2** OpenAPI doc hand-written | S | open | Contract test: every documented path responds; every documented schema matches. |
 | 11 | **5.5.1** pickle-storage of messages possible | S | **closed-2026-06-17** | Boot guard on `MESSAGE_STORAGE` with 3-element allow-list (session/cookie/fallback). |
 | 12 | **3.4.4** `__Host-` prefix not enforced | S | **closed-2026-06-17** | Default `SESSION_COOKIE_NAME = "__Host-ameli_app_session"` + `CSRF_COOKIE_NAME = "__Host-ameli_csrf"` outside dev; boot guards refuse Secure=False / Domain set; operator override via env still wins. |
-| 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | open | `RedactingFilter` that masks `password`, `token`, `authorization`, `secret`, `mfa_code` keys. |
+| 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | **closed-2026-06-17** | `RedactingFilter` runs before formatter; default 18-key set covering credentials / session / MFA; operator can extend via env. |
 | 14 | **14.2.3** no lockfile with hashes | M | open | `pip-compile --generate-hashes` flow. |
 | 15 | **14.2.2** promote `pip-audit` to hard fail | XS | **closed-2026-06-17** | Dropped `continue-on-error: true` from `supply-chain-audit` job. Same change as #22. |
 | 16 | Doc drift in older handoffs | S | open | Add footer note to handoffs `<2026-06-13` that mentions webhooks/tokens were removed in `641ece1`. |
