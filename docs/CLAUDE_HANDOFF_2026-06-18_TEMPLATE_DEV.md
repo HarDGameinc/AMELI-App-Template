@@ -239,23 +239,117 @@ siguiente promocion.
 
 ## §4. Decisiones tomadas
 
-(Pendiente al cierre del dia.)
+1. **Promoter dev→main solo despues de wire test verde**, no
+   solo CI verde. El #20 commit `b3688ba` paso CI (los unit
+   tests no podian ver la mismatch slug canonico vs slug de
+   instancia) pero fallaba en el deploy real. Politica
+   reforzada en S-04 § Environment prep del template: no
+   promover items operacionales sin wire test.
+2. **Slug derivation = directorio primero, pyproject despues**.
+   La convencion `/opt/<slug>/` ↔ `/etc/<slug>/` del install
+   script es la fuente mas estable; el pyproject name suele
+   tener menos contexto (sin sufijo de instancia). El orden
+   matchea tambien el patron "explicit beats implicit" del
+   resto del codebase.
+3. **pip-audit movido a auditar el `.lock` en vez del rango
+   source `.txt`**. El lock es lo que se instala; un CVE
+   sobre una version que el rango admite pero el lock no
+   adopta seria falso positivo contra el deploy real.
+4. **No subir argon2-cffi a `>=24` aunque el server tuviera
+   `25.1.0`**. El lock pin 23.1.0 esta dentro del rango
+   `>=23.1,<25` declarado por intent (next-next major boundary).
+   El downgrade durante el wire test fue feature, no bug —
+   ahora el deploy converge a la version exacta del lock.
 
 ## §5. Metricas al cierre
 
-(Pendiente al cierre del dia.)
+| Metrica | Inicio dia | Cierre dia | Δ |
+|---|---|---|---|
+| Suite local (sin deselect) | 837 (1 failure) | **863** | +26 (+1 fix CI, +9 #14, +1 hotfix, +14 #20, +1 #20 slug) |
+| ASVS L2 active rows PASS | 150 | **151** | +1 (V14.2.3 GAP→PASS, V14.2.1 partial→full) |
+| ASVS L2 strict GAP roadmap-tracked | 1 (V1.4.4 + V13.2.2 ya en main) | **0** | -1 |
+| Capitulos completos al bar L2 | 8 | **9** (+V14) | +1 |
+| Commits sobre `dev` | 0 (start at `aa869be`) | 7 (`702f82c..662c7d0`) | — |
+| Commits propagados a `main` | 0 (8bde7c0) | 6 (`8bde7c0..1e03264`) | — |
+| CI verde | 1 / 8 ultimos runs al inicio | 4 / 4 ultimos runs al cierre | drastic recovery |
+| Wire validations ejecutadas | 0 | 2 (#14 + #20, ambas verdes despues de fix) | — |
 
 ## §6. Hallazgos / findings
 
-(Pendiente al cierre del dia.)
+1. **TZ wall-clock window flake** — el test
+   `test_filtered_audit_queryset_respects_combined_filters`
+   fallaba en CI 3h al dia (UTC 00:00-03:00) por el shift
+   `America/Santiago` que mueve el cutoff de `date_to=yesterday`
+   hasta 02:59 UTC. Mi diagnostico inicial "es flake TZ"
+   senalaba la direccion correcta pero NO calculaba la ventana
+   de horas; me llevo 8 runs de CI ignorar el log real.
+   Lesson: si afirmas "es TZ", el log de CI tiene que
+   confirmar la HORA en que paso. Fix: cutoff 7 dias atras,
+   fuera de la ventana ambigua.
+2. **`pyproject.toml` vs `requirements.txt` drift** — argon2-cffi
+   en pyproject pero no en requirements.txt rompio el deploy
+   cuando el install path se movio a `--require-hashes` (que
+   prohibe re-resolver via `pip install -e .`). Test guard
+   nuevo `test_pyproject_runtime_deps_are_subset_of_requirements_txt`
+   evita la regresion. Lesson: cuando movemos la fuente de
+   install, hay que diffear el `pip freeze` antes/despues.
+3. **Slug derivation requerido para deploys multi-instancia**.
+   El primer #20 derivo slug de pyproject `[project].name`,
+   que es el slug canonico (`ameli-app-template`) — pero los
+   deploys reales tienen sufijos de instancia
+   (`ameli-app-template-dev`). El wire test catcheo lo que
+   unit tests no podian ver. Fix: probar dir name primero.
+4. **Deploy hygiene** — el server `ha-report2` tenia `dev`
+   stuck en `d4fd8d2` con un `git pull --ff-only` que decia
+   "Ya está actualizado" pese a que origin/dev avanzo. Recovery
+   con `reset --hard origin/dev`. Posible upstream tracking
+   misconfigurado o working tree state que pull-ff no resuelve.
+   NO es bug del template; agregar al runbook S-04 como
+   patron de recovery.
 
 ## §7. Roadmap actualizado
 
-Heredado del 2026-06-17 §7. Items que arranca el dia abiertos:
+Heredado del 2026-06-17 §7. Items cerrados hoy:
 
-- **#14 V14.2.3** Lockfile con hashes (M, ~1h).
-- Operacionales: #16, #18, #19, #20, #23.
+| Item | ASVS | Commit | Wire |
+|---|---|---|---|
+| (fix TZ flake) | — | `702f82c` | n/a (CI green confirma) |
+| #14 V14.2.3 lockfile con hashes | PASS | `ee5605b` + `1e03264` | ✓ |
+| #20 manage.py auto-load APP_CONFIG | OPS closed | `1e03264` | ✓ |
+
+Items roadmap restantes (todos OPS, sin impacto ASVS L2):
+
+- **#16** Doc drift en handoffs `<2026-06-13` (S, ~15 min, doc-only).
+- **#18** Install `backup.timer` + service (S, server OPS).
+- **#19** PG TCP listener o backup-as-user (S, server OPS).
+- **#23** Branch protection en `main` (S, GitHub repo settings).
 
 ## §8. Continuidad — para el proximo agente
 
-(Pendiente al cierre del dia.)
+**Roadmap ASVS L2 = cerrado completo**. Todos los items
+roadmap con impacto en chapter-pass quedaron en PASS. Lo que
+queda son items operacionales sin chapter delta.
+
+**Orden sugerido si seguimos con OPS**:
+1. **#23** — branch protection en main via GitHub MCP. ~10 min.
+   ADVERTENCIA: una vez activado, el patron actual de
+   `git push origin main` directo desde el shell se bloquea.
+   El operador debera promover via PR + ff-merge (o
+   bypass-allow temporal). Confirmar con el operador antes
+   de activar.
+2. **#16** — agregar footer note a handoffs viejos. Doc only,
+   ~15 min.
+3. **#18** + **#19** — server-side, requieren wire test. Mas
+   pesado, dejar para una sesion con tiempo.
+
+**Lecciones del dia incorporadas a S-04 / S-08**:
+- Antes de proponer un fix de flake, abrir el log del runner
+  Y calcular numericamente la hipotesis (no asumir).
+- Cuando movemos la fuente de install, diffear `pip freeze`
+  antes y despues como step explicito del PR.
+- Items operacionales (OPS) requieren wire test obligatorio
+  antes de promote dev→main — los unit tests no ven la
+  realidad del deploy.
+- Server deploy hygiene: si `git pull --ff-only` dice
+  "Ya está actualizado" pero el HEAD esta atras,
+  `reset --hard origin/<branch>` es el recovery canonico.
