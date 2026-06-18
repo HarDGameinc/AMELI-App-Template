@@ -373,7 +373,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | **closed-2026-06-17** | `RedactingFilter` runs before formatter; default 18-key set covering credentials / session / MFA; operator can extend via env. |
 | 14 | **14.2.3** no lockfile with hashes | M | **closed-2026-06-18** | `requirements.lock` + `requirements-dev.lock` via `pip-compile --generate-hashes`; CI + deploy install with `--require-hashes`. |
 | 15 | **14.2.2** promote `pip-audit` to hard fail | XS | **closed-2026-06-17** | Dropped `continue-on-error: true` from `supply-chain-audit` job. Same change as #22. |
-| 16 | Doc drift in older handoffs | S | open | Add footer note to handoffs `<2026-06-13` that mentions webhooks/tokens were removed in `641ece1`. |
+| 16 | Doc drift in older handoffs | S | **closed-2026-06-18** | Drift note banner added to handoffs `2026-06-09..2026-06-13` (6 files) flagging that API tokens / webhooks code was removed in `641ece1`. |
 | 17 | Add `ruff check .` to local pre-push runbook | XS | **closed-2026-06-16** | Documented in `docs/HANDOFF_TEMPLATE.md` S-08; pre-commit hook pending. |
 | 18 | Install `backup.timer` + service on `ha-report2` | S | open | OPS — systemd unit + cron-style schedule. |
 | 19 | PG TCP listener on `ha-report2` or backup runs as user with PG role | S | open | OPS. |

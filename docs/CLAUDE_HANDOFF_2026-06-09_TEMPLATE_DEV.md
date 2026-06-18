@@ -1,5 +1,14 @@
 ## AMELI App Template handoff (sesion Claude, 2026-06-09)
 
+> **Drift note (added 2026-06-18, roadmap #16)**: this handoff
+> describes features around **API tokens** and **webhooks**
+> (modelo, services, middleware, admin UI, CLI, signal
+> dispatcher, HMAC dispatcher) that were **removed from the
+> template baseline in commit `641ece1` (2026-06-09)**. Treat
+> those sections as historical record — code references no
+> longer resolve in the current `dev`/`main` tree.
+
+
 Fecha: `2026-06-09`
 
 Continuacion de
