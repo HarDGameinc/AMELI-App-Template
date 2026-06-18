@@ -48,6 +48,9 @@ NO promover a main hasta ver el run verde post-fix.
 | `69f1790` | Record bucket OPS commits + version bump en handoff | suite stays green |
 | `88cce00` | Expand §8 con post-#23 promote workflow + operator todo | suite stays green |
 | — | **Promote final `dev → main`** (`1e03264..88cce00`, 6 commits) — CI #87 + #88 verde | suite stays green |
+| `b94dfcc` | Refresh §5 metrics + record final promote | suite stays green |
+| `d91ef8d` | #23 follow-up #1 — flag Rulesets-vs-classic trap (mi clasificacion era erronea) | suite stays green |
+| `9df29c4` | #23 follow-up #2 — layered substitutes: pre-push hook + audit workflow | 873 → 882 (+9) |
 
 ### Wire validation 2026-06-18 — items #14 + #20
 
@@ -232,6 +235,36 @@ Patron: en un PR que mueva el install path, agregar un step
 explicito que ejecute `pip freeze | diff` contra el resultado
 del install viejo.
 
+### Leccion incorporada (item #23 follow-up) — GitHub plan trap
+
+Sobre el roadmap #23 (branch protection en main) me equivoque DOS
+veces antes de ver la realidad:
+
+1. **Primer intento**: propuse Rulesets. El operador aplico, la UI
+   mostro "Active" y el banner amarillo decia "Your rulesets
+   won't be enforced on this private repository until you move
+   to GitHub Team". Pense que era warning informativo y dije
+   "usa classic rules en su lugar".
+2. **Segundo intento**: propuse classic Branch protection rules
+   ("esas si funcionan en cualquier plan, incluyendo Free +
+   private"). FALSO. El operador aplico, el rule aparecio con
+   status **"Not enforced"** y el mismo banner.
+3. **Realidad**: GitHub Free + private repo = **CERO branch
+   protection nativa**. Ni Rulesets ni classic rules. Para
+   enforcement server-side se necesita GitHub Team o el repo
+   tiene que ser publico.
+
+Fix en `9df29c4`: tres capas substitutas. Layer 1 = pre-push hook
+local (`deploy/git-hooks/pre-push`). Layer 2 = audit workflow
+post-push (`.github/workflows/main-push-audit.yml`) que detecta y
+warning-loggea direct pushes. Layer 3 = el ruleset + classic rule
+ya creados quedan latentes; activan en upgrade.
+
+**Leccion para el playbook**: cuando un feature server-side se
+declara "aplicado", el closure NO es legitimo hasta probar la
+violacion (push directo, force-push, etc.) y verificar que el
+rechazo ocurre. La UI puede mentir. Pin de S-04 al respecto.
+
 ### Leccion incorporada — diagnostico de CI rojo
 
 Ayer asumi "es flake TZ" sin abrir un solo log de CI. La causa
@@ -272,7 +305,7 @@ siguiente promocion.
 
 | Metrica | Inicio dia | Cierre dia | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 837 (1 failure) | **873** | +36 (+1 fix CI, +9 #14, +1 #14-hotfix, +14 #20, +1 #20-slug, +10 #18) |
+| Suite local (sin deselect) | 837 (1 failure) | **882** | +45 (+1 fix CI, +9 #14, +1 #14-hotfix, +14 #20, +1 #20-slug, +10 #18, +9 #23-followup) |
 | ASVS L2 active rows PASS | 150 | **151** | +1 (V14.2.3 GAP→PASS, V14.2.1 partial→full) |
 | ASVS L2 strict GAP roadmap-tracked | 1 (V1.4.4 + V13.2.2 ya en main) | **0** | -1 |
 | Capitulos completos al bar L2 | 8 | **9** (+V14) | +1 |
@@ -337,31 +370,99 @@ Items roadmap restantes (todos OPS, sin impacto ASVS L2):
 
 **Roadmap COMPLETO** — bucket L2 + bucket OPS cerrados ambos
 template-side. NO quedan items roadmap-tracked sin closure plan.
-Version bumped a `v0.3.0-django`.
+Version bumped a `v0.3.0-django`. `main == dev == 88cce00`
+(commits posteriores `b94dfcc`/`d91ef8d`/`9df29c4` siguen solo
+en `dev` hasta el proximo promote — vease pruebas pendientes
+abajo).
 
-**Acciones operador pendientes en `ha-report2`** (no son items
-roadmap nuevos; son la otra mitad de los items #18/#19/#23):
+### Pruebas pendientes — para retomar en otro equipo
 
-1. **#23** — aplicar branch protection en `main` via GitHub UI
-   (o `gh api`, payload en `OPERATIONS.md`). **Una vez
-   activado, el patron de `git push origin main` directo se
-   bloquea**. El operador promueve via
-   `gh pr create --base main --head dev && gh pr merge`. La
-   sesion 2026-06-18 fue la ULTIMA con ff-push directo.
-2. **#18** — `systemctl enable --now ${prefix}-backup.timer`
-   en `ha-report2`. Verificar con
-   `systemctl list-timers '*-backup.timer'`. Primer backup
-   se ejecuta entre 04:10 y 04:12 (RandomizedDelaySec 0-120s).
-3. **#19** — antes de habilitar el timer, configurar
-   `postgresql.conf` con `listen_addresses = 'localhost'` y
-   `pg_hba.conf` con `host <db> <user> 127.0.0.1/32
-   scram-sha-256`. Confirmar que el `DATABASE_URL` en
-   `app.env` incluye host/puerto/password. Wire test:
-   `systemctl start ${prefix}-backup.service` → debe terminar
-   `active (exited)`.
-4. **Wire test final del bucket OPS** — correr
-   `restore.sh verify` sobre el primer archive producido por
-   el timer.
+El operador cierra la sesion 2026-06-18 con la suite verde y el
+roadmap closeado template-side, pero quedan **4 wire tests** que
+requieren acceso al server `ha-report2` o a una shell con `gh`
+autenticado. No son items roadmap nuevos; son la otra mitad
+operativa de #18/#19/#23.
+
+**PT-1 — Sync de `dev` reciente y promote a `main`** (cualquier
+shell con write a origin):
+
+```bash
+cd <checkout>
+git fetch origin
+git checkout main && git reset --hard origin/main   # main = 88cce00
+git checkout dev  && git reset --hard origin/dev    # dev = 9df29c4 (despues de followups)
+# Si la branch protection ya esta activa (PT-3):
+gh pr create --base main --head dev --title "promote dev -> main (sprint close)"
+gh pr merge --merge   # cuando los 3 status checks esten verde
+# Si NO esta activa todavia:
+git checkout main && git merge --ff-only origin/dev && git push origin main
+```
+
+**PT-2 — Instalar pre-push hook en cada checkout** (`ha-report2`
+y cualquier maquina de dev):
+
+```bash
+cd <checkout>
+bash scripts/install-pre-push-hook.sh
+# -> [install-pre-push-hook] installed .git/hooks/pre-push
+# Probar bloqueo:
+git checkout main && git commit --allow-empty -m "probe"
+git push origin main   # esperado: [pre-push] Direct push to 'main' refused.
+# Probar bypass:
+ALLOW_DIRECT_PUSH=1 git push origin main   # debe pasar; main-push-audit.yml graba warning
+```
+
+**PT-3 — Aplicar branch protection (Free-plan-aware)**:
+
+- (a) Layer client-side: PT-2 ya cubre.
+- (b) Layer audit server-side: el push de PT-1 ya dispara
+  `.github/workflows/main-push-audit.yml`; verificar en
+  Actions → "Main push audit" que la corrida sobre el merge
+  commit emite `::notice::Merge commit detected` (no warning).
+- (c) Layer latente: las reglas en Settings → Rules → Rulesets
+  ("protect-main") y Settings → Branches → Branch protection
+  rules (main) quedan como estan — se activan automaticamente si
+  se hace upgrade a GitHub Team o si el repo se hace publico.
+
+**PT-4 — Activar backup timer en `ha-report2` y verificar
+restore** (server-side OPS, items #18 + #19):
+
+```bash
+# En ha-report2, como root:
+cd /opt/ameli-app-template-dev
+git fetch origin && git reset --hard origin/dev   # tomar 9df29c4
+bash scripts/install-pre-push-hook.sh
+
+# (#19) Antes del primer backup, configurar PG TCP localhost.
+# Editar /etc/postgresql/<ver>/main/postgresql.conf:
+#     listen_addresses = 'localhost'
+# Editar /etc/postgresql/<ver>/main/pg_hba.conf, agregar:
+#     host  <db>  <app_user>  127.0.0.1/32  scram-sha-256
+# Asegurar que /etc/ameli-app-template-dev/app.env tiene
+# AMELI_APP_DATABASE_URL=postgresql://<app_user>:<pwd>@127.0.0.1:5432/<db>
+systemctl restart postgresql
+# Validar conexion:
+sudo -u root .venv/bin/python -m ameli_app.cli db-status --config /etc/ameli-app-template-dev/app.yaml
+
+# (#18) Re-instalar systemd units para renderizar backup.service/timer
+APP_ENV=dev APP_SLUG=ameli-app-template APP_PACKAGE=ameli_app bash scripts/install.sh
+systemctl list-timers '*-backup.timer'
+# Esperado: ameli-app-template-dev-backup.timer activo, next ~04:10
+
+# One-shot manual:
+systemctl start ameli-app-template-dev-backup.service
+systemctl status ameli-app-template-dev-backup.service   # esperado: active (exited)
+ls -lh /var/backups/ameli-app-template-dev/
+
+# Verify del archive:
+sudo APP_ENV=dev bash scripts/restore.sh verify \
+    /var/backups/ameli-app-template-dev/<latest-archive>.tar.gz
+# Esperado: "verify OK" + exit 0
+```
+
+Cuando PT-1..PT-4 esten verde, agregar la evidencia al §3
+"Wire validation 2026-06-18 — items #18 + #19 + #23" y mergear
+el handoff del 19-jun (cuando aplique).
 
 **Para futuras sesiones — patron de promote post-#23**:
 
