@@ -253,6 +253,29 @@ THE source of truth for §7 of the next handoff.
 When: BEFORE promoting `dev` to `main`. The local 693/693 test suite
 is necessary but not sufficient — features need wire validation.
 
+**Environment prep (canonical, do NOT re-derive)**. Before any block
+runs, load the deploy env this exact way — the values in `app.env`
+contain shell-meta chars (`!`, `(`, `)`) that `set -a; . app.env`
+re-evaluates and breaks. Bug rediscovered 2026-06-17 §3 lesson #4.
+
+```bash
+cd /opt/ameli-app-template-dev
+set -a
+while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; value="${line#*=}"
+    [[ -z "$key" ]] && continue
+    declare "$key=$value"
+done < /etc/ameli-app-template-dev/app.env
+set +a
+export APP_CONFIG=/etc/ameli-app-template-dev/app.yaml
+export DJANGO_SETTINGS_MODULE=ameli_web.settings
+```
+
+Then run Django commands with `.venv/bin/python manage.py …` (the
+deploy's `manage.py` has no `+x` bit and the shell only exposes
+`python3`, never `python`).
+
 Five blocks, run sequentially, never skip:
 
 1. **Sync + reset** — `git fetch && reset --hard origin/dev`, snapshot

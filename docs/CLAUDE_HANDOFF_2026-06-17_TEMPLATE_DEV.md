@@ -101,6 +101,31 @@ Propiedades verificadas:
    isolation por transaccion de pytest-django NO garantiza
    no-leak de side-effects que dependen de timing/random/contadores
    — el reset explicito es obligatorio.
+4. **Re-aprendi la leccion del IFS dos veces en una sesion**. Al
+   intentar el wire test del item #9 en `ha-report2` propuse
+   primero `set -a; . /etc/ameli-app-template-dev/app.env; set +a`.
+   Bash fallo porque valores como
+   ``AMELI_APP_DJANGO_SECRET_KEY=...!fF)WqL...`` contienen `(` `)`
+   `!` que el shell re-evalua bajo `.` (source). El patron
+   canonico ya estaba documentado en
+   `CLAUDE_HANDOFF_2026-06-16` §8c — `while IFS= read -r line` con
+   `declare "$key=$value"` parsea literal sin re-evaluacion.
+   Tres fallas operacionales mas que estaban en la mismas
+   instrucciones y que NO le mire antes de armar el script:
+   - `manage.py` en `/opt/ameli-app-template-dev` no tiene bit
+     `+x` — invocarlo como argumento del intérprete
+     (`python manage.py`), no `./manage.py`.
+   - `python` no esta en el PATH del shell de root; el venv solo
+     expone `python3`. Usar `.venv/bin/python` directo —
+     evita depender de `source .venv/bin/activate` Y del nombre
+     del binario.
+   - El sub-shell del heredoc no hereda el venv del shell
+     interactivo, asi que mismo argumento: el binario directo
+     gana.
+   Lesson: antes de redactar un comando de wire test, abrir el
+   handoff del dia anterior y copiar el §"Cargar env" textual.
+   No re-derivar el patron desde memoria. Esto va a S-04 del
+   playbook.
 
 ### Item #7 — V12.4.1 AV scan
 
