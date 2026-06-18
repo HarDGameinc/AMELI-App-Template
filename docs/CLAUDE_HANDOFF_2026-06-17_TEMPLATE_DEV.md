@@ -188,6 +188,55 @@ Propiedades verificadas:
   GAP→PASS, totals 147/2 → 149/1, V7 +1 (7.1.1 ahora reflejado),
   V13 +1.
 
+### Wire validation 2026-06-17 — items #9 + #10
+
+Server `ha-report2` en `dev @ 6f7aad8` (post-#9). Patron canonico
+S-04 con ephemeral users (un PUB rol public, un ADM rol
+superadmin). Output completo:
+
+```
+=== fixtures ===
+pub.role='public' pub.is_staff=False pub.is_superuser=False
+adm.role='superadmin' adm.is_staff=True adm.is_superuser=True
+
+[A] anon -> /admin/  status=302 loc='/login/?next=/admin/'
+[B] pub  -> /admin/  status=302 loc='/profile/'
+[C] adm  -> /admin/  status=200
+[D] pub  -> /admin/users (json)  status=302 body=b''
+[E] pub  -> /media/avatars/<adm>.png  status=403
+
+=== cleanup OK ===
+```
+
+| Path | Got | Veredicto |
+|---|---|---|
+| A — anon -> /admin/ | 302 a `/login/?next=/admin/` | ✓ |
+| B — pub -> /admin/ | 302 a `/profile/` | ✓ |
+| C — adm -> /admin/ | 200 | ✓ |
+| D — pub -> /admin/users con Accept: application/json | 302 a `/profile/` (NO 403 JSON) | ✓ con caveat (ver finding) |
+| E — pub -> avatar de adm | 403 (IDOR gate `can_view_avatar`) | ✓ |
+
+**Invariante del modelo verificado en wire**: la `User.save()`
+mantiene `is_staff`/`is_superuser` sincronizados con `role` —
+ningun row del deploy puede tener un desync que mueva los gates.
+
+**Finding del wire** — path D revelo que el branch JSON del
+decorator `superadmin_required` (return `_json_error("admin
+access required", status=403)`) es CODIGO MUERTO para todas las
+URLs bajo `/admin/*` porque `AdminAccessAuditMiddleware`
+(`accounts/middleware.py:270`) corre ANTES que el view dispatch
+y siempre redirige con `redirect("accounts:profile")` sin
+consultar `Accept`. El decorator igual mantiene valor como
+defense-in-depth (si en el futuro el middleware se desactiva o
+se anade un endpoint con `@superadmin_required` fuera de
+`/admin/*`), pero hoy es path no alcanzable por el cliente.
+
+No es un bug introducido por #9 — comportamiento identico al
+pre-refactor. La expectativa de 403 JSON en el script del wire
+era incorrecta por modelo mental erroneo del chain de
+middleware. Documentado aca para que el proximo agente no
+re-derive la conclusion.
+
 ### Item #9 — V1.4.4 authz centralizada
 
 - **Qué**: nuevo `src/ameli_web/accounts/permissions.py` con 7
