@@ -21,7 +21,10 @@ def test_settings_summary_does_not_expose_token(app_settings):
 
     assert summary["app_slug"] == "ameli-app"
     assert "api_token" not in summary
-    assert summary["session_cookie_name"] == "ameli_app_session"
+    # ``session_cookie_name`` defaults to empty so ``settings.py`` can
+    # apply the ASVS V3.4.4 ``__Host-`` prefix policy outside dev.
+    # See ``src/ameli_app/config.py:206``.
+    assert summary["session_cookie_name"] == ""
 
 
 def test_django_database_settings_accepts_sqlalchemy_postgres_scheme(monkeypatch):

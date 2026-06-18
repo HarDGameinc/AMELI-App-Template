@@ -203,7 +203,10 @@ def load_settings(
         docs_enabled=_as_bool(os.getenv("AMELI_APP_DOCS_ENABLED", docs.get("enabled")), default=True),
         redoc_enabled=_as_bool(os.getenv("AMELI_APP_REDOC_ENABLED", docs.get("redoc_enabled")), default=True),
         admin_enabled=_as_bool(os.getenv("AMELI_APP_ADMIN_ENABLED", raw.get("features", {}).get("admin")), default=True),
-        session_cookie_name=os.getenv("AMELI_APP_SESSION_COOKIE_NAME", str(auth.get("session_cookie_name", "ameli_app_session"))),
+        # Empty default lets ``settings.py`` apply the ASVS V3.4.4
+        # ``__Host-`` prefix policy when the operator has not explicitly
+        # named the cookie. An explicit name (env or YAML) still wins.
+        session_cookie_name=os.getenv("AMELI_APP_SESSION_COOKIE_NAME", str(auth.get("session_cookie_name", ""))),
         session_cookie_secure=_as_bool(
             os.getenv("AMELI_APP_SESSION_COOKIE_SECURE", auth.get("session_cookie_secure")),
             default=False,

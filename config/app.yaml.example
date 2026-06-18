@@ -12,7 +12,12 @@ api:
 
 auth:
   enabled: true
-  session_cookie_name: "ameli_app_session"
+  # Leave session_cookie_name empty (or omit it) to let the template
+  # apply the ASVS V3.4.4 ``__Host-`` prefix policy automatically
+  # outside dev. Set it explicitly only if your deploy needs a legacy
+  # name (reverse proxy strips ``__Host-``, bookmarks pinned to a
+  # specific name, etc.).
+  session_cookie_name: ""
   session_cookie_secure: false
   session_max_age_seconds: 43200
   # When true, every authenticated request renews the cookie expiry, so
