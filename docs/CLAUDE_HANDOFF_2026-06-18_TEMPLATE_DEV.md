@@ -112,6 +112,41 @@ cutoff = (timezone.now() - timedelta(days=7)).date().isoformat()
 queryset = filtered_audit_queryset(action="login", date_to=cutoff)
 ```
 
+### Leccion incorporada (item #14) — `pyproject.toml` vs `requirements.txt`
+
+El primer commit del item #14 (`8726411`) prendio CI rojo en
+ambos jobs (3.11 + 3.12) con 405 errors al import:
+``No module named 'argon2'``. Root cause:
+
+- `pyproject.toml` `[project].dependencies` listaba
+  `argon2-cffi>=23.1.0`.
+- `requirements.txt` NO lo listaba (drift historico).
+- Pre-#14 el CI corria `pip install -r requirements.txt && pip
+  install -e .` — el `pip install -e .` resolvia los deps del
+  pyproject incluyendo argon2-cffi.
+- Post-#14 el `pip install -e . --no-deps` (necesario porque
+  --require-hashes prohibe re-resolver) ya no traia los deps
+  del pyproject. Lock generado desde requirements.txt no tenia
+  argon2-cffi. Resultado: ConfigurableArgon2Hasher rompe el
+  import.
+
+Fix en `ee5605b`: (a) agregar `argon2-cffi` a requirements.txt,
+(b) regenerar lock, (c) **test guard nuevo**
+`test_pyproject_runtime_deps_are_subset_of_requirements_txt`
+que falla rapido si alguien agrega un dep a pyproject sin
+mirrorearlo en requirements.txt. La invariante "pyproject es
+metadata, requirements.txt es la verdad de install" queda
+codificada en CI.
+
+Leccion para el playbook: **al cambiar la fuente de
+instalacion** (de `.txt` a `.lock` con `--require-hashes`),
+**hay que auditar la diferencia entre el viejo y nuevo set de
+deps instalados**. El `pip freeze` antes/despues del cambio
+hubiera caught esto sin necesidad de un round-trip de CI rojo.
+Patron: en un PR que mueva el install path, agregar un step
+explicito que ejecute `pip freeze | diff` contra el resultado
+del install viejo.
+
 ### Leccion incorporada — diagnostico de CI rojo
 
 Ayer asumi "es flake TZ" sin abrir un solo log de CI. La causa
