@@ -15,6 +15,12 @@
 # the deploy (ASVS V14.2.3). Bumping a range here without
 # regenerating the lock will fail CI on the hash mismatch.
 alembic>=1.13,<3
+# argon2-cffi provides ``ConfigurableArgon2Hasher`` (Django password
+# hasher); missing it causes the entire test suite to fail at import.
+# Listed both here and in ``pyproject.toml`` `[project].dependencies`
+# — keep them in sync; the test in tests/test_lockfile_hashes.py
+# pins the contract.
+argon2-cffi>=23.1,<25
 # cryptography backs the Fernet wrapper used for ``mfa_secret`` at-rest
 # encryption (ASVS V2.8). Lower bound 48.0.1 lands a CVE-clean floor
 # (PYSEC-2026-35/36, CVE-2026-26007, GHSA-537c-gmf6-5ccf all resolved

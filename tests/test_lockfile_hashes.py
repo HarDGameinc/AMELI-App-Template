@@ -188,3 +188,42 @@ def test_pip_tools_in_dev_deps():
     dev = _read("requirements-dev.txt")
     assert re.search(r"^pip-tools\b", dev, re.MULTILINE), \
         "pip-tools not in requirements-dev.txt; contributors cannot refresh the lock"
+
+
+# ---------------------------------------------------------------------------
+# pyproject.toml [project].dependencies stays in sync with
+# requirements.txt — otherwise CI installs only what is in the lock
+# (which is built FROM requirements.txt), the pyproject deps are
+# silently missing, and the entire suite blows up at import time.
+# This is exactly the regression that took down CI #75 (8726411):
+# argon2-cffi was in pyproject but not in requirements.txt and the
+# lockfile-based install skipped it.
+# ---------------------------------------------------------------------------
+
+def _pyproject_runtime_packages() -> set[str]:
+    """Extract top-level package names from the pyproject.toml
+    ``[project].dependencies`` list. tomllib stdlib-only on 3.11+.
+    """
+    import tomllib
+
+    raw = tomllib.loads(_read("pyproject.toml"))
+    deps = raw.get("project", {}).get("dependencies", [])
+    names: set[str] = set()
+    for spec in deps:
+        match = re.match(r"^([A-Za-z0-9][A-Za-z0-9_.-]*)", spec)
+        if match:
+            names.add(match.group(1).lower().replace("_", "-"))
+    return names
+
+
+def test_pyproject_runtime_deps_are_subset_of_requirements_txt():
+    py = _pyproject_runtime_packages()
+    txt = _toplevel_packages(_read("requirements.txt"))
+    missing = py - txt
+    assert not missing, (
+        f"pyproject.toml [project].dependencies includes packages not "
+        f"in requirements.txt: {sorted(missing)}. Add them to "
+        f"requirements.txt and regenerate requirements.lock — "
+        f"otherwise CI installs from the lock and silently drops these "
+        f"deps, breaking the suite at import time."
+    )
