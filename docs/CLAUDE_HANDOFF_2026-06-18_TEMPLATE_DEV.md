@@ -38,7 +38,81 @@ NO promover a main hasta ver el run verde post-fix.
 | `ee5605b` | Hotfix #14 — argon2-cffi missing en requirements.txt + sync-guard test | 847 → 848 (+1) |
 | `d4fd8d2` | Doc leccion del #14 hotfix en handoff §3 | suite stays green |
 | — | Promote `dev → main` (`702f82c..d4fd8d2`, 4 commits) — CI #76+#77 verde | suite stays green |
-| `<this>` | Item #20 — `manage.py` auto-load APP_CONFIG + app.env (IFS-safe) | 848 → 862 (+14) |
+| `b3688ba` | Item #20 — `manage.py` auto-load APP_CONFIG + app.env (IFS-safe) | 848 → 862 (+14) |
+| `1e03264` | #20 wire-fix — slug from dir name first, pyproject second | 862 → 863 (+1) |
+| — | Promote `dev → main` (`d4fd8d2..1e03264`, 3 commits) — CI #79+#80 verde | suite stays green |
+
+### Wire validation 2026-06-18 — items #14 + #20
+
+Server `ha-report2`, branch `dev @ 1e03264` (post-slug-fix).
+
+**Item #14 — `--require-hashes` install**:
+
+```
+.venv/bin/python -m pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+exit=0
+```
+
+14 paquetes se downgrade-aron para matchear el lock (argon2-cffi
+25.1→23.1, pyotp 2.9→2.10, pillow 11.3→12.2, sqlalchemy
+2.0.50→2.0.51, etc.). Exit 0 confirma que CADA wheel
+descargado matcheo su sha256 del lock. Un wheel rotado en PyPI
+con hash distinto hubiera salido non-zero con "THESE PACKAGES
+DO NOT MATCH THE HASHES". Verificacion del comportamiento de
+proteccion exactamente como diseñado.
+
+Smoke de imports posterior: ``import argon2, cryptography,
+django, psycopg, qrcode`` → ``imports OK``. Sin
+``ConfigurableArgon2Hasher`` errors (el bug que el hotfix
+`ee5605b` cerro).
+
+**Item #20 — autodetect APP_CONFIG + app.env**:
+
+Primer intento (commit `b3688ba`, slug solo de pyproject):
+
+```
+APP_CONFIG resuelto -> /opt/ameli-app-template-dev/config/app.yaml.example
+db backend         -> django.db.backends.sqlite3
+```
+
+Falla — la autodetección probó `/etc/ameli-app-template/app.yaml`
+(pyproject `[project].name = ameli-app-template`) que no existe;
+el deploy real es `/etc/ameli-app-template-**dev**/app.yaml`.
+Fall-back al example yaml → SQLite. **Wire test atrapo lo que
+los unit tests no podian: la mismatch entre slug canonico y
+slug de instancia**.
+
+Fix en `1e03264` — slug del directorio primero
+(`/opt/<slug>/` ↔ `/etc/<slug>/` convencion):
+
+```
+APP_CONFIG resuelto -> /etc/ameli-app-template-dev/app.yaml
+app_name           -> AMELI App Template
+environment        -> dev
+DJANGO_SECRET_KEY  -> <set>      (parsed from /etc/.../app.env, IFS-safe)
+db backend         -> django.db.backends.postgresql
+```
+
+Wire test #20 confirmado verde. No mas
+``export APP_CONFIG=/etc/...`` ni
+``set -a; while IFS= read``: ``python manage.py shell`` es
+plug-and-play en el deploy.
+
+### Finding del wire — upstream tracking del repo deploy
+
+Antes del fix `1e03264`, el wire test inicial tenia el server
+en `git pull --ff-only` que decia "Ya está actualizado" cuando
+en realidad local `dev` estaba en `d4fd8d2` y `origin/dev`
+estaba en `1e03264`. Recovery necesito
+`git fetch origin && git reset --hard origin/dev`. Posibles
+causas: (a) tracking de `dev` apuntando a otro upstream, (b)
+estado del checkout que pull ff-only no resuelve sin la fuerza.
+
+NO es bug del template; es **deploy hygiene del server**. Lo
+anoto aca para el proximo wire test: si el server muestra
+"Ya está actualizado" pero el commit no avanzo, el patron de
+recovery es `reset --hard origin/dev`. El item operacional #16
+(doc drift) deberia agregar esto al runbook S-04.
 
 ### Item #14 — V14.2.3 lockfile con hashes
 
