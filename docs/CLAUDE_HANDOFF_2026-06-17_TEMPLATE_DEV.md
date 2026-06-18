@@ -45,7 +45,8 @@ roadmap sin esfuerzo arquitectural.
 | `a1fe164` | Item #12 — ASVS V3.4.4 `__Host-` cookie prefix (session + CSRF) | 776 → 782 (+6) |
 | `e84f57a` | Item #11 — ASVS V5.5.1 MESSAGE_STORAGE allow-list boot guard + wire evidence for #12 | 782 → 787 (+5) |
 | `8bde7c0` | Item #13 — ASVS V7.1.1 RedactingFilter for PII in logs | 787 → 801 (+14) |
-| `<this>` | Item #10 — ASVS V13.2.2 OpenAPI contract test + response schemas | 801 → 810 (+9) |
+| `e7e3653` | Item #10 — ASVS V13.2.2 OpenAPI contract test + response schemas | 801 → 810 (+9) |
+| `<this>` | Item #9 — ASVS V1.4.4 authz centralised in `accounts/permissions.py` | 810 → 837 (+27) |
 
 ### Wire validation 2026-06-17 — item #7
 
@@ -161,6 +162,48 @@ Propiedades verificadas:
 - **Doc**: `COMPLIANCE_ASVS_L2_2026-06-16.md` V13.2.2 promovido
   GAP→PASS, totals 147/2 → 149/1, V7 +1 (7.1.1 ahora reflejado),
   V13 +1.
+
+### Item #9 — V1.4.4 authz centralizada
+
+- **Qué**: nuevo `src/ameli_web/accounts/permissions.py` con 7
+  predicados — `is_authenticated`, `is_superadmin`,
+  `can_access_admin_panel`, `can_view_avatar`,
+  `is_protected_account`, `can_delete_user`, `can_self_delete`.
+  Toda decisión de autorización en el codebase ahora rutea por
+  estos predicados. Los callsites migrados:
+  - `admin_views.py:superadmin_required` decorator.
+  - `accounts/middleware.py` × 3 (admin redirect,
+    DjangoAdminSudoGate, maintenance-mode bypass).
+  - `accounts/context_processors.py` (`can_access_admin` para
+    templates).
+  - `accounts/views.py` × 2 (profile + admin context).
+  - `urls.py:_authenticated_media` (IDOR avatar gate).
+  - `accounts/services.py` × 2 (delete_user + self_delete).
+- **Por qué**: ASVS V1.4.4 "single vetted access-control
+  mechanism". Antes cada callsite re-derivaba la decisión desde
+  los flags raw de Django (`is_staff`, `is_superuser`,
+  `role == ROLE_SUPERADMIN`); un refactor que desincronizase los
+  flags del rol semántico habría desplazado los gates en
+  silencio. Ahora hay un único punto de cambio: si mañana entra
+  un `ROLE_OPERATOR` intermedio, solo `permissions.py` se toca.
+- **Source of truth**: el predicado lee `user.role`, NO
+  `is_staff`. El invariante de `User.save()` mantiene los flags
+  Django en sync, pero el predicado no los consulta —
+  `test_is_superadmin_does_not_trust_is_staff_alone` pin del
+  comportamiento.
+- **Lazy import**: `permissions.py` hace `from
+  ameli_web.accounts.models import User` adentro de cada predicado
+  porque el módulo se importa muy temprano (middleware, context
+  processor) y un import top-level del modelo causa
+  AppConfig-not-ready en algunos paths de test.
+- **Tests**: 27 en `tests/test_permissions.py` cubriendo la
+  truth table completa de cada predicado + 2 integration tests
+  contra ORM real (`@pytest.mark.django_db`). Suite: 810 → 837
+  passed.
+- **Doc**: COMPLIANCE V1.4.4 GAP→PASS, V1 chapter 10/1 → 11/0,
+  totales 149/1 → 150/0 (el último GAP strict roadmap-tracked
+  cerrado; los 3 GAPs restantes en detalle — 11.1.5, 13.1.5,
+  14.2.3 — son acceptable-residual + item #14 supply-chain).
 
 ## §4. Decisiones tomadas
 

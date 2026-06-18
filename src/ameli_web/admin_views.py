@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from ameli_app import __version__
 from ameli_web.accounts.models import User, UserSession
+from ameli_web.accounts.permissions import can_access_admin_panel
 from ameli_web.accounts.services import (
     admin_disable_mfa_for_user,
     change_password_for_user,
@@ -79,7 +80,7 @@ def superadmin_required(view_func):
             if _expects_json(request):
                 return _json_error("authentication required", status=401)
             return redirect(f"/login/?next={request.path}")
-        if not user.is_staff:
+        if not can_access_admin_panel(user):
             if _expects_json(request):
                 return _json_error("admin access required", status=403)
             return redirect("/profile/")

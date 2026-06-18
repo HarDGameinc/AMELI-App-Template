@@ -19,7 +19,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 
 | Chapter | PASS | GAP | N/A | DEFERRED | Δ vs 2026-06-15 |
 | --- | ---: | ---: | ---: | ---: | --- |
-| V1 Architecture, design and threat modelling | 10 | 1 | 0 | 2 | +4 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1) |
+| V1 Architecture, design and threat modelling | 11 | 0 | 0 | 2 | +5 PASS (1.1.1, 1.1.2, 1.5.x, 1.6.1, 1.4.4 closed 2026-06-17) |
 | V2 Authentication | 21 | 0 | 1 | 0 | +2 PASS (2.8.x and 2.2.3 closed 2026-06-16) |
 | V3 Session management | 17 | 0 | 0 | 0 | +1 PASS (3.4.4 closed 2026-06-17) |
 | V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
@@ -33,7 +33,7 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
 | V13 API and web service | 7 | 1 | 4 | 0 | +1 PASS (13.2.2 closed 2026-06-17) |
 | V14 Configuration | 23 | 0 | 0 | 3 | +3 PASS (14.2.1, 14.2.2, 14.4.5 closed; 14.2.2 promoted to full PASS 2026-06-17) |
-| **Total** | **149** | **1** | **9** | **9** | — |
+| **Total** | **150** | **0** | **9** | **9** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -100,7 +100,7 @@ No control regressed.
 | 1.1.3-1.1.7 | User stories / SDLC artefacts | DEFERRED | Operator concern. Note in `AGENTS.md`. |
 | 1.2.1-1.2.4 | Auth architecture: unique low-priv accts, short-lived tokens | PASS | Roles `superadmin`/`public` in `models.py`; admin write paths require sudo grant — `admin_views.py:91` `sudo_required`. |
 | 1.4.1 | Trusted enforcement layer | PASS | Middleware chain in `settings.py:155-171` enforces auth, sudo, maintenance, CSP. |
-| 1.4.4 | Single vetted access-control mechanism | **GAP** | Authorization decisions remain scattered across `@login_required`, `is_staff`, `is_superuser`, `sudo_required`, `user.role == ROLE_SUPERADMIN`. Suggested fix: centralise in `accounts/permissions.py`. Roadmap item #9. |
+| 1.4.4 | Single vetted access-control mechanism | **PASS** | `accounts/permissions.py` is the single source of truth for `is_authenticated`, `is_superadmin`, `can_access_admin_panel`, `can_view_avatar`, `is_protected_account`, `can_delete_user`, `can_self_delete`. All callsites in `admin_views.py`, `accounts/middleware.py`, `accounts/context_processors.py`, `accounts/views.py`, `urls.py` and `accounts/services.py` route through these predicates — no `is_staff` / `is_superuser` / `role == ROLE_SUPERADMIN` checks remain outside the model invariant in `User.save()` and the admin list_display. `tests/test_permissions.py` pins the truth table (27 tests). Roadmap item #9 closed 2026-06-17. |
 | 1.5.1-1.5.4 | Input/output trust boundaries documented | **PASS** | `docs/THREAT_MODEL.md` §2 diagram + §3 STRIDE table per boundary covers the L2 requirement; data-flow diagram per request type would lift to PASS+. |
 | 1.6.1 | Crypto key management policy documented | **PASS** | `docs/SECURITY.md` §"Cryptographic key custody" covers all three classes (SECRET_KEY, AUDIT_HMAC_KEY, BACKUP_GPG_RECIPIENT) with cadence + rotation procedure. |
 | 1.8.1-1.8.2 | Data classification | DEFERRED | Operator/data-owner concern. |
@@ -366,7 +366,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 6 | **10.1.1 / 5.2.8** no SAST/SSRF lint | S | **closed-2026-06-16** | Ruff `S` ruleset + bandit `-ll -ii` in CI, hard-fail. Triaged baseline annotated. |
 | 7 | **12.4.1** no AV scan on uploads | M | **closed-2026-06-17** | `accounts/av.py` clamd-TCP + HTTP transports, opt-in via `AMELI_APP_AV_ENDPOINT`. Fail-open with audit on outage; reject + audit on INFECTED. |
 | 8 | **7.4.1** no custom 404/500 handlers | S | **closed-2026-06-17** | `error_views.py` + `error_generic.html` + `handler400/403/404/500` registered in urls.py. Bullet-proof fallback when template loader is broken. |
-| 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |
+| 9 | **1.4.4** authz scattered | M | **closed-2026-06-17** | `accounts/permissions.py` centralises 7 predicates; all callsites migrated; 27 tests pin the truth table. |
 | 10 | **13.2.2** OpenAPI doc hand-written | S | **closed-2026-06-17** | `_openapi_schema` now declares response shapes; `tests/test_openapi_contract.py` validates doc↔reality both directions (URL-conf walk catches undocumented public JSON endpoints). |
 | 11 | **5.5.1** pickle-storage of messages possible | S | **closed-2026-06-17** | Boot guard on `MESSAGE_STORAGE` with 3-element allow-list (session/cookie/fallback). |
 | 12 | **3.4.4** `__Host-` prefix not enforced | S | **closed-2026-06-17** | Default `SESSION_COOKIE_NAME = "__Host-ameli_app_session"` + `CSRF_COOKIE_NAME = "__Host-ameli_csrf"` outside dev; boot guards refuse Secure=False / Domain set; operator override via env still wins. |

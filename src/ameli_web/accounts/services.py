@@ -1460,10 +1460,12 @@ def update_user_account(actor_username: str, username: str, *, password: str | N
 
 
 def delete_user_account(actor_username: str, username: str) -> dict[str, Any]:
+    from .permissions import is_protected_account
+
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
-    if user.role == User.ROLE_SUPERADMIN:
+    if is_protected_account(user):
         raise ValueError("superadmin cannot be deleted")
     actor = User.objects.filter(username__iexact=actor_username).first()
     record_audit("delete_user", actor=actor, target_username=user.username, payload={})
@@ -3699,9 +3701,11 @@ def delete_my_account(*, user, password: str) -> dict[str, Any]:
     superadmin first and then run the CLI prune. This avoids the
     lockout where the only operator deletes themselves.
     """
-    if not (user and user.is_authenticated):
+    from .permissions import can_self_delete, is_authenticated
+
+    if not is_authenticated(user):
         raise ValueError("autenticacion requerida")
-    if user.role == User.ROLE_SUPERADMIN:
+    if not can_self_delete(user):
         raise ValueError(
             "los superadmin no pueden auto-eliminarse; promove a otro "
             "superadmin y usa el CLI"

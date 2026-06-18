@@ -151,16 +151,16 @@ def _authenticated_media(request, path):
     through this view first; the view's verdict is the authoritative
     one.
     """
+    from ameli_web.accounts.permissions import can_view_avatar, is_authenticated
+
     user = getattr(request, "user", None)
-    if not (user and user.is_authenticated):
+    if not is_authenticated(user):
         return HttpResponseForbidden("authentication required")
     parsed = _parse_avatar_filename(path)
     if parsed is not None:
         safe_username, _token = parsed
         requester_slug = _safe_username_slug(user.username)
-        is_owner = requester_slug == safe_username
-        is_admin = bool(getattr(user, "is_staff", False))
-        if not (is_owner or is_admin):
+        if not can_view_avatar(user, owner_slug=safe_username, requester_slug=requester_slug):
             # Deliberate: audit the OWNER's slug as the target so the
             # audit chain answers "who was probed?" rather than just
             # "who probed?". The requester is captured by ``actor``.

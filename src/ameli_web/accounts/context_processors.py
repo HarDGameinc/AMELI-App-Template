@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 
+from .permissions import can_access_admin_panel
 from .services import serialize_user
 
 
@@ -16,7 +17,7 @@ def account_navigation(request):
     return {
         "current_user": current_user,
         "active_theme": active_theme,
-        "can_access_admin": bool(getattr(user, "is_authenticated", False) and user.is_staff),
+        "can_access_admin": can_access_admin_panel(user),
         "app_name": settings.CFG.app_name,
         "docs_enabled": settings.CFG.docs_enabled,
         "redoc_enabled": settings.CFG.redoc_enabled,

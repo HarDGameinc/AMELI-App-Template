@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 
+from .permissions import can_access_admin_panel, is_authenticated, is_superadmin
 from .services import record_audit, sync_request_session
 
 
@@ -272,7 +273,7 @@ class AdminAccessAuditMiddleware:
 
     def __call__(self, request):
         path = request.path
-        if path.startswith("/admin") and request.user.is_authenticated and not request.user.is_staff:
+        if path.startswith("/admin") and is_authenticated(request.user) and not can_access_admin_panel(request.user):
             record_audit(
                 "admin_access_denied",
                 actor=request.user,
@@ -308,7 +309,7 @@ class DjangoAdminSudoGateMiddleware:
         if not request.path.startswith(self._PREFIX):
             return self.get_response(request)
         user = getattr(request, "user", None)
-        if user is None or not user.is_authenticated or not user.is_staff:
+        if not is_superadmin(user):
             return self.get_response(request)
         from .services import session_in_sudo
 
@@ -381,7 +382,7 @@ class MaintenanceModeMiddleware:
         if any(request.path.startswith(p) for p in self.BYPASS_PREFIXES):
             return self.get_response(request)
         user = getattr(request, "user", None)
-        if user is not None and getattr(user, "is_authenticated", False) and getattr(user, "is_staff", False):
+        if is_superadmin(user):
             return self.get_response(request)
         payload = {
             "ok": False,

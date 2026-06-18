@@ -28,6 +28,7 @@ from .forms import (
     TemplateAuthenticationForm,
 )
 from .models import MFAEmailChallenge, UserSession
+from .permissions import can_access_admin_panel
 from .services import (
     change_password_for_user,
     complete_password_reset,
@@ -264,7 +265,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
     context = {
         "version": __version__,
         "current_user": user_payload,
-        "can_access_admin": request.user.is_staff,
+        "can_access_admin": can_access_admin_panel(request.user),
         "current_session": current_session,
         "user_sessions": sessions_page.items,
         "session_pagination": sessions_page.as_context(
@@ -600,7 +601,7 @@ def admin_session_json(request: HttpRequest) -> JsonResponse:
         "auth_mode": "session",
         "csrf_token": get_token(request),
         "user": serialize_user(request.user),
-        "can_access_admin": request.user.is_staff,
+        "can_access_admin": can_access_admin_panel(request.user),
     }
     return JsonResponse(payload)
 
