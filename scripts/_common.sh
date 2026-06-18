@@ -86,6 +86,8 @@ ALL_UNIT_SUFFIXES=(
   "notifier.service"
   "maintenance.service"
   "maintenance.timer"
+  "backup.service"
+  "backup.timer"
 )
 
 log() {
@@ -375,6 +377,15 @@ resolve_systemd_profile() {
       fail "APP_SYSTEMD_PROFILE invalido: ${APP_SYSTEMD_PROFILE}"
       ;;
   esac
+
+  # Every profile gets the backup timer. The backup is a
+  # cross-cutting OPS concern, not tied to any particular runtime
+  # role (api/web/worker). The timer is idempotent: re-enabling it
+  # on an instance that already has it is a no-op. Skipping the
+  # backup is an explicit operator choice (``systemctl disable
+  # ${UNIT_PREFIX}-backup.timer``) and is documented in
+  # docs/OPERATIONS.md.
+  ENABLED_TIMER_UNITS+=("$(timer_unit_name backup)")
 }
 
 enable_selected_units() {

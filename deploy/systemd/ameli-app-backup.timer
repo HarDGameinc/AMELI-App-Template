@@ -1,0 +1,16 @@
+[Unit]
+Description=Run __APP_NAME__ [__APP_ENV__] backup daily
+
+[Timer]
+# 04:10 local time — after the 03:20 maintenance run finishes
+# its purge sweep so the backup captures the post-purge state.
+# RandomizedDelaySec spreads multi-instance hosts (ha-report2
+# runs both dev and prod) so two backups never contend for
+# pg_dump at the same second.
+OnCalendar=*-*-* 04:10:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=__UNIT_PREFIX__-backup.service
+
+[Install]
+WantedBy=timers.target

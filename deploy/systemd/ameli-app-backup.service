@@ -1,0 +1,36 @@
+[Unit]
+Description=__APP_NAME__ [__APP_ENV__] Backup
+Documentation=file:__APP_DIR__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Backup runs as root because scripts/backup.sh:30 calls
+# ``require_root`` — it must read /etc/<instance>/app.env (mode
+# 0640 root:<instance>), pg_dump from a Postgres connection
+# typically gated by peer-auth as postgres superuser, and tar
+# the data dir which may include files chmod 640 owned by the
+# app user. Refactoring backup.sh to drop privileges is out of
+# scope for the timer rollout; tracked under roadmap #19 along
+# with the PG TCP/role decision.
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=__APP_DIR__
+Environment=PYTHONUNBUFFERED=1
+Environment=APP_ENV=__APP_ENV__
+EnvironmentFile=-__ENV_FILE__
+Environment=APP_CONFIG=__CONFIG_FILE__
+# Operators tighten retention or enable encryption per-instance
+# via /etc/<instance>/app.env (AMELI_APP_BACKUP_RETENTION_DAYS,
+# AMELI_APP_BACKUP_GPG_RECIPIENT). The defaults baked into
+# backup.sh keep working without any /etc edits.
+ExecStart=__APP_DIR__/scripts/backup.sh
+# Loosen the hardening that other services use — backup.sh
+# needs to read system paths (Postgres socket, /var, /etc) and
+# write the encrypted archive to BACKUP_DIR. Keeping
+# NoNewPrivileges + PrivateTmp + ProtectHome still narrows the
+# blast radius if pg_dump or gpg is ever exploited.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

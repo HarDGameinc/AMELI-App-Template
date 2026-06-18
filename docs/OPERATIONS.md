@@ -215,6 +215,83 @@ dir, validates every `sha256sum` from the manifest, then exits 0.
 Schedule it weekly so a silently-corrupt backup gets caught before
 you need to restore in anger.
 
+### Automated nightly backup via systemd (roadmap #18)
+
+The template ships `deploy/systemd/ameli-app-backup.{service,timer}`.
+`scripts/install.sh` renders the placeholders and registers the
+timer in every supported profile (`api-worker-maintenance`,
+`api-web`, `api-web-worker-maintenance`, `web-worker`,
+`web-capture`, `api-web-capture`,
+`api-capture-notifier-maintenance`). After a fresh install:
+
+```bash
+systemctl status ${UNIT_PREFIX}-backup.timer
+# -> active (waiting), next: <today or tomorrow> 04:10:00
+systemctl list-timers '*-backup.timer'
+```
+
+Schedule: daily at `04:10` local time + a 0-120s
+`RandomizedDelaySec` jitter so multiple instances on the same host
+(e.g. `ameli-app-template-dev` + `*-prod`) never contend for
+`pg_dump`. The 04:10 slot sits after the 03:20 maintenance run so
+the archive captures the post-purge state.
+
+The unit runs as `root` because `scripts/backup.sh` needs to:
+- read `/etc/<instance>/app.env` (mode `0640 root:<instance>`)
+- read the data dir which may include files owned by the app user
+- run `pg_dump` against the connection string declared in
+  `DATABASE_URL`
+
+Run an out-of-schedule backup at any time with
+`systemctl start ${UNIT_PREFIX}-backup.service`. Disable
+permanently (e.g. on a host with a different backup orchestrator)
+with `systemctl disable --now ${UNIT_PREFIX}-backup.timer`.
+
+### Postgres connectivity for backup (roadmap #19)
+
+`backup.sh` uses `DATABASE_URL` to invoke `pg_dump`. Two patterns
+work; pick one **before** enabling the timer on a Postgres deploy:
+
+**Recommended — Postgres listens on `127.0.0.1:5432` with password
+auth for the app user**. The connection string in `app.env`
+already encodes the credential, so the same `DATABASE_URL` works
+for Django at runtime AND for `pg_dump` invoked by the timer:
+
+```
+# /etc/postgresql/<ver>/main/postgresql.conf
+listen_addresses = 'localhost'
+
+# /etc/postgresql/<ver>/main/pg_hba.conf  — TCP loopback only
+host  <db>  <app_user>  127.0.0.1/32  scram-sha-256
+host  <db>  <app_user>  ::1/128       scram-sha-256
+
+# /etc/<instance>/app.env
+AMELI_APP_DATABASE_URL=postgresql://<app_user>:<pwd>@127.0.0.1:5432/<db>
+```
+
+No Unix-socket auth is needed; `pg_dump` connects via TCP using
+the password baked into `DATABASE_URL`. The credential never
+leaves the host (no `listen_addresses = '*'`), so the attack
+surface is the same as the socket path while making the
+single-shared-connection-string semantics easy to reason about.
+
+**Alternative — keep socket auth, but grant the deploy user a PG
+role**. Useful when policy bars opening TCP on the DB host. The
+`DATABASE_URL` then needs a host-less form
+(`postgresql:///<db>?user=<app_user>`) and `backup.sh` must
+either:
+
+1. run `pg_dump` via `sudo -u postgres pg_dump ...` (which means
+   wrapping the call site, since `DATABASE_URL` alone won't
+   redirect `pg_dump` through `sudo`), OR
+2. expose an OS user that matches the PG role name AND grant peer
+   auth to that user (and the systemd unit would run as that
+   user, not root — at which point the unit can no longer read
+   `/etc/<instance>/app.env`).
+
+Option 1 is a backup-script refactor; option 2 forks the unit. The
+TCP-localhost recommendation avoids both.
+
 ## Outbound email retry queue (#3)
 
 Flows that can tolerate eventual delivery (password reset emails,
