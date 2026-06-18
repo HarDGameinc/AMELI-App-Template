@@ -33,18 +33,33 @@ manage = importlib.import_module("manage")
 # _project_slug
 # ---------------------------------------------------------------------------
 
-def test_project_slug_reads_pyproject_name():
-    assert manage._project_slug(ROOT) == "ameli-app-template"
+def test_candidate_slugs_lists_dirname_then_pyproject_name(tmp_path):
+    # Set up a checkout-like dir whose name differs from pyproject name.
+    inst = tmp_path / "ameli-app-template-dev"
+    inst.mkdir()
+    (inst / "pyproject.toml").write_text('[project]\nname = "ameli-app-template"\n')
+    slugs = manage._candidate_slugs(inst)
+    assert slugs == ["ameli-app-template-dev", "ameli-app-template"]
 
 
-def test_project_slug_falls_back_to_dirname_when_pyproject_missing(tmp_path):
-    # Empty dir with no pyproject — slug = dir name.
-    assert manage._project_slug(tmp_path) == tmp_path.name
+def test_candidate_slugs_dedupes_when_dirname_matches_pyproject(tmp_path):
+    inst = tmp_path / "ameli-app-template"
+    inst.mkdir()
+    (inst / "pyproject.toml").write_text('[project]\nname = "ameli-app-template"\n')
+    slugs = manage._candidate_slugs(inst)
+    assert slugs == ["ameli-app-template"]
 
 
-def test_project_slug_falls_back_when_pyproject_invalid(tmp_path):
+def test_candidate_slugs_falls_back_to_dirname_when_pyproject_missing(tmp_path):
+    # Empty dir with no pyproject — slug = dir name only.
+    slugs = manage._candidate_slugs(tmp_path)
+    assert slugs == [tmp_path.name]
+
+
+def test_candidate_slugs_falls_back_when_pyproject_invalid(tmp_path):
     (tmp_path / "pyproject.toml").write_text("not = valid = toml = here")
-    assert manage._project_slug(tmp_path) == tmp_path.name
+    slugs = manage._candidate_slugs(tmp_path)
+    assert slugs == [tmp_path.name]
 
 
 # ---------------------------------------------------------------------------

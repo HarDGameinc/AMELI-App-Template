@@ -7,21 +7,34 @@ import tomllib
 from pathlib import Path
 
 
-def _project_slug(project_root: Path) -> str:
-    """Read ``[project].name`` out of pyproject.toml. Falls back to
-    the directory name if pyproject is unreadable so an in-place
-    rename of the checkout does not break the auto-discovery.
+def _candidate_slugs(project_root: Path) -> list[str]:
+    """Return the slugs we should probe under ``/etc/<slug>/``, in
+    priority order.
+
+    The deploy convention puts code at ``/opt/<slug>/`` and config
+    at ``/etc/<slug>/`` — both share the same slug. A multi-instance
+    host (``ameli-app-template-dev``, ``ameli-app-template-prod``)
+    sets the slug per-instance via the directory name. The pyproject
+    ``[project].name`` is the source slug (no instance suffix), used
+    as a fallback for fresh clones that mirror the canonical name.
+
+    Order: directory name first (matches the live deploy 1:1),
+    pyproject name second (catches the un-suffixed dev checkout).
+    Duplicates collapsed.
     """
+    out: list[str] = []
+    out.append(project_root.name)
+
     pyproject = project_root / "pyproject.toml"
     if pyproject.is_file():
         try:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             name = data.get("project", {}).get("name")
-            if name:
-                return str(name)
+            if name and name not in out:
+                out.append(str(name))
         except (tomllib.TOMLDecodeError, OSError):
             pass
-    return project_root.name
+    return out
 
 
 def _load_env_file_safe(env_path: Path) -> None:
@@ -84,12 +97,13 @@ def _autodetect_app_config(project_root: Path) -> None:
             _load_env_file_safe(explicit_path.parent / "app.env")
         return
 
-    slug = _project_slug(project_root)
-    candidates = [
-        Path(f"/etc/{slug}/app.yaml"),
+    candidates: list[Path] = []
+    for slug in _candidate_slugs(project_root):
+        candidates.append(Path(f"/etc/{slug}/app.yaml"))
+    candidates.extend([
         project_root / "config" / "app.yaml",
         project_root / "config" / "app.yaml.example",
-    ]
+    ])
     for candidate in candidates:
         if candidate.is_file():
             os.environ["APP_CONFIG"] = str(candidate)
