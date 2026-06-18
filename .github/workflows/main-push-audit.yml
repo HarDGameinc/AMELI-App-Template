@@ -1,0 +1,53 @@
+name: Main push audit
+
+on:
+  push:
+    branches: [main]
+
+# Surface direct pushes to ``main`` that did NOT come through a
+# merge commit (i.e. did not arrive via a PR). The job posts a
+# warning step that is greppable in the Actions log and exits 0
+# so it does not block the next CI lap. Useful on private + free
+# plan repos where server-side branch protection is not enforced
+# -- this is the audit-log substitute.
+#
+# A push that DID come through a PR carries a merge commit whose
+# title typically reads "Merge pull request #N from ..." or is
+# detected via the merge_commit_sha field on the PR. We use the
+# simpler heuristic: if HEAD has two parents, it is a merge
+# commit; if it has one, it is a direct push.
+
+jobs:
+  audit:
+    name: Audit direct pushes to main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Detect direct push
+        run: |
+          set -e
+          parents="$(git rev-list --parents -n 1 HEAD | wc -w)"
+          author="$(git log -1 --pretty='%an <%ae>' HEAD)"
+          subject="$(git log -1 --pretty='%s' HEAD)"
+          sha="$(git rev-parse HEAD)"
+
+          # parents count: SHA + N parents. 2 = single parent (direct), 3+ = merge.
+          if [[ "${parents}" -ge 3 ]]; then
+            echo "::notice::Merge commit detected on main (${sha:0:7}) — promote via PR path."
+            exit 0
+          fi
+
+          echo "::warning title=Direct push to main detected::commit ${sha:0:7} by ${author} -- subject: ${subject}"
+          echo ""
+          echo "This commit landed on main without going through a PR merge."
+          echo "On a private + Free-plan repo, GitHub does not enforce branch"
+          echo "protection server-side. The pre-push hook"
+          echo "(scripts/install-pre-push-hook.sh) is the client-side guard;"
+          echo "this job is the audit-log substitute."
+          echo ""
+          echo "If this was intentional (rollback, emergency fix), reply in"
+          echo "the PR / issue tracker so the action is recorded."

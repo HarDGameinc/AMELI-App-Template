@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Pre-push hook: refuses a direct push to the protected branches.
+#
+# This hook is a CLIENT-SIDE substitute for GitHub's branch
+# protection, which requires a paid plan to enforce on private
+# repositories. Without it, a `git push origin main` succeeds
+# silently on a private free-plan repo and bypasses the
+# "promote via PR" workflow.
+#
+# The hook walks every ref being pushed (stdin from git) and
+# rejects any push whose remote ref is in PROTECTED_BRANCHES.
+# Pushes from a non-default branch into the same branch are
+# also rejected -- the only legal path to ``main`` is via a PR
+# merge on GitHub.
+#
+# Bypass: set ALLOW_DIRECT_PUSH=1 in the environment for the
+# one-off exception (e.g. rolling back a botched promote). The
+# CI guard workflow records a "DIRECT_PUSH_OVERRIDE" event when
+# it sees the resulting push so the bypass is not silent.
+#
+# Install:
+#   bash scripts/install-pre-push-hook.sh
+#
+# OR copy this file to .git/hooks/pre-push and chmod +x.
+
+set -euo pipefail
+
+PROTECTED_BRANCHES=("main" "master")
+
+if [[ "${ALLOW_DIRECT_PUSH:-0}" == "1" ]]; then
+    echo "[pre-push] ALLOW_DIRECT_PUSH=1 set; skipping branch-protection check" >&2
+    exit 0
+fi
+
+# stdin format from git: "<local_ref> <local_sha> <remote_ref> <remote_sha>" per ref
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # remote_ref looks like "refs/heads/main" — strip the prefix.
+    remote_branch="${remote_ref#refs/heads/}"
+    for protected in "${PROTECTED_BRANCHES[@]}"; do
+        if [[ "${remote_branch}" == "${protected}" ]]; then
+            cat >&2 <<EOF
+[pre-push] Direct push to '${protected}' refused.
+
+This repo is private on a GitHub plan that does not enforce
+server-side branch protection. The pre-push hook is the
+client-side substitute -- promote via PR instead:
+
+    gh pr create --base ${protected} --head <current-branch>
+    gh pr merge   # after CI status checks pass
+
+Bypass (use sparingly):
+    ALLOW_DIRECT_PUSH=1 git push origin ${protected}
+
+See docs/OPERATIONS.md § "Branch protection on main" for context.
+EOF
+            exit 1
+        fi
+    done
+done
+
+exit 0

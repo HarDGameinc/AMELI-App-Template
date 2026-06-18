@@ -115,15 +115,69 @@ Repo policy (applied 2026-06-18, roadmap #23):
 * PR review is NOT required (single-operator template), but the
   status checks must be green and up-to-date with `main`.
 
-> **⚠ Plan note**: GitHub **Rulesets** (the new feature, under
-> Settings → Rules → Rulesets) are NOT enforced on private repos
-> until the org upgrades to GitHub Team. On a Free private repo
-> the ruleset shows "Active" but pushes go through anyway. Use
-> the **classic Branch protection rules** (Settings → Branches
-> → Branch protection rules) instead — those are enforced on
-> every plan including Free + private. The 2026-06-18 setup
-> tried the ruleset first and observed the silent no-op before
-> switching to the classic path.
+> **⚠ Free plan trap (verified 2026-06-18)**: GitHub does NOT
+> enforce branch protection of any kind on **private** repos
+> under the **Free** plan. Both flavors fail silently:
+>
+> * **Rulesets** (Settings → Rules → Rulesets): the UI says
+>   "Active" but the banner reads "Your rulesets won't be
+>   enforced on this private repository until you move to GitHub
+>   Team organization account."
+> * **Classic Branch protection rules** (Settings → Branches →
+>   Branch protection rules): the rule shows status
+>   **"Not enforced"** with the same upgrade banner.
+>
+> The session that closed #23 confirmed both: created the
+> ruleset, observed it was no-op, switched to the classic rule,
+> observed it was also no-op. The template ships two
+> client/audit-side substitutes (below) that work on every plan,
+> AND the server-side rule documented further down — it kicks in
+> automatically the moment the plan upgrades to Team or the repo
+> is made public.
+
+### Substitute 1 — local pre-push hook (client-side prevention)
+
+`deploy/git-hooks/pre-push` refuses any `git push origin main`
+unless the operator sets `ALLOW_DIRECT_PUSH=1` for the one-off.
+Install per checkout:
+
+```bash
+bash scripts/install-pre-push-hook.sh
+# -> [install-pre-push-hook] installed .git/hooks/pre-push
+```
+
+The hook does NOT travel with the repo (git refuses to install
+hooks at clone time for security reasons), so every checkout
+needs the install step. CI and the install scripts mention this
+where relevant.
+
+Test it (refuses, then bypass succeeds):
+
+```bash
+git checkout main
+git commit --allow-empty -m "probe"
+git push origin main
+# -> [pre-push] Direct push to 'main' refused.
+
+ALLOW_DIRECT_PUSH=1 git push origin main
+# -> pushes (logged by the audit workflow below)
+```
+
+### Substitute 2 — push audit workflow (server-side detection)
+
+`.github/workflows/main-push-audit.yml` runs on every push to
+`main` and emits an `::warning::` annotation when HEAD has only
+one parent (= direct push, not a merge commit). Greppable in the
+Actions log; the operator can review who pushed and when. The
+job exits 0 so it does not block the next CI lap.
+
+### Substitute 3 — the actual ruleset (latent)
+
+The ruleset and classic branch protection rule documented below
+remain in the repo settings even though they are not enforced
+today. Both will start blocking the moment the plan upgrades to
+GitHub Team or Enterprise — no further configuration needed at
+that point.
 
 Apply (one-time, repo admin only). Two equivalent paths:
 
