@@ -115,22 +115,37 @@ Repo policy (applied 2026-06-18, roadmap #23):
 * PR review is NOT required (single-operator template), but the
   status checks must be green and up-to-date with `main`.
 
+> **⚠ Plan note**: GitHub **Rulesets** (the new feature, under
+> Settings → Rules → Rulesets) are NOT enforced on private repos
+> until the org upgrades to GitHub Team. On a Free private repo
+> the ruleset shows "Active" but pushes go through anyway. Use
+> the **classic Branch protection rules** (Settings → Branches
+> → Branch protection rules) instead — those are enforced on
+> every plan including Free + private. The 2026-06-18 setup
+> tried the ruleset first and observed the silent no-op before
+> switching to the classic path.
+
 Apply (one-time, repo admin only). Two equivalent paths:
 
-**A. GitHub UI** — Settings → Branches → Add branch ruleset:
+**A. Classic Branch protection rule (GitHub UI)** — Settings →
+Branches → Branch protection rules → Add rule:
 
-* Target branches: `main`
-* Restrict deletions: ON
-* Block force pushes: ON
+* Branch name pattern: `main`
 * Require a pull request before merging: ON (Required approvals = 0)
 * Require status checks to pass: ON
-    - Add: `Lint + Test (Python 3.11)`
-    - Add: `Lint + Test (Python 3.12)`
-    - Add: `Supply chain audit (pip-audit)`
     - Require branches to be up to date before merging: ON
+    - Status checks: `Lint + Test (Python 3.11)`,
+      `Lint + Test (Python 3.12)`,
+      `Supply chain audit (pip-audit)`
+* Restrict who can push to matching branches: ON (empty allowlist
+  — nobody pushes directly)
+* Allow force pushes: OFF
+* Allow deletions: OFF
 * Do not allow bypassing the above settings: ON
 
-**B. `gh` CLI** — equivalent payload:
+**B. `gh` CLI** — equivalent classic branch-protection payload
+(the legacy `/branches/{branch}/protection` endpoint, NOT the
+`/rulesets` one):
 
 ```bash
 gh api -X PUT "/repos/HarDGameinc/AMELI-App-Template/branches/main/protection" \
