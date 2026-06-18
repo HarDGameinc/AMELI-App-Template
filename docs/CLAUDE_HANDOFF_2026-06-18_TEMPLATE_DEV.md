@@ -45,7 +45,9 @@ NO promover a main hasta ver el run verde post-fix.
 | `8abc298` | Item #23 — branch protection runbook en OPERATIONS.md | suite stays green |
 | `3c14b95` | Items #18 + #19 — backup systemd unit + timer + PG connectivity runbook | 863 → 873 (+10) |
 | `2d1eb23` | Version bump v0.2.0-django → **v0.3.0-django** | suite stays green |
-| — | Promote final `dev → main` (`1e03264..2d1eb23`, 4 commits) — pendiente CI verde | — |
+| `69f1790` | Record bucket OPS commits + version bump en handoff | suite stays green |
+| `88cce00` | Expand §8 con post-#23 promote workflow + operator todo | suite stays green |
+| — | **Promote final `dev → main`** (`1e03264..88cce00`, 6 commits) — CI #87 + #88 verde | suite stays green |
 
 ### Wire validation 2026-06-18 — items #14 + #20
 
@@ -270,13 +272,15 @@ siguiente promocion.
 
 | Metrica | Inicio dia | Cierre dia | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 837 (1 failure) | **863** | +26 (+1 fix CI, +9 #14, +1 hotfix, +14 #20, +1 #20 slug) |
+| Suite local (sin deselect) | 837 (1 failure) | **873** | +36 (+1 fix CI, +9 #14, +1 #14-hotfix, +14 #20, +1 #20-slug, +10 #18) |
 | ASVS L2 active rows PASS | 150 | **151** | +1 (V14.2.3 GAP→PASS, V14.2.1 partial→full) |
 | ASVS L2 strict GAP roadmap-tracked | 1 (V1.4.4 + V13.2.2 ya en main) | **0** | -1 |
 | Capitulos completos al bar L2 | 8 | **9** (+V14) | +1 |
-| Commits sobre `dev` | 0 (start at `aa869be`) | 7 (`702f82c..662c7d0`) | — |
-| Commits propagados a `main` | 0 (8bde7c0) | 6 (`8bde7c0..1e03264`) | — |
-| CI verde | 1 / 8 ultimos runs al inicio | 4 / 4 ultimos runs al cierre | drastic recovery |
+| Roadmap items abiertos al inicio | 6 (M=1, OPS=5) | **0** | -6 (todos cerrados template-side) |
+| Commits sobre `dev` | 0 (start at `aa869be`) | 14 (`702f82c..88cce00`) | — |
+| Commits propagados a `main` | 0 (8bde7c0) | 13 (`8bde7c0..88cce00`) | — |
+| Version | `v0.2.0-django` | **`v0.3.0-django`** | minor bump |
+| CI verde | 1 / 8 ultimos runs al inicio | 6 / 6 ultimos runs al cierre | drastic recovery |
 | Wire validations ejecutadas | 0 | 2 (#14 + #20, ambas verdes despues de fix) | — |
 
 ## §6. Hallazgos / findings
