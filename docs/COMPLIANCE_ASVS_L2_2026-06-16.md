@@ -377,7 +377,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 17 | Add `ruff check .` to local pre-push runbook | XS | **closed-2026-06-16** | Documented in `docs/HANDOFF_TEMPLATE.md` S-08; pre-commit hook pending. |
 | 18 | Install `backup.timer` + service on `ha-report2` | S | open | OPS — systemd unit + cron-style schedule. |
 | 19 | PG TCP listener on `ha-report2` or backup runs as user with PG role | S | open | OPS. |
-| 20 | `manage.py` auto-loads `APP_CONFIG` | S | open | Code — pre-load via `ameli_app.config.load_settings()`. |
+| 20 | `manage.py` auto-loads `APP_CONFIG` | S | **closed-2026-06-18** | `manage.py` now walks env var → `/etc/<slug>/app.yaml` → `config/app.yaml` → `config/app.yaml.example`; matching `app.env` parsed in Python (no bash IFS gotcha). 14 tests pin the contract. |
 | 21 | Bump `actions/checkout@v4` → v5+, `setup-python@v5` → v6+ when Node-24 release lands | XS | **closed-2026-06-17** | Bumped to `checkout@v5` + `setup-python@v6` (both Node-24 native). |
 | 22 | Promote `supply-chain-audit` job to hard-fail | XS | **closed-2026-06-17** | Same change as #15. |
 | 23 | Enable branch protection on `main` (require PR + CI green) | S | open | GitHub repo settings. |

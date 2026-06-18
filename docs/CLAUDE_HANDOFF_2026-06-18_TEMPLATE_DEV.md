@@ -34,7 +34,11 @@ NO promover a main hasta ver el run verde post-fix.
 |---|---|---|
 | `702f82c` | Fix CI rojo — test combined-filters TZ-stable | 837 → 838 (+1 cubierto, suite verde sin deselect) |
 | — | Promote `dev → main` fast-forward (`8bde7c0..702f82c`, 5 commits) — CI #73 verde | suite stays green |
-| `<this>` | Item #14 — ASVS V14.2.3 lockfile con hashes + `--require-hashes` en CI + deploy | 838 → 847 (+9) |
+| `8726411` | Item #14 — ASVS V14.2.3 lockfile con hashes + `--require-hashes` en CI + deploy | 838 → 847 (+9) |
+| `ee5605b` | Hotfix #14 — argon2-cffi missing en requirements.txt + sync-guard test | 847 → 848 (+1) |
+| `d4fd8d2` | Doc leccion del #14 hotfix en handoff §3 | suite stays green |
+| — | Promote `dev → main` (`702f82c..d4fd8d2`, 4 commits) — CI #76+#77 verde | suite stays green |
+| `<this>` | Item #20 — `manage.py` auto-load APP_CONFIG + app.env (IFS-safe) | 848 → 862 (+14) |
 
 ### Item #14 — V14.2.3 lockfile con hashes
 

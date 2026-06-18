@@ -67,6 +67,41 @@ python -m venv /tmp/lock-check
 A mismatched hash exits non-zero with the offending wheel's URL —
 that is the expected behaviour and the protection the lock buys you.
 
+## manage.py auto-loads APP_CONFIG (and app.env)
+
+`manage.py` discovers a sensible `APP_CONFIG` automatically so
+operators do not have to `export APP_CONFIG=...` before every
+`python manage.py shell` (or wire test). Lookup order, first hit
+wins:
+
+1. `APP_CONFIG` / `AMELI_APP_CONFIG` already set in the env
+   (e.g. by the systemd unit) — honored as-is.
+2. `/etc/<slug>/app.yaml` where `<slug>` is the
+   `[project].name` from `pyproject.toml`. Matches the
+   install.sh layout (`/etc/ameli-app-template-dev/app.yaml`
+   et al.).
+3. `<project_root>/config/app.yaml` — dev override.
+4. `<project_root>/config/app.yaml.example` — template default
+   so a freshly-cloned repo boots without setup.
+
+The matching `app.env` (alongside the chosen `app.yaml`, plus
+`<project_root>/app.env` as fallback) is loaded by a
+Python-native parser that handles values containing `(`, `)`,
+`!` and a trailing `=` (Fernet padding) without the IFS / shell
+gotcha that breaks `set -a; . app.env; set +a`. Existing env
+vars are never overridden — explicit beats file.
+
+This means a wire test on `ha-report2` now reduces to:
+
+```bash
+cd /opt/ameli-app-template-dev
+.venv/bin/python manage.py shell <<'PY'
+# ... probe ...
+PY
+```
+
+No `set -a`, no `IFS= read`, no `export APP_CONFIG`.
+
 ## Health checks
 
 ```bash
