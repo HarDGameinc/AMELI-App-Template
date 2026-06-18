@@ -30,6 +30,43 @@ if they already exist, creates the virtualenv, installs dependencies, runs
 superadmin. A real server install is expected to have `DATABASE_URL` pointing
 to PostgreSQL.
 
+## Lockfile / supply chain (ASVS V14.2.3)
+
+The deploy and CI install runtime + dev deps from
+`requirements.lock` / `requirements-dev.lock` with
+`pip install --require-hashes`. Each entry in those files carries one
+or more `--hash=sha256:...` lines so a rotated wheel on PyPI or a
+typosquat that satisfies the source range never silently lands on the
+host.
+
+Refresh the lockfiles after editing `requirements*.txt`:
+
+```bash
+# from the project root, inside an env that has pip-tools
+pip-compile --generate-hashes --output-file=requirements.lock requirements.txt
+pip-compile --generate-hashes --allow-unsafe \
+    --output-file=requirements-dev.lock requirements-dev.txt
+
+git diff --stat requirements*.lock   # sanity-check what moved
+```
+
+`pip-tools` (which ships `pip-compile`) is declared in
+`requirements-dev.txt`, so a normal dev install has it. The
+`--allow-unsafe` flag on the dev lock is required because `pip` /
+`setuptools` are themselves dependencies of pip-tools and would
+otherwise be flagged as "unsafe to pin".
+
+Sanity-test the lock locally before pushing:
+
+```bash
+python -m venv /tmp/lock-check
+/tmp/lock-check/bin/pip install --upgrade pip
+/tmp/lock-check/bin/pip install --require-hashes -r requirements.lock
+```
+
+A mismatched hash exits non-zero with the offending wheel's URL —
+that is the expected behaviour and the protection the lock buys you.
+
 ## Health checks
 
 ```bash

@@ -32,7 +32,50 @@ NO promover a main hasta ver el run verde post-fix.
 
 | Commit | Tema | Tests |
 |---|---|---|
-| `<this>` | Fix CI rojo — test combined-filters TZ-stable | 837 → 838 (+1 cubierto, suite verde sin deselect) |
+| `702f82c` | Fix CI rojo — test combined-filters TZ-stable | 837 → 838 (+1 cubierto, suite verde sin deselect) |
+| — | Promote `dev → main` fast-forward (`8bde7c0..702f82c`, 5 commits) — CI #73 verde | suite stays green |
+| `<this>` | Item #14 — ASVS V14.2.3 lockfile con hashes + `--require-hashes` en CI + deploy | 838 → 847 (+9) |
+
+### Item #14 — V14.2.3 lockfile con hashes
+
+- **Qué**: nuevos `requirements.lock` (952 lineas) y
+  `requirements-dev.lock` (516 lineas) generados con
+  `pip-compile --generate-hashes`. Cada wheel/sdist de cada dep
+  transitiva carga su sha256. CI y el script de deploy ahora
+  instalan con `pip install --require-hashes -r
+  requirements.lock -r requirements-dev.lock`. pip-audit movido
+  a auditar el lock (lo que efectivamente se instala) en vez
+  del rango source.
+- **Por que**: ASVS V14.2.3 (third-party signature/integrity
+  verified). Un wheel rotado en PyPI o un typosquat que
+  satisficiese el rango ahora se rechaza al instalar — no llega
+  al runtime.
+- **Decisiones**:
+  - **Source ranges (`.txt`) se mantienen** como input
+    deliberado del operador; el `.lock` es la materializacion
+    autogenerada. Una bump al `.txt` sin regenerar el lock
+    rompe CI inmediatamente — feature, no bug.
+  - **`--allow-unsafe` en el lock de dev** porque pip-tools
+    arrastra `pip` y `setuptools` como deps. Sin la bandera
+    pip-compile los excluye y el `--require-hashes` despues
+    falla.
+  - **`pip install -e . --no-deps`** en CI/deploy: el editable
+    install no debe re-resolver, todo ya viene del lock.
+  - **Fallback en `scripts/_common.sh`**: si el deploy se
+    ejecuta contra una copia sin `.lock` (upgrade in-place
+    desde una version pre-V14.2.3), instala desde el `.txt`
+    con warning. Una vez que la primera promocion ship-ea el
+    lock, el fallback nunca se dispara.
+- **Tests**: 9 nuevos en `tests/test_lockfile_hashes.py`
+  pinning del contrato — lockfiles existen, cada top-level
+  dep esta en el lock, cada entry lockeada tiene `--hash=`,
+  CI + deploy referencian los lockfiles, pip-tools en dev
+  deps. Static-analysis only (no corre pip), corre en <100ms.
+- **Doc**: `OPERATIONS.md` nueva seccion "Lockfile / supply
+  chain" con el comando de refresh + sanity-test;
+  `COMPLIANCE_ASVS_L2_2026-06-16` V14.2.3 GAP→PASS; V14.2.1
+  promovida a PASS sin caveat; V14 chapter 23 → 24 PASS;
+  totals 150/0 → 151/0.
 
 ### Fix CI rojo — root cause distinto al diagnosticado ayer
 

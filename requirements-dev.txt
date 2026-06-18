@@ -5,6 +5,17 @@ pytest>=9.0,<11
 pytest-django>=4.9,<6
 ruff>=0.6,<2
 pip-audit>=2.7,<4
+# pip-tools provides ``pip-compile``, which materialises the
+# ``requirements.lock`` / ``requirements-dev.lock`` files with
+# ``--generate-hashes``. Operators refresh the lock with:
+#
+#   pip-compile --generate-hashes --output-file=requirements.lock requirements.txt
+#   pip-compile --generate-hashes --allow-unsafe --output-file=requirements-dev.lock requirements-dev.txt
+#
+# The lock files are the source of truth for CI and the deploy
+# (ASVS V14.2.3). Bumping a top-level range here without
+# regenerating the lock will fail CI on the hash mismatch step.
+pip-tools>=7,<9
 # bandit runs the same security pattern catalog ruff exposes via the
 # "S" lints, but with a different rule engine. CI runs both so a gap
 # in one catches the other; if bandit catches something ruff misses

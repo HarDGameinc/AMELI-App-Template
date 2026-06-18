@@ -52,14 +52,22 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+            requirements.lock
+            requirements-dev.lock
 
       - name: Install dependencies
+        # ``--require-hashes`` refuses to install any package whose
+        # archive does not match a sha256 in the lockfile (ASVS V14.2.3).
+        # A typosquat or a rotated wheel on PyPI fails the install
+        # instead of silently shipping a malicious payload. The lock
+        # files are regenerated with
+        # ``pip-compile --generate-hashes --output-file=requirements.lock requirements.txt``
+        # (and the corresponding dev variant with ``--allow-unsafe``);
+        # see comments in requirements-dev.txt.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-          pip install -e .
+          pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: Ruff (lint)
         # ``ruff check .`` carries the ``S`` (bandit-like) ruleset
@@ -125,11 +133,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install pip-audit
 
-      - name: Audit declared deps
-        # ``--strict`` exits non-zero when a vulnerability is found OR
-        # the audit metadata is incomplete (e.g. no version pin). We
-        # use the requirements files directly so the audit runs on
-        # exactly the set the runtime installs.
+      - name: Audit deps (lockfile = what actually ships)
+        # ``--strict`` exits non-zero on any vulnerability OR
+        # incomplete metadata. We audit the LOCK files (not the
+        # source ``.txt`` range files) because the lock is what the
+        # deploy installs under ``--require-hashes``; a CVE against a
+        # version in the source range that the lock has not adopted
+        # would be a false positive against the live deploy.
         run: |
-          pip-audit --strict -r requirements.txt
-          pip-audit --strict -r requirements-dev.txt
+          pip-audit --strict -r requirements.lock
+          pip-audit --strict -r requirements-dev.lock

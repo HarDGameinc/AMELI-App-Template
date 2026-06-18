@@ -248,8 +248,19 @@ initialize_runtime_env() {
 install_python_deps() {
   python3 -m venv "${VENV_DIR}"
   "${VENV_DIR}/bin/python" -m pip install --upgrade pip setuptools wheel
-  "${VENV_DIR}/bin/python" -m pip install -r "${APP_DIR}/requirements.txt"
-  "${VENV_DIR}/bin/python" -m pip install -e "${APP_DIR}"
+  # ASVS V14.2.3 — install runtime deps under ``--require-hashes`` so
+  # any package whose archive does not match a sha256 in the lockfile
+  # gets refused. Protects the deploy against a rotated wheel on PyPI
+  # or a typosquat that slipped through code review. Pre-lockfile
+  # deploys (one-shot upgrade path) fall back to the range-pinned
+  # source list with a warning; fresh provisions always hit the lock.
+  if [ -f "${APP_DIR}/requirements.lock" ]; then
+    "${VENV_DIR}/bin/python" -m pip install --require-hashes -r "${APP_DIR}/requirements.lock"
+  else
+    echo "WARN: requirements.lock not found, falling back to requirements.txt (no hash verification)" >&2
+    "${VENV_DIR}/bin/python" -m pip install -r "${APP_DIR}/requirements.txt"
+  fi
+  "${VENV_DIR}/bin/python" -m pip install -e "${APP_DIR}" --no-deps
 }
 
 repair_permissions() {
