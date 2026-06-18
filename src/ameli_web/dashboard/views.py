@@ -42,6 +42,37 @@ def home(request):
 
 
 def _openapi_schema() -> dict[str, Any]:
+    # Response shapes are pinned by ``tests/test_openapi_contract.py`` —
+    # any drift between this dict and the real JSON returned by the
+    # view will fail CI. Required field lists must match the actual
+    # ``JsonResponse`` payloads in ``health`` / ``api_health``.
+    health_response_schema = {
+        "type": "object",
+        "required": ["ok", "status", "service", "environment", "version", "checks", "db"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "status": {"type": "string", "enum": ["OPERATIVO", "DEGRADADO"]},
+            "service": {"type": "string"},
+            "environment": {"type": "string"},
+            "version": {"type": "string"},
+            "uptime_seconds": {"type": "number"},
+            "checks": {"type": "object"},
+            "db": {"type": "object"},
+        },
+    }
+    api_health_response_schema = {
+        "type": "object",
+        "required": ["ok", "service", "slug", "environment", "version", "database", "config"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "service": {"type": "string"},
+            "slug": {"type": "string"},
+            "environment": {"type": "string"},
+            "version": {"type": "string"},
+            "database": {"type": "object"},
+            "config": {"type": "object"},
+        },
+    }
     return {
         "openapi": "3.1.0",
         "info": {
@@ -53,13 +84,23 @@ def _openapi_schema() -> dict[str, Any]:
             "/health": {
                 "get": {
                     "summary": "Healthcheck liviano",
-                    "responses": {"200": {"description": "Estado resumido para probes."}},
+                    "responses": {
+                        "200": {
+                            "description": "Estado resumido para probes.",
+                            "content": {"application/json": {"schema": health_response_schema}},
+                        }
+                    },
                 }
             },
             "/api/health": {
                 "get": {
                     "summary": "Health API",
-                    "responses": {"200": {"description": "Estado detallado de configuracion y base de datos."}},
+                    "responses": {
+                        "200": {
+                            "description": "Estado detallado de configuracion y base de datos.",
+                            "content": {"application/json": {"schema": api_health_response_schema}},
+                        }
+                    },
                 }
             },
         },

@@ -25,15 +25,15 @@ incorporates the eight controls closed in commits `42efbd4`, `5383268`,
 | V4 Access control | 10 | 0 | 1 | 0 | +1 PASS (4.2.1 closed 2026-06-16) |
 | V5 Validation, sanitization and encoding | 15 | 0 | 1 | 0 | +1 PASS (5.5.1 closed 2026-06-17) |
 | V6 Stored cryptography | 7 | 0 | 1 | 1 | +1 PASS (6.3.x) |
-| V7 Error handling and logging | 10 | 0 | 0 | 1 | +1 PASS (7.4.x closed 2026-06-17) |
+| V7 Error handling and logging | 11 | 0 | 0 | 1 | +2 PASS (7.4.x + 7.1.1 closed 2026-06-17) |
 | V8 Data protection | 7 | 0 | 0 | 1 | +3 PASS (8.2.1, 8.3.3, 8.3.4) |
 | V9 Communications | 3 | 0 | 0 | 1 | +1 PASS (9.1.2) |
 | V10 Malicious code | 3 | 0 | 0 | 0 | +2 PASS (10.1.1 + 10.3.x closed 2026-06-16) |
 | V11 Business logic | 5 | 1 | 0 | 0 | unchanged |
 | V12 Files and resources | 10 | 0 | 1 | 0 | +1 PASS (12.4.1 closed 2026-06-17) |
-| V13 API and web service | 6 | 2 | 4 | 0 | unchanged |
+| V13 API and web service | 7 | 1 | 4 | 0 | +1 PASS (13.2.2 closed 2026-06-17) |
 | V14 Configuration | 23 | 0 | 0 | 3 | +3 PASS (14.2.1, 14.2.2, 14.4.5 closed; 14.2.2 promoted to full PASS 2026-06-17) |
-| **Total** | **147** | **2** | **9** | **9** | — |
+| **Total** | **149** | **1** | **9** | **9** | — |
 
 Counting convention: every row of the detail tables below counts as
 one entry, even when a row covers a range of related controls (e.g.
@@ -313,7 +313,7 @@ No control regressed.
 | 13.1.4 | Authorization on every API call | PASS | `/api/health` intentionally public unless allowlisted. |
 | 13.1.5 | Body parsing limits | **GAP** | No explicit `DATA_UPLOAD_MAX_MEMORY_SIZE` override; Django default 2.5 MB. For 3 MB avatar this kicks form parsing to disk. Acceptable; document. |
 | 13.2.1 | REST APIs use proper HTTP verbs | PASS | `@require_GET`, `@require_POST`. |
-| 13.2.2 | JSON schema validation | **GAP** | `/api/health` returns hand-built JSON; OpenAPI doc hand-written and not contract-tested. Roadmap item #10. |
+| 13.2.2 | JSON schema validation | **PASS** | `_openapi_schema()` now declares `required` + `properties` per response in `dashboard/views.py`; `tests/test_openapi_contract.py` resolves every documented path against the URL conf, hits it via the test client, and validates the JSON body against the documented schema (subset validator: `type`, `required`, `properties`, `enum`; stdlib only — no `jsonschema` dep). Reality→doc drift is guarded by a URL-conf walk that flags any undocumented public JSON endpoint. Roadmap item #10 closed 2026-06-17. |
 | 13.2.3 | CSRF on POST API | PASS | CSRF middleware applies. |
 | 13.2.4 | Hide framework signatures | PASS | `X-Frame-Options: DENY`. |
 | 13.3.x | SOAP / XML | N/A | None used. |
@@ -367,7 +367,7 @@ handoff. Items #1..#16 son los originales del 2026-06-15;
 | 7 | **12.4.1** no AV scan on uploads | M | **closed-2026-06-17** | `accounts/av.py` clamd-TCP + HTTP transports, opt-in via `AMELI_APP_AV_ENDPOINT`. Fail-open with audit on outage; reject + audit on INFECTED. |
 | 8 | **7.4.1** no custom 404/500 handlers | S | **closed-2026-06-17** | `error_views.py` + `error_generic.html` + `handler400/403/404/500` registered in urls.py. Bullet-proof fallback when template loader is broken. |
 | 9 | **1.4.4** authz scattered | M | open | Centralise in `accounts/permissions.py`; replace ad-hoc checks. |
-| 10 | **13.2.2** OpenAPI doc hand-written | S | open | Contract test: every documented path responds; every documented schema matches. |
+| 10 | **13.2.2** OpenAPI doc hand-written | S | **closed-2026-06-17** | `_openapi_schema` now declares response shapes; `tests/test_openapi_contract.py` validates doc↔reality both directions (URL-conf walk catches undocumented public JSON endpoints). |
 | 11 | **5.5.1** pickle-storage of messages possible | S | **closed-2026-06-17** | Boot guard on `MESSAGE_STORAGE` with 3-element allow-list (session/cookie/fallback). |
 | 12 | **3.4.4** `__Host-` prefix not enforced | S | **closed-2026-06-17** | Default `SESSION_COOKIE_NAME = "__Host-ameli_app_session"` + `CSRF_COOKIE_NAME = "__Host-ameli_csrf"` outside dev; boot guards refuse Secure=False / Domain set; operator override via env still wins. |
 | 13 | **7.1.1 latent** `JsonFormatter` promotes `extra=` keys verbatim | S | **closed-2026-06-17** | `RedactingFilter` runs before formatter; default 18-key set covering credentials / session / MFA; operator can extend via env. |

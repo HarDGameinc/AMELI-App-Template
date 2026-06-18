@@ -44,7 +44,8 @@ roadmap sin esfuerzo arquitectural.
 | `425220a` | Fix flake CI #56 — defensive ThrottleCounter cleanup in test_auth_failures_alert.py | suite stays green |
 | `a1fe164` | Item #12 — ASVS V3.4.4 `__Host-` cookie prefix (session + CSRF) | 776 → 782 (+6) |
 | `e84f57a` | Item #11 — ASVS V5.5.1 MESSAGE_STORAGE allow-list boot guard + wire evidence for #12 | 782 → 787 (+5) |
-| `<this>` | Item #13 — ASVS V7.1.1 RedactingFilter for PII in logs | 787 → 801 (+14) |
+| `8bde7c0` | Item #13 — ASVS V7.1.1 RedactingFilter for PII in logs | 787 → 801 (+14) |
+| `<this>` | Item #10 — ASVS V13.2.2 OpenAPI contract test + response schemas | 801 → 810 (+9) |
 
 ### Wire validation 2026-06-17 — item #7
 
@@ -128,6 +129,38 @@ Propiedades verificadas:
   con tabla de verdicts + comando EICAR de sanity check;
   `docs/SECURITY.md` R-05 marcado Closed; `docs/COMPLIANCE_ASVS_L2_2026-06-16`
   V12.4.1 promovido a PASS.
+
+### Item #10 — V13.2.2 OpenAPI contract test
+
+- **Qué**: (a) Extiende `_openapi_schema()` en `dashboard/views.py`
+  con `required` + `properties` por response para `/health` y
+  `/api/health` (era solo `description`). (b) Nuevo
+  `tests/test_openapi_contract.py` que:
+  - resuelve cada path documentado contra el URL conf, lo invoca
+    via test client, y valida el JSON body contra el schema
+    declarado;
+  - barre el URL conf para detectar drift inverso — cualquier
+    endpoint público que devuelva JSON pero no esté en el doc
+    rompe CI, salvo allowlist explícita (`/openapi.json`,
+    `/metrics`).
+- **Por qué**: ASVS V13.2.2 (JSON schema validation). El gap
+  histórico era que el doc se hand-mantenía y nada lo verificaba —
+  cualquier rename de campo o nuevo endpoint quedaba mudo. Ahora
+  CI falla si la realidad y el doc divergen en cualquier dirección.
+- **Stdlib-only**: validador `_validate(value, schema)` cubre el
+  subset de OpenAPI 3.1 que efectivamente usamos (`type`,
+  `required`, `properties`, `enum`). Evita meter `jsonschema`
+  como runtime dep — consistente con la política del template.
+- **Bool-as-int safeguard**: el validador rechaza explícitamente
+  `True/False` cuando el schema dice `integer`/`number`, porque
+  `isinstance(True, int)` es `True` en Python y un bool perdido
+  en un campo numérico no se notaría sin esta guardia.
+- **Tests**: 9 casos (1 well-formed schema + 2 parametrized
+  doc→reality + 1 reality→doc URL-conf walk + 5 unit tests del
+  validador). Suite total: 801 → 810 passed.
+- **Doc**: `COMPLIANCE_ASVS_L2_2026-06-16.md` V13.2.2 promovido
+  GAP→PASS, totals 147/2 → 149/1, V7 +1 (7.1.1 ahora reflejado),
+  V13 +1.
 
 ## §4. Decisiones tomadas
 
