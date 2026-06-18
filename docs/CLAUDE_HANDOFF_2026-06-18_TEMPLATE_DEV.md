@@ -41,6 +41,11 @@ NO promover a main hasta ver el run verde post-fix.
 | `b3688ba` | Item #20 — `manage.py` auto-load APP_CONFIG + app.env (IFS-safe) | 848 → 862 (+14) |
 | `1e03264` | #20 wire-fix — slug from dir name first, pyproject second | 862 → 863 (+1) |
 | — | Promote `dev → main` (`d4fd8d2..1e03264`, 3 commits) — CI #79+#80 verde | suite stays green |
+| `f42e438` | Item #16 — drift banners en 6 handoffs `2026-06-09..06-13` | suite stays green |
+| `8abc298` | Item #23 — branch protection runbook en OPERATIONS.md | suite stays green |
+| `3c14b95` | Items #18 + #19 — backup systemd unit + timer + PG connectivity runbook | 863 → 873 (+10) |
+| `2d1eb23` | Version bump v0.2.0-django → **v0.3.0-django** | suite stays green |
+| — | Promote final `dev → main` (`1e03264..2d1eb23`, 4 commits) — pendiente CI verde | — |
 
 ### Wire validation 2026-06-18 — items #14 + #20
 
