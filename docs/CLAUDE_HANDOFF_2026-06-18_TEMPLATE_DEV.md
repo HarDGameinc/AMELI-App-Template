@@ -331,21 +331,42 @@ Items roadmap restantes (todos OPS, sin impacto ASVS L2):
 
 ## §8. Continuidad — para el proximo agente
 
-**Roadmap ASVS L2 = cerrado completo**. Todos los items
-roadmap con impacto en chapter-pass quedaron en PASS. Lo que
-queda son items operacionales sin chapter delta.
+**Roadmap COMPLETO** — bucket L2 + bucket OPS cerrados ambos
+template-side. NO quedan items roadmap-tracked sin closure plan.
+Version bumped a `v0.3.0-django`.
 
-**Orden sugerido si seguimos con OPS**:
-1. **#23** — branch protection en main via GitHub MCP. ~10 min.
-   ADVERTENCIA: una vez activado, el patron actual de
-   `git push origin main` directo desde el shell se bloquea.
-   El operador debera promover via PR + ff-merge (o
-   bypass-allow temporal). Confirmar con el operador antes
-   de activar.
-2. **#16** — agregar footer note a handoffs viejos. Doc only,
-   ~15 min.
-3. **#18** + **#19** — server-side, requieren wire test. Mas
-   pesado, dejar para una sesion con tiempo.
+**Acciones operador pendientes en `ha-report2`** (no son items
+roadmap nuevos; son la otra mitad de los items #18/#19/#23):
+
+1. **#23** — aplicar branch protection en `main` via GitHub UI
+   (o `gh api`, payload en `OPERATIONS.md`). **Una vez
+   activado, el patron de `git push origin main` directo se
+   bloquea**. El operador promueve via
+   `gh pr create --base main --head dev && gh pr merge`. La
+   sesion 2026-06-18 fue la ULTIMA con ff-push directo.
+2. **#18** — `systemctl enable --now ${prefix}-backup.timer`
+   en `ha-report2`. Verificar con
+   `systemctl list-timers '*-backup.timer'`. Primer backup
+   se ejecuta entre 04:10 y 04:12 (RandomizedDelaySec 0-120s).
+3. **#19** — antes de habilitar el timer, configurar
+   `postgresql.conf` con `listen_addresses = 'localhost'` y
+   `pg_hba.conf` con `host <db> <user> 127.0.0.1/32
+   scram-sha-256`. Confirmar que el `DATABASE_URL` en
+   `app.env` incluye host/puerto/password. Wire test:
+   `systemctl start ${prefix}-backup.service` → debe terminar
+   `active (exited)`.
+4. **Wire test final del bucket OPS** — correr
+   `restore.sh verify` sobre el primer archive producido por
+   el timer.
+
+**Para futuras sesiones — patron de promote post-#23**:
+
+```bash
+git checkout dev && git pull
+gh pr create --base main --head dev --title "promote dev -> main"
+# CI corre; cuando los 3 status checks esten verdes:
+gh pr merge --merge   # o --ff si querias linear history y CI lo permite
+```
 
 **Lecciones del dia incorporadas a S-04 / S-08**:
 - Antes de proponer un fix de flake, abrir el log del runner
@@ -358,3 +379,5 @@ queda son items operacionales sin chapter delta.
 - Server deploy hygiene: si `git pull --ff-only` dice
   "Ya está actualizado" pero el HEAD esta atras,
   `reset --hard origin/<branch>` es el recovery canonico.
+- Slug derivation para deploys multi-instancia: directorio
+  primero, pyproject `[project].name` despues.
