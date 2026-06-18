@@ -248,8 +248,16 @@ def test_filtered_audit_queryset_respects_combined_filters(admin_user):
     older.created_at = timezone.now() - timedelta(days=30)
     older.save(update_fields=["created_at"])
 
-    yesterday = (timezone.now() - timedelta(days=1)).date().isoformat()
-    queryset = filtered_audit_queryset(action="login", date_to=yesterday)
+    # ``date_to`` is interpreted in Django's TIME_ZONE
+    # (America/Santiago). Using ``yesterday`` as the cutoff produced
+    # a flaky test: when CI ran between UTC 00:00-03:00 the cutoff
+    # ``yesterday 23:59:59 Santiago`` mapped to a UTC instant still
+    # AHEAD of the just-seeded events' ``timezone.now()``, so the
+    # filter included them and the assertion ``len(rows) == 1``
+    # failed with 5 instead. A 7-day cutoff is unambiguously past
+    # the seeded "now" regardless of the wall-clock hour.
+    cutoff = (timezone.now() - timedelta(days=7)).date().isoformat()
+    queryset = filtered_audit_queryset(action="login", date_to=cutoff)
 
     rows = list(queryset)
     assert len(rows) == 1
