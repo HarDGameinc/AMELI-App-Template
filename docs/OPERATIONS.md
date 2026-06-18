@@ -102,6 +102,72 @@ PY
 
 No `set -a`, no `IFS= read`, no `export APP_CONFIG`.
 
+## Branch protection on `main`
+
+Repo policy (applied 2026-06-18, roadmap #23):
+
+* `main` is protected: **no force-push, no deletion, no bypass**.
+* Pushes to `main` are blocked — every change goes through a PR.
+* A PR can merge only when:
+    - the CI workflow (`Lint + Test` matrix on 3.11 and 3.12) reports
+      `success` on the head SHA, AND
+    - the `Supply chain audit (pip-audit)` job reports `success`.
+* PR review is NOT required (single-operator template), but the
+  status checks must be green and up-to-date with `main`.
+
+Apply (one-time, repo admin only). Two equivalent paths:
+
+**A. GitHub UI** — Settings → Branches → Add branch ruleset:
+
+* Target branches: `main`
+* Restrict deletions: ON
+* Block force pushes: ON
+* Require a pull request before merging: ON (Required approvals = 0)
+* Require status checks to pass: ON
+    - Add: `Lint + Test (Python 3.11)`
+    - Add: `Lint + Test (Python 3.12)`
+    - Add: `Supply chain audit (pip-audit)`
+    - Require branches to be up to date before merging: ON
+* Do not allow bypassing the above settings: ON
+
+**B. `gh` CLI** — equivalent payload:
+
+```bash
+gh api -X PUT "/repos/HarDGameinc/AMELI-App-Template/branches/main/protection" \
+    --input - <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Lint + Test (Python 3.11)",
+      "Lint + Test (Python 3.12)",
+      "Supply chain audit (pip-audit)"
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+JSON
+```
+
+Day-to-day promotion of `dev → main` becomes:
+
+```bash
+gh pr create --base main --head dev --title "promote dev → main" --body "fast-forward"
+gh pr merge --merge       # or --rebase if you want a linear history
+```
+
+The fast-forward `git push origin main` pattern used through
+2026-06-17 will be rejected once the ruleset is active — that is
+the intended behaviour. The previous `dev → main` via shell
+shows up clearly in the audit log; the protected workflow makes
+every promotion reviewable via PR history.
+
 ## Health checks
 
 ```bash
