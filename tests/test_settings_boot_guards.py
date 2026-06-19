@@ -34,6 +34,15 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
             "AMELI_APP_MFA_ENCRYPTION_KEY",
             "kj9_Vh-rExdXrPm7TZWQ8a9oU8gPpYHN-mDz2LfqHy0=",
         )
+    if env != "dev" and "AMELI_APP_AUDIT_HMAC_KEY" not in env_vars:
+        # ASVS V7.3.2 / V6.3.1 boot guard added 2026-06-19 after
+        # independent security re-audit flagged the missing guard as
+        # HIGH. Tests that don't probe THIS guard get a default so they
+        # exercise the guard they care about without colliding.
+        monkeypatch.setenv(
+            "AMELI_APP_AUDIT_HMAC_KEY",
+            "test-audit-hmac-key-for-prod-boot-guard-fixtures-only",
+        )
 
     # Drop any cached settings module so the module-level guards re-run.
     for cached in ("ameli_web.settings",):
@@ -151,3 +160,53 @@ def test_dev_boots_without_mfa_encryption_key(monkeypatch):
     """Mirror property: in dev, the key is optional (pass-through mode)."""
     settings = _reload_settings(monkeypatch, env="dev")
     assert getattr(settings, "MFA_ENCRYPTION_KEY", "") == ""
+
+
+def test_non_dev_refuses_empty_audit_hmac_key(monkeypatch):
+    """ASVS V7.3.2 / V6.3.1 boot guard — outside dev, the audit HMAC
+    key must be set so the chain integrity check is enforced. Without
+    it, ``record_audit`` writes rows with ``hmac=""`` and
+    ``verify_audit_chain`` refuses to verify — silent disabling of a
+    critical integrity control. Caught by the 2026-06-19 independent
+    security re-audit.
+    """
+    with pytest.raises(RuntimeError, match="AMELI_APP_AUDIT_HMAC_KEY"):
+        _reload_settings(
+            monkeypatch,
+            env="prod",
+            AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+            AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+            AMELI_APP_DJANGO_DEBUG="false",
+            AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+            AMELI_APP_EMAIL_BACKEND="smtp",
+            AMELI_APP_EMAIL_HOST="smtp.example.com",
+            # Explicitly empty — must trip the new guard.
+            AMELI_APP_AUDIT_HMAC_KEY="",
+        )
+
+
+def test_dev_boots_without_audit_hmac_key(monkeypatch):
+    """Mirror property: in dev, an empty audit key is allowed —
+    rows write without an integrity stamp, useful for fast iteration.
+    """
+    settings = _reload_settings(monkeypatch, env="dev")
+    assert getattr(settings, "AUDIT_HMAC_KEY", "") == ""
+
+
+def test_non_dev_refuses_av_endpoint_with_bad_scheme(monkeypatch):
+    """ASVS V12.4.1 — the AV endpoint must use tcp:// or http(s)://.
+    A misconfigured scheme used to silently fall back to fail-open
+    at upload time. Now caught at boot.
+    """
+    with pytest.raises(RuntimeError, match="AMELI_APP_AV_ENDPOINT"):
+        _reload_settings(
+            monkeypatch,
+            env="dev",
+            AMELI_APP_AV_ENDPOINT="file:///etc/passwd",
+        )
+
+
+def test_dev_boots_with_valid_av_endpoint(monkeypatch):
+    settings = _reload_settings(monkeypatch, env="dev",
+                                AMELI_APP_AV_ENDPOINT="tcp://clamd:3310")
+    assert settings.AV_ENDPOINT == "tcp://clamd:3310"

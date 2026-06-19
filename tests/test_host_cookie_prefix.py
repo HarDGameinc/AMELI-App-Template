@@ -43,6 +43,11 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
             "AMELI_APP_MFA_ENCRYPTION_KEY",
             "kj9_Vh-rExdXrPm7TZWQ8a9oU8gPpYHN-mDz2LfqHy0=",
         )
+    if env != "dev" and "AMELI_APP_AUDIT_HMAC_KEY" not in env_vars:
+        monkeypatch.setenv(
+            "AMELI_APP_AUDIT_HMAC_KEY",
+            "test-audit-hmac-key-for-prod-boot-guard-fixtures-only",
+        )
     if "ameli_web.settings" in sys.modules:
         del sys.modules["ameli_web.settings"]
     return importlib.import_module("ameli_web.settings")

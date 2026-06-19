@@ -252,15 +252,31 @@ HIBP_PASSWORD_CHECK = os.environ.get("AMELI_APP_HIBP_PASSWORD_CHECK", "").strip(
 # Secret key for the audit-log HMAC chain. When set, every audit row is
 # stamped with HMAC-SHA256 over its canonical payload + the previous
 # row's hmac, so ``ameli-app verify-audit`` can detect tampering after
-# the fact (edited row, deleted row, reordered row). Leave blank to keep
-# the chain off — rows still write, just without an integrity stamp.
+# the fact (edited row, deleted row, reordered row).
 #
 # Generate one with:
 #   python -c "import secrets; print(secrets.token_urlsafe(48))"
 # and paste it into AMELI_APP_AUDIT_HMAC_KEY in the env file. Once set
 # DO NOT rotate without re-anchoring or all historical rows fail
 # verification.
+#
+# Empty value: in ``dev`` rows still write without an integrity stamp
+# (convenient for local CI / first-boot). Outside dev the boot guard
+# below refuses to start without a key — forgetting it in prod used to
+# silently disable the entire chain (independent security audit
+# 2026-06-19 flagged this as a HIGH finding).
 AUDIT_HMAC_KEY = os.environ.get("AMELI_APP_AUDIT_HMAC_KEY", "").strip()
+
+if not _IS_DEV_ENV and not AUDIT_HMAC_KEY:
+    raise RuntimeError(
+        "AMELI_APP_AUDIT_HMAC_KEY is empty outside the dev environment. "
+        "Without it, audit rows write with hmac='' and the chain integrity "
+        "check (ASVS V7.3.2, V6.3.1) is vacuously disabled — tampering goes "
+        "undetected. Generate one with `python -c \"import secrets; "
+        "print(secrets.token_urlsafe(48))\"` and paste it into "
+        "AMELI_APP_AUDIT_HMAC_KEY in the env file. Once set DO NOT rotate "
+        "without re-anchoring (see `ameli-app rotate-audit-key`)."
+    )
 
 # ASVS V12.4.1 — optional antivirus scan for avatar uploads. Operator
 # opt-in by setting ``AMELI_APP_AV_ENDPOINT``. Two transports are
@@ -273,7 +289,21 @@ AUDIT_HMAC_KEY = os.environ.get("AMELI_APP_AUDIT_HMAC_KEY", "").strip()
 # audit row ``avatar_upload_av_check_failed`` (precedent HIBP
 # ``validators.py``). Operators that want fail-closed wrap their own
 # upstream reverse-proxy with a health probe.
+#
+# Boot guard rejects unsupported schemes — a misconfigured value (e.g.
+# ``file://`` or a bare host) used to silently fall back to
+# ``check_failed`` at upload time (fail-open). The early rejection
+# forces the operator to fix the env BEFORE the first upload.
 AV_ENDPOINT = os.environ.get("AMELI_APP_AV_ENDPOINT", "").strip()
+
+if AV_ENDPOINT:
+    _av_scheme = AV_ENDPOINT.split("://", 1)[0].lower() if "://" in AV_ENDPOINT else ""
+    if _av_scheme not in ("tcp", "http", "https"):
+        raise RuntimeError(
+            f"AMELI_APP_AV_ENDPOINT must start with tcp://, http://, or https:// "
+            f"(got scheme={_av_scheme!r} from value {AV_ENDPOINT!r}). "
+            "See docs/OPERATIONS.md § 'Avatar AV scan' for examples."
+        )
 
 # TOTP shared secrets are wrapped with Fernet (AES-128-CBC + HMAC-SHA256)
 # before they hit the DB. The key is a 32-byte url-safe base64 token —
