@@ -240,6 +240,65 @@ def test_throttle_sliding_window_folds_in_previous_bucket(settings):
     assert sliding > fixed
 
 
+@pytest.mark.django_db
+def test_throttle_sliding_window_rounds_prev_contribution_up(settings):
+    """The sliding-window helper used to truncate the previous
+    bucket's weighted contribution with ``int()``. At the boundary
+    (e.g. 0.001s into a new bucket) ``int(prev_count * 0.999...)``
+    silently dropped a fractional unit; a request that should have
+    crossed the threshold landed UNDER it. Caught by the
+    ``test_forgot_password_throttle_after_too_many_requests`` CI
+    flake on 2026-06-18 — the test crosses a 600s bucket boundary
+    in ~0.5%/run.
+
+    The fix uses ``math.ceil`` so the contribution rounds UP, which
+    is the correct defensive bias for a rate limiter (over-count
+    by at most 1 at the boundary, never under-count).
+
+    Pin: prev_count=2, weight ~0.999. Old code returned cur + int(1.998) = cur + 1.
+    New code returns cur + math.ceil(1.998) = cur + 2. The boundary
+    edge test passes only with the ceil semantics.
+    """
+    from datetime import timedelta
+    from unittest.mock import patch
+
+    from ameli_web.accounts.models import ThrottleCounter
+    from ameli_web.accounts.services import (
+        _read_throttle_counter_sliding,
+        _window_start_for,
+    )
+
+    window = 600
+    cur_bucket = _window_start_for(window)
+    prev_bucket = cur_bucket - timedelta(seconds=window)
+
+    ThrottleCounter.objects.create(
+        scope="forgot_password_ip", key="127.0.0.1",
+        window_start=prev_bucket, count=2,
+    )
+    ThrottleCounter.objects.create(
+        scope="forgot_password_ip", key="127.0.0.1",
+        window_start=cur_bucket, count=1,
+    )
+
+    # Pin "now" to 1ms into the new bucket -> prev_weight ~ 0.99999
+    now_at_boundary = cur_bucket + timedelta(milliseconds=1)
+    with patch(
+        "ameli_web.accounts.services.timezone.now",
+        return_value=now_at_boundary,
+    ):
+        sliding = _read_throttle_counter_sliding(
+            scope="forgot_password_ip", key="127.0.0.1", window_seconds=window,
+        )
+
+    # cur=1 + ceil(2 * 0.999998) = 1 + 2 = 3. Under truncation it was 1 + 1 = 2.
+    assert sliding == 3, (
+        f"Expected sliding=3 with ceil semantics; got {sliding}. "
+        f"If this is 2, the sliding window is back to int() truncation "
+        f"and the forgot-password throttle CI flake will return."
+    )
+
+
 # ---------------------------------------------------------------------------
 # #5 ProfilePreferencesForm has no email field
 # ---------------------------------------------------------------------------

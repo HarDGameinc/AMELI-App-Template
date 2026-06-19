@@ -2887,7 +2887,18 @@ def _read_throttle_counter_sliding(*, scope: str, key: str, window_seconds: int)
 
     elapsed = epoch - bucket
     prev_weight = max(0.0, (window_seconds - elapsed) / window_seconds)
-    return cur_count + int(prev_count * prev_weight)
+    # Round UP (math.ceil) instead of truncating: a rate limiter
+    # MUST never under-count, otherwise a request that lands a
+    # millisecond after a bucket boundary slips below the
+    # threshold even when the burst across the past window
+    # exceeds it. The cost is at most 1 over-count at the
+    # boundary (acceptable defensive bias); the benefit is the
+    # test_forgot_password_throttle_after_too_many_requests CI
+    # flake (~0.5%/run when test crosses a window edge) goes to
+    # zero.
+    import math
+
+    return cur_count + math.ceil(prev_count * prev_weight)
 
 
 def record_login_failure(*, username: str = "", ip: str = "") -> None:
