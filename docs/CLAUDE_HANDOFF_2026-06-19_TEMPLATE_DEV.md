@@ -180,6 +180,79 @@ nocturno) queda pendiente y se valida con
 `journalctl -u ameli-app-template-dev-backup.service --since today`
 + `ls /var/backups/ameli-app-template-dev/` el 20-jun.
 
+### Doc-hygiene cleanup (86186c3)
+
+Audit amplio sobre el sprint entero (no solo el dia). Detectados
+y corregidos 3 problemas de coherencia documental:
+
+1. `SECURITY.md` R-04 tagged "Mitigation pending" pese a que el
+   item #14 (lockfile + `--require-hashes`) lo cerro el 18-jun.
+   Actualizado a "Closed 2026-06-18" con todas las referencias.
+2. R-IDs no alineados entre `SECURITY.md` y `COMPLIANCE.md`:
+   compliance R-04 = sudo replay nonce; security R-04 = dep pins.
+   Reconciliados; agregados R-09 (sudo replay) y R-10
+   (body parsing) a SECURITY.md.
+3. Dos strict GAPs (V11.1.5, V13.1.5) marcados sin la etiqueta
+   "accepted" — re-tagueados `**GAP-accepted**` con cross-ref a
+   sus R-IDs en SECURITY.md. Sin estos marks, un scan greps un
+   "pending" donde la realidad es residual aceptado.
+
+### Independent security re-audit (d785518) — 2 bugs latentes encontrados
+
+Despues del cleanup, lanzamos dos agentes paralelos en read-only
+mode:
+- Code quality audit sobre los archivos shippeados en el sprint.
+- Security re-audit "trust but verify" sobre las claims de
+  151/151 PASS.
+
+**Code quality**: 4 findings, todos falsos positivos o de
+estilo preventativo. Cero acciones.
+
+**Security re-audit**: 3 findings; 2 reales materiales:
+
+[HIGH] `AMELI_APP_AUDIT_HMAC_KEY` sin boot guard. Patron
+inconsistente con `MFA_ENCRYPTION_KEY` (que SI hard-failea).
+Un operador que olvida exportar la key en prod silenciosamente
+desactiva la integridad del audit chain (ASVS V7.3.2, V6.3.1).
+`verify_audit_chain` refuses to verify, pero solo lo descubris
+cuando manualmente probas — entre tanto el chain claim es
+vacuously satisfied. Fix: mirror del MFA pattern — outside dev,
+empty raises RuntimeError con instrucciones single-screen.
+
+[MED] `AMELI_APP_AV_ENDPOINT` scheme sin validar at boot. Un
+typo como `file:///etc/passwd` o `av-host:3310` (sin scheme)
+parseaba bien al boot, pero el runtime `av.py` devolvia
+`check_failed` y el upload se completaba (fail-open por
+diseno). Fix: boot guard rechaza cualquier scheme distinto de
+`tcp://`, `http://`, `https://`.
+
+[LOW] `HEALTH_METRICS_ALLOWLIST` empty = open. Documentado por
+design pero el comentario en OPERATIONS.md vale claridad. Lo
+dejo como-esta; no es bug.
+
+**Tests nuevos** (5): boot guard AUDIT_HMAC_KEY (3), boot
+guard AV_ENDPOINT (2). Suite 894 → **898 passed**.
+**Helpers actualizados** (2): los fixtures de
+`test_settings_boot_guards.py` y `test_host_cookie_prefix.py`
+auto-setean AUDIT_HMAC_KEY para prod tests, mismo patron que
+ya tenian para MFA.
+**SECURITY.md gana R-11 (closed)** y **R-12 (closed)** con
+status traceable.
+
+### Leccion sprint-wide — auditor externo VS self-review
+
+El sprint cerro 151/151 controles L2 con "0 strict GAPs" segun
+self-review. Una segunda mirada independiente con LITERALMENTE
+NADA de codigo nuevo en 24h encontro 2 bugs materiales. Es la
+misma leccion del wire test (PT-1..PT-4 surfaced 3 bugs
+template-side que unit tests no veian) escalada al doc nivel:
+**el que escribio las pruebas no es el que las puede auditar
+imparcialmente**. Patron a incorporar al S-04 del playbook:
+despues de declarar un capitulo ASVS al bar L2, mandar UN
+agente independiente a buscar lo que no vimos. Costo: 5 min de
+agent + 30 min de fix. ROI: 2 HIGH/MED bugs evitan llegar a
+prod silenciosamente.
+
 ## §4. Decisiones tomadas
 
 1. **Flake = bug latente, fix en producto**. El truncation
@@ -204,14 +277,15 @@ nocturno) queda pendiente y se valida con
 
 | Metrica | Inicio dia | Cierre dia | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 882 (1 failure CI #93) | **894** | +12 (+1 throttle ceil, +4 slug autodetect, +7 pg_url) |
+| Suite local (sin deselect) | 882 (1 failure CI #93) | **898** | +16 (+1 throttle ceil, +4 slug autodetect, +7 pg_url, +5 boot guards) |
 | ASVS L2 active rows PASS | 151 | 151 | 0 |
 | Roadmap items abiertos | 0 | 0 | 0 |
 | Wire tests ejecutados | 0 | **6** (PT-1 promote, PT-2 hook, PT-3 audit, PT-4 backup, PT-4 verify, PT-4 timer) | — |
-| Bugs latentes descubiertos | 0 | **3** (throttle truncation, slug fallback, pg_url libpq incompat) | +3 |
-| Commits sobre `dev` | 0 (start at `d1f046b`) | 5 (`67ae53a..<this>`) | — |
+| Bugs latentes descubiertos | 0 | **5** (throttle truncation, slug fallback, pg_url libpq incompat, AUDIT_HMAC_KEY guard, AV_ENDPOINT scheme guard) | +5 |
+| Residual risks register entries | 8 (R-01..R-08) | **12** (R-01..R-12; +R-09 sudo replay doc, +R-10 body limits doc, +R-11/R-12 boot guards closed) | +4 |
+| Commits sobre `dev` | 0 (start at `d1f046b`) | 8 (`67ae53a..d785518`) | — |
 | Version | `v0.3.0-django` | **`v0.3.1-django`** | patch bump |
-| CI verde | 1 failure / 1 ultimo run | 3 verdes (`67ae53a`, `c297f7c`, `cfb3086`+) | drastic recovery |
+| CI verde | 1 failure / 1 ultimo run | 4 verdes consecutivos | drastic recovery |
 
 ## §6. Hallazgos / findings
 
