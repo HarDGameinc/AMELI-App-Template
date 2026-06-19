@@ -280,7 +280,7 @@ No control regressed.
 | 11.1.2 | High-value txns logged | PASS | Audit covers admin CRUD, password resets, MFA toggles, sudo grants, maintenance toggles. |
 | 11.1.3 | Sequential steps enforced | PASS | `MustChangePasswordMiddleware` blocks normal flow. `MaintenanceModeMiddleware.BYPASS_PREFIXES` now includes `/profile/password/` and `/profile/email-change/` (fix in `0077fb0`) so a `must_change_password=True` user never gets trapped during maintenance. |
 | 11.1.4 | Anti-automation for unusual volume | PASS | Sliding-window throttles for login, MFA resend, forgot-password (`_read_throttle_counter_sliding`). |
-| 11.1.5 | Replay prevention on sensitive ops | **GAP** | Reset tokens are one-use; sudo grant has no replay nonce within its window — any authenticated request within the window can act. Documented as residual risk R-04 in `docs/SECURITY.md`. Acceptable trade-off. |
+| 11.1.5 | Replay prevention on sensitive ops | **GAP-accepted** | Reset tokens are one-use; sudo grant has no replay nonce within its window — any authenticated request within the window can act. Documented as residual risk **R-09** in `docs/SECURITY.md`. Acceptable trade-off (short TTL + audit trail). |
 | 11.1.7 | Real-time monitoring | PASS | `/metrics` exposes `ameli_app_audit_chain_ok` for Prometheus. |
 
 ---
@@ -311,7 +311,7 @@ No control regressed.
 | 13.1.2 | Anti-automation on APIs | PASS (partial) | `/health`, `/metrics` allowlistable via `HEALTH_METRICS_ALLOWLIST`. Allowlist match fixed in `0077fb0` (`REMOTE_ADDR` first, then `client_ip` upstream). |
 | 13.1.3 | Different APIs different auth | N/A | One API. |
 | 13.1.4 | Authorization on every API call | PASS | `/api/health` intentionally public unless allowlisted. |
-| 13.1.5 | Body parsing limits | **GAP** | No explicit `DATA_UPLOAD_MAX_MEMORY_SIZE` override; Django default 2.5 MB. For 3 MB avatar this kicks form parsing to disk. Acceptable; document. |
+| 13.1.5 | Body parsing limits | **GAP-accepted** | No explicit `DATA_UPLOAD_MAX_MEMORY_SIZE` override; Django default 2.5 MB. For 3 MB avatar this kicks form parsing to disk. Documented as residual risk **R-10** in `docs/SECURITY.md`. |
 | 13.2.1 | REST APIs use proper HTTP verbs | PASS | `@require_GET`, `@require_POST`. |
 | 13.2.2 | JSON schema validation | **PASS** | `_openapi_schema()` now declares `required` + `properties` per response in `dashboard/views.py`; `tests/test_openapi_contract.py` resolves every documented path against the URL conf, hits it via the test client, and validates the JSON body against the documented schema (subset validator: `type`, `required`, `properties`, `enum`; stdlib only — no `jsonschema` dep). Reality→doc drift is guarded by a URL-conf walk that flags any undocumented public JSON endpoint. Roadmap item #10 closed 2026-06-17. |
 | 13.2.3 | CSRF on POST API | PASS | CSRF middleware applies. |
@@ -399,19 +399,33 @@ Closed since 2026-06-15:
 
 ## 18. Residual risks accepted
 
-These are documented in `docs/SECURITY.md` §"Residual risk register"
-as R-01..R-08. Reproduced here for ASVS audit traceability:
+The canonical register lives in `docs/SECURITY.md` §"Residual
+risk register". This table mirrors it for ASVS audit
+traceability. **IDs are aligned across both docs as of
+2026-06-19** (R-09 sudo replay + R-10 body parsing limits added
+to SECURITY.md to match the entries below).
 
-| ID | ASVS | Risk | Why accepted |
+Closure dates (sprint 2026-06-15..2026-06-19):
+
+* **R-01 closed 2026-06-16** (#1 Fernet wrap)
+* **R-03 closed 2026-06-16** (#5 SRI hashes)
+* **R-04 closed 2026-06-18** (#14 lockfile with `--require-hashes`)
+* **R-05 closed 2026-06-17** (#7 AV scan)
+
+Still accepted / operator-owned: R-02, R-06, R-07, R-08, R-09, R-10.
+
+| ID | ASVS | Risk | Why accepted (or closure ref) |
 | --- | --- | --- | --- |
-| R-01 | V2.8 | TOTP secret in plaintext | Roadmap #1 (M); Fernet wrap planned. |
+| R-01 | V2.8 | TOTP secret in plaintext | **Closed 2026-06-16** — Fernet wrap via roadmap #1. |
 | R-02 | V7.3.2 | Audit prune re-stamps survivors under live key (originals lost) | Operator can opt to archive externally before pruning; `audit_max_age_days=None` by default keeps everything. |
-| R-03 | V10.3.1 | SRI hashes default-empty for Swagger/ReDoc | Operator can vendor or supply hashes (`OPENAPI_SWAGGER_SRI`). |
-| R-04 | V11.1.5 | Sudo grant lacks replay nonce within its window | Sudo TTL is short; trade-off acceptable. |
-| R-05 | V12.4.1 | No automatic AV scan on avatar upload | Pillow format whitelist + pixel cap + byte cap close common vectors. |
+| R-03 | V10.3.1 | SRI hashes default-empty for Swagger/ReDoc | **Closed 2026-06-16** — `/docs` and `/redoc` refuse to render outside `dev` without SRI (roadmap #5). |
+| R-04 | V14.2.3 | Dependency pins use `>=` rather than `==` with hashes | **Closed 2026-06-18** — `requirements.lock` + `--require-hashes` via roadmap #14. |
+| R-05 | V12.4.1 | No automatic AV scan on avatar upload | **Closed 2026-06-17** — clamd opt-in via `AMELI_APP_AV_ENDPOINT` (roadmap #7). |
 | R-06 | V11.1.3 | `/profile/password/` always bypassed in maintenance | Without it, `must_change_password=True` user is permanently bounced. |
 | R-07 | V9.1.2 | HSTS one-year default outside dev | Operator can opt out via `AMELI_APP_HSTS_SECONDS=0`. |
 | R-08 | V13.1.4 | `/health`, `/metrics` publicly reachable unless allowlist set | Allowlist is opt-in; matching now respects upstream proxy hop. |
+| R-09 | V11.1.5 | Sudo grant has no replay nonce within its window | Sudo TTL is short (300 s default); stronger replay prevention would require per-request nonces on every state-changing admin endpoint — overkill given the short window and the per-action audit trail. |
+| R-10 | V13.1.5 | No explicit `DATA_UPLOAD_MAX_MEMORY_SIZE` override — Django default 2.5 MB | For the 3 MB avatar use case this kicks form parsing to disk (benign). Operator handling larger uploads should raise the limit; current default protects against memory exhaustion. |
 
 ---
 
