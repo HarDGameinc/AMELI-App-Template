@@ -5,7 +5,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 APP_NAME="${APP_NAME:-AMELI App Template}"
-APP_SLUG="${APP_SLUG:-ameli-app}"
+
+# Auto-detect APP_SLUG when not exported. Convention: the install
+# layout puts code at /opt/<slug>-<env>/ and config at
+# /etc/<slug>-<env>/, with PROJECT_DIR equal to the code path
+# above. So PROJECT_DIR basename minus the trailing env suffix
+# is the slug -- matches what install.sh wrote 1:1, and matches
+# manage.py's _candidate_slugs auto-detection. Required because
+# interactive invocations of backup.sh/uninstall.sh/update.sh
+# without APP_SLUG= used to fall back to the literal default
+# "ameli-app" and look at the wrong /etc path. The conservative
+# fallback (literal "ameli-app") is preserved for the case where
+# the checkout dir doesn't follow the convention.
+if [[ -z "${APP_SLUG:-}" ]]; then
+    _project_dir_basename="$(basename "${PROJECT_DIR}")"
+    if [[ "${_project_dir_basename}" == *-dev ]]; then
+        APP_SLUG="${_project_dir_basename%-dev}"
+    elif [[ "${_project_dir_basename}" == *-prod ]]; then
+        APP_SLUG="${_project_dir_basename%-prod}"
+    else
+        APP_SLUG="ameli-app"
+    fi
+fi
+
 APP_PACKAGE="${APP_PACKAGE:-ameli_app}"
 APP_ENV="${APP_ENV:-dev}"
 
