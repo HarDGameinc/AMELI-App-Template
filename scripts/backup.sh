@@ -42,9 +42,17 @@ db_dump_path=""
 if [[ -n "${DATABASE_URL:-}" ]] && [[ "${DATABASE_URL}" == postgres* ]]; then
   command -v pg_dump >/dev/null 2>&1 || { fail "pg_dump not installed"; }
   db_dump_path="${workdir}/db.pgdump"
+  # Strip the SQLAlchemy driver suffix (e.g. ``+psycopg``,
+  # ``+psycopg2``) before handing the URL to ``pg_dump``: libpq
+  # only recognises ``postgresql://`` and ``postgres://`` URIs;
+  # anything else is silently discarded and the client falls back
+  # to a default socket connection under the OS user, which on
+  # ``root`` deploys lands on "FATAL: no existe el rol root".
+  # Surfaced by 2026-06-19 PT-4 wire test on ha-report2.
+  pg_url="$(echo "${DATABASE_URL}" | sed -E 's@^postgresql\+[A-Za-z0-9_]+://@postgresql://@')"
   log "Dumping Postgres -> ${db_dump_path}"
   if ! pg_dump --format=custom --no-owner --no-acl \
-      --file="${db_dump_path}" "${DATABASE_URL}"; then
+      --file="${db_dump_path}" "${pg_url}"; then
     # Exit code 2 lets the operator's monitor distinguish a DB dump
     # failure from generic script errors (which exit 1 via ``fail``).
     fail 2 "pg_dump failed"
