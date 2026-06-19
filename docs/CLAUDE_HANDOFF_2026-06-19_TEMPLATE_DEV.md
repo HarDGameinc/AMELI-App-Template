@@ -30,7 +30,60 @@ PT-2/PT-3/PT-4 segun lo que sea aplicable desde este entorno.
 
 | Commit | Tema | Tests |
 |---|---|---|
-| `<this>` | Fix CI flake — `_read_throttle_counter_sliding` cambia `int()` truncation por `math.ceil` (rate limiter no debe under-contar) + test guard | 882 → 883 (+1) |
+| `67ae53a` | Fix CI flake — `_read_throttle_counter_sliding` cambia `int()` truncation por `math.ceil` (rate limiter no debe under-contar) + test guard | 882 → 883 (+1) |
+| — | **PT-1** Promote `dev → main` (`88cce00..67ae53a`, 5 commits) — CI #94 verde | suite stays green |
+
+### Wire validation 2026-06-19 — PT-1, PT-2, PT-3
+
+Branch promote ejecutado desde el sandbox checkout que tenia el
+pre-push hook instalado de ayer (PT-2 layer 1 ya activo).
+Cadena de pruebas:
+
+1. **PT-2 layer 1 (client hook) atrapa la version sin bypass**:
+   ```
+   $ git checkout main && git push origin main
+   [pre-push] Direct push to 'main' refused.
+   ...
+   error: failed to push some refs
+   ```
+   El push regular se rechaza con el mensaje canonico del hook
+   (`deploy/git-hooks/pre-push:36`). El operador queda forzado
+   a usar bypass o PR.
+
+2. **PT-2 bypass funciona como documentado**:
+   ```
+   $ ALLOW_DIRECT_PUSH=1 git push origin main
+   [pre-push] ALLOW_DIRECT_PUSH=1 set; skipping branch-protection check
+   To .../HarDGameinc/AMELI-App-Template
+      88cce00..67ae53a  main -> main
+   ```
+   Push completado, hook reconoce el bypass.
+
+3. **PT-3 layer 2 (audit workflow) detecta el direct push**:
+   `Main push audit #1` corrio sobre `67ae53a`. Job
+   `Audit direct pushes to main` exit 0, log:
+   ```
+   ##[warning]commit 67ae53a by Claude <noreply@anthropic.com>
+       -- subject: fix sliding-window throttle: ceil prev contribution
+   This commit landed on main without going through a PR merge.
+   On a private + Free-plan repo, GitHub does not enforce branch
+   protection server-side. The pre-push hook
+   (scripts/install-pre-push-hook.sh) is the client-side guard;
+   this job is the audit-log substitute.
+   ```
+   Anotacion `::warning::` greppable en Actions. **PT-3 layer 2
+   wire-verified end-to-end**.
+
+4. **PT-3 layer 3 (latente)**: Rulesets + classic rules siguen en
+   repo settings sin enforce hasta upgrade a Team. NO se prueba
+   en wire (ya documentado como inactivo).
+
+**PT-1 status**: cerrado. `main == dev == 67ae53a`.
+**PT-2 layer 1 status**: cerrado para este checkout (hook
+instalado y verificado). Para Windows + ha-report2 sigue como
+PT-pendiente — `bash scripts/install-pre-push-hook.sh`.
+**PT-3 status**: cerrado (layer 2 wire-verified; layers 1 y 3
+ya cubiertos).
 
 ### Fix CI flake — root cause distinto al "test-state isolation"
 
