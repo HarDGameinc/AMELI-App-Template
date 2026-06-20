@@ -1,3 +1,27 @@
+    /* Phase 1 #3 (2026-06-20): keyboard accessibility — skip link
+       jumps past the header to the main content. Visible only when
+       focused; ``position:absolute`` keeps it out of the visual
+       flow otherwise. */
+    .skip-link {
+      position:absolute; left:-9999px; top:0;
+      background:#155eef; color:#fff;
+      padding:10px 16px; border-radius:0 0 6px 0;
+      font-weight:600; z-index:9999;
+      text-decoration:none;
+    }
+    .skip-link:focus { left:0; outline:3px solid #fff; outline-offset:2px; }
+    /* Ensure focus rings are visible on every focusable element —
+       outline:none anywhere in the cascade would defeat keyboard
+       navigation entirely. */
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    /* Honor user's reduced-motion preference (a11y); transitions
+       drop to instant. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:0.01ms !important;
+        animation-iteration-count:1 !important;
+        transition-duration:0.01ms !important;
+        scroll-behavior:auto !important; }
+    }
     :root, :root[data-theme="light"] {
       --bg:#f6f7fb; --surface:#fff; --ink:#17202a; --muted:#687385;
       --line:#d8dde8; --ok:#137a4b; --warn:#b46a00; --bad:#b42318;

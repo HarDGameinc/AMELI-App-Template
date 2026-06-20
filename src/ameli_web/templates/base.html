@@ -1,9 +1,19 @@
 {% load static %}
 <!doctype html>
-<html lang="es">
+{# ``data-theme`` honors User.theme_preference (set in profile). #}
+{# Without an authenticated user, the attribute stays absent and #}
+{# CSS falls through to ``@media (prefers-color-scheme: dark)``, #}
+{# which respects the OS-level setting. Phase 1 #3 of 2026-06-20 #}
+{# roadmap closed the gap where ``active_theme`` was in context #}
+{# but never applied. #}
+<html lang="es"{% if active_theme %} data-theme="{{ active_theme }}"{% endif %} color-scheme="{% if active_theme %}{{ active_theme }}{% else %}light dark{% endif %}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# ``color-scheme`` meta hints native form controls + scrollbar to #}
+    {# match the active palette so a dark page does not get a white #}
+    {# scrollbar / native button. #}
+    <meta name="color-scheme" content="{% if active_theme %}{{ active_theme }}{% else %}light dark{% endif %}">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,8 +21,11 @@
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
   </head>
   <body>
+    {# Skip-link for keyboard users; first focusable element in body. #}
+    {# Visible only when focused (CSS ``.skip-link:focus`` reveals). #}
+    <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
     {% if request.maintenance_state.active %}
-    <div role="status" style="background:#d6336c;color:#fff;padding:10px 16px;font-weight:600;text-align:center;">
+    <div role="status" aria-live="polite" style="background:#d6336c;color:#fff;padding:10px 16px;font-weight:600;text-align:center;">
       Mantenimiento activo{% if request.maintenance_state.message %}: {{ request.maintenance_state.message }}{% else %}. Algunas acciones estaran temporalmente deshabilitadas.{% endif %}
     </div>
     {% endif %}
@@ -81,11 +94,15 @@
       </div>
     </header>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       {% block breadcrumbs %}{% endblock %}
 
       {% if messages %}
-      <section class="panel notice-panel">
+      {# aria-live=polite so screen readers announce flash messages #}
+      {# (e.g. "password updated", "session revoked") without #}
+      {# interrupting the user's current task. role=status keeps the #}
+      {# semantics correct for AT users on the first render. #}
+      <section class="panel notice-panel" role="status" aria-live="polite">
         {% for message in messages %}
         <p class="muted">{{ message }}</p>
         {% endfor %}
