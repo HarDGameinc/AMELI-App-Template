@@ -88,7 +88,10 @@ if _openapi_sri_env in {"true", "1", "yes", "on"}:
 elif _openapi_sri_env in {"false", "0", "no", "off"}:
     OPENAPI_SRI_REQUIRED = False
 else:
-    OPENAPI_SRI_REQUIRED = None  # follow the default policy
+    # ``None`` = "follow the default policy" (decided by helper in
+    # dashboard.views). The variable is intentionally tri-state
+    # (True / False / None); the annotation accepts that union.
+    OPENAPI_SRI_REQUIRED: bool | None = None  # type: ignore[no-redef]
 
 # Operational endpoints (``/health``, ``/api/health``, ``/metrics``) are
 # public by default so probes and Prometheus scrapers reach them without

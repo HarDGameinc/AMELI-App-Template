@@ -49,6 +49,29 @@ repos:
                 tests/.*
             )$
 
+  # Phase 3 #6 — mypy static type check on every commit.
+  # Local-only (additional_dependencies pins the plugin versions
+  # to match requirements-dev.lock). Skips if a hook fails to
+  # find django via --no-warn-unused-ignores; the Real Check is
+  # CI which has the full venv.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        # Limit to src/; tests/migrations are excluded by pyproject.
+        files: ^src/
+        # Mypy needs the django-stubs plug-in + the Django sources
+        # available; install them inside the isolated hook venv.
+        additional_dependencies:
+          - django>=5.2,<7
+          - django-stubs>=6.0,<7
+          - types-pyyaml
+        # The hook runs without our env loaders, so explicitly mark
+        # this as APP_ENV=dev to skip prod boot guards in settings.py.
+        # Operators that need to type-check against a real settings
+        # env should run ``python -m mypy src/`` outside the hook.
+        args: [--config-file, pyproject.toml]
+
   # Standard hygiene — catches the small papercuts that bandit
   # and ruff don't notice.
   - repo: https://github.com/pre-commit/pre-commit-hooks

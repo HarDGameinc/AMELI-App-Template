@@ -311,6 +311,10 @@ class DjangoAdminSudoGateMiddleware:
         user = getattr(request, "user", None)
         if not is_superadmin(user):
             return self.get_response(request)
+        # ``is_superadmin`` returned True ⇒ user is a real authenticated
+        # User row (not None, not AnonymousUser). mypy doesn't see this
+        # narrowing because is_superadmin returns bool, not TypeGuard.
+        assert user is not None  # noqa: S101 - type narrowing after is_superadmin gate
         from .services import session_in_sudo
 
         if session_in_sudo(request.session):
@@ -372,7 +376,7 @@ class MaintenanceModeMiddleware:
 
     def __call__(self, request):
         state = self._state()
-        request.maintenance_state = state  # type: ignore[attr-defined]
+        request.maintenance_state = state
         if not state.get("active"):
             return self.get_response(request)
         if request.method in self.SAFE_METHODS:

@@ -157,6 +157,9 @@ def _authenticated_media(request, path):
     user = getattr(request, "user", None)
     if not is_authenticated(user):
         return HttpResponseForbidden("authentication required")
+    # is_authenticated() returned True so user is a real User row;
+    # mypy doesn't see this narrowing (helper returns bool).
+    assert user is not None  # noqa: S101 - type narrowing after is_authenticated gate
     parsed = _parse_avatar_filename(path)
     if parsed is not None:
         safe_username, _token = parsed

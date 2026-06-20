@@ -12,7 +12,9 @@ class UserAdmin(DjangoUserAdmin):
     list_display = ("username", "display_name", "role", "is_active", "is_staff", "last_login")
     list_filter = ("role", "is_active", "theme_preference")
     search_fields = ("username", "display_name", "email")
-    fieldsets = DjangoUserAdmin.fieldsets + (
+    # ``DjangoUserAdmin.fieldsets`` is typed as Optional list; in
+    # practice Django ships a non-None default, so the + is safe.
+    fieldsets = DjangoUserAdmin.fieldsets + (  # type: ignore[operator]
         (
             "AMELI",
             {

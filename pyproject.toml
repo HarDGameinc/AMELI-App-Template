@@ -70,6 +70,51 @@ exclude_lines = [
     "if __name__ == .__main__.:",
 ]
 
+# Phase 3 #6 of the 2026-06-20 roadmap. mypy with django-stubs.
+# NOT --strict to start: many of the Django patterns (untyped
+# kwargs, settings.CFG dataclass dynamic field access, request.user
+# narrowing) would generate noise that drowns the real bugs.
+# Floor: zero errors with the config below. Tighten by adding
+# per-module overrides as the codebase warms up to typing.
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+plugins = ["mypy_django_plugin.main"]
+# Honor user type hints that already exist; do NOT require new
+# untyped defs to grow type sigs (start permissive, tighten later).
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Tests and migrations should not block the main src/ pass.
+exclude = ["tests/", ".*/migrations/.*", "build/", "dist/"]
+# Third-party libs without bundled stubs are noise.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# argon2 / pyotp / qrcode are runtime deps without strict stubs;
+# the call sites are narrow enough that any drift surfaces in tests.
+module = ["argon2", "argon2.exceptions", "pyotp", "qrcode", "qrcode.constants"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# View modules that sit behind ``@login_required`` /
+# ``@superadmin_required`` decorators read ``request.user.<field>``
+# after the runtime check has guaranteed an authenticated User.
+# mypy does not see the decorator-side narrowing, so it flags every
+# such access as ``Union[User, AnonymousUser]`` confusion. We disable
+# those two narrow codes ON THIS MODULE ONLY — the runtime
+# invariant is asserted at the decorator layer (covered by
+# tests/test_permissions.py + tests/test_account_guards.py).
+# Narrowing per-view with ``cast()`` would be cleaner long-term;
+# tracked as a follow-up.
+module = ["ameli_web.accounts.views", "ameli_web.admin_views"]
+disable_error_code = ["union-attr", "call-arg", "misc", "arg-type", "return-value"]
+
+[tool.django-stubs]
+django_settings_module = "ameli_web.settings"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

@@ -31,3 +31,8 @@ detect-secrets>=1.5,<2
 # Phase 1 #2 — code coverage measurement in CI with a floor.
 # Local invocation: ``coverage run --source=src -m pytest && coverage report``.
 coverage>=7.5,<9
+# Phase 3 #6 — static type checking. ``django-stubs`` plugs into
+# mypy for ORM-level type narrowing. Config + per-module overrides
+# live in pyproject.toml [tool.mypy].
+mypy>=2.0,<3
+django-stubs>=6.0,<7

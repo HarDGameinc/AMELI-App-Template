@@ -2322,7 +2322,7 @@ class _PasswordResetEmail(EmailMessage):
     passthrough body, regardless of line length.
     """
 
-    def message(self, *args, **kwargs):  # type: ignore[override]
+    def message(self, *args, **kwargs):
         # Python 3.13 introduced a ``policy`` keyword on
         # ``EmailMessage.message()``; older versions had no extra args.
         # Forwarding ``*args``/``**kwargs`` keeps both signatures happy.
@@ -2429,7 +2429,11 @@ def send_with_retry(
         subject = (message.subject or "")[:_OUTBOUND_SUBJECT_MAX_LEN]
         row = OutboundEmail.objects.create(
             subject=subject,
-            body=message.body or "",
+            # ``message.body`` can be a SafeString or _StrPromise (when
+            # the callsite passes a lazy gettext translation); coerce
+            # to plain str so the DB column accepts it without driver
+            # confusion.
+            body=str(message.body) if message.body else "",
             from_email=message.from_email or "",
             to_emails=list(message.to or []),
             use_ascii_passthrough=use_ascii,
@@ -3120,7 +3124,7 @@ def _consecutive_lockouts_for(username: str, *, window: int) -> int:
     from datetime import timedelta
 
     cutoff = timezone.now() - timedelta(seconds=max(1, window) * 6)
-    rows = (
+    rows_qs = (
         AuditEvent.objects.filter(
             action="login_locked_out",
             target_username__iexact=username,
@@ -3129,7 +3133,7 @@ def _consecutive_lockouts_for(username: str, *, window: int) -> int:
         .order_by("-created_at")
         .values_list("created_at", flat=True)[:10]
     )
-    rows = list(rows)
+    rows = list(rows_qs)
     if len(rows) < 2:
         return len(rows)
     # Count groups whose timestamps fall in distinct windows (gap >= window/2)

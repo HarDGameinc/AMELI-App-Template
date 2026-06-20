@@ -90,6 +90,19 @@ jobs:
         # in one catalog gets caught by the other.
         run: bandit -r src/ -ll -ii
 
+      - name: Mypy (static type checking)
+        # Phase 3 #6 of the 2026-06-20 roadmap. django-stubs plug-in
+        # narrows ORM types; per-module overrides in pyproject.toml
+        # relax view modules where the @login_required decorator
+        # guarantees the runtime invariant mypy cannot see. Floor:
+        # zero errors. Tighten by removing per-module disables as
+        # the codebase warms up to typing.
+        env:
+          # mypy needs to import the settings module to load the
+          # django plugin; APP_ENV=dev to skip prod boot guards.
+          APP_ENV: dev
+        run: python -m mypy src/
+
       - name: Django system checks
         working-directory: src
         run: python -m django check

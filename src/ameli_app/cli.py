@@ -323,6 +323,9 @@ def _handle_rotate_audit_key(args) -> int:
     if err is not None:
         _json({"ok": False, "error": err})
         return EXIT_ROTATION_REFUSED
+    # _resolve_rotation_keys returns (None, None, err) OR (str, str, None);
+    # after the err-not-None gate above, both keys are str. Narrow for mypy.
+    assert from_key is not None and to_key is not None  # noqa: S101 - type narrowing
 
     result = rotate_audit_key(from_key=from_key, to_key=to_key)
     if result.get("ok") and args.apply_env:

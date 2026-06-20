@@ -60,6 +60,7 @@ def _render(request, *, status: int, title: str, description: str) -> HttpRespon
         "app_name": app_name,
         "csp_nonce": getattr(request, "csp_nonce", ""),
     }
+    body: str
     try:
         body = render_to_string("error_generic.html", context, request=request)
     except Exception:  # noqa: BLE001 - last-resort fallback for a broken template loader
