@@ -46,6 +46,30 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 DJANGO_SETTINGS_MODULE = "ameli_web.settings"
 
+# Phase 1 #2 of the 2026-06-20 roadmap. Baseline at sprint
+# closeout was 86%; floor pinned at 85% so a regression has to
+# delete production code without replacement to trip CI.
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "*/migrations/*",
+    "*/__pycache__/*",
+    "src/*/wsgi.py",
+    "src/*/asgi.py",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

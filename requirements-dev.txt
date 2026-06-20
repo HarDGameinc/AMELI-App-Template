@@ -21,3 +21,13 @@ pip-tools>=7,<9
 # in one catches the other; if bandit catches something ruff misses
 # the operator gets a fix path either way.
 bandit>=1.7,<3
+# Phase 1 #1 of the 2026-06-20 roadmap — pre-commit hooks (ruff,
+# ruff-format, detect-secrets, hygiene). Install once per checkout
+# with ``pre-commit install``; the hook then runs on every commit.
+pre-commit>=4.0,<6
+# Pre-commit hooks for catching accidentally committed credentials.
+# Baseline at ``.secrets.baseline`` lists allowed fixtures.
+detect-secrets>=1.5,<2
+# Phase 1 #2 — code coverage measurement in CI with a floor.
+# Local invocation: ``coverage run --source=src -m pytest && coverage report``.
+coverage>=7.5,<9

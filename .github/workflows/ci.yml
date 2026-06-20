@@ -104,8 +104,16 @@ jobs:
         working-directory: src
         run: python -m django migrate --noinput
 
-      - name: Pytest
-        run: pytest -q --tb=short
+      - name: Pytest with coverage
+        # Phase 1 #2 of the 2026-06-20 roadmap. ``coverage run``
+        # wraps pytest; ``coverage report`` reads the coverage
+        # config from pyproject.toml and exits non-zero when the
+        # measured percentage drops below ``fail_under`` (85%).
+        # Baseline at the floor's introduction was 86%; a drop
+        # means production code lost a test without replacement.
+        run: |
+          coverage run -m pytest -q --tb=short
+          coverage report
 
   supply-chain-audit:
     name: Supply chain audit (pip-audit)

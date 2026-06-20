@@ -37,7 +37,9 @@ def test_workflow_includes_required_steps():
     data = _load()
     job = data["jobs"]["lint-and-test"]
     step_names = [step.get("name") for step in job["steps"] if step.get("name")]
-    required = {"Ruff (lint)", "Django system checks", "Apply migrations", "Pytest"}
+    # Renamed 2026-06-20 (Phase 1 #2) when pytest was wrapped in
+    # ``coverage run``; the step is now "Pytest with coverage".
+    required = {"Ruff (lint)", "Django system checks", "Apply migrations", "Pytest with coverage"}
     missing = required - set(step_names)
     assert not missing, f"missing CI steps: {missing}"
 

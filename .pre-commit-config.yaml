@@ -1,0 +1,74 @@
+# Pre-commit hooks (Phase 1 #1 — 2026-06-20 roadmap).
+#
+# Catches what ruff / bandit / pip-audit catch in CI, but BEFORE
+# the commit even lands locally. The pre-push hook
+# (deploy/git-hooks/pre-push) is the substitute for branch
+# protection on Free + private repos; this pre-commit hook is the
+# substitute for the operator running ``ruff check . && detect-secrets``
+# manually before every commit.
+#
+# Install once per checkout (no automatic install at clone time):
+#
+#   .venv/bin/pre-commit install
+#
+# After install, every ``git commit`` runs these hooks; a failure
+# blocks the commit. Bypass with ``git commit --no-verify`` for
+# the one-off (use sparingly; the CI catches what is bypassed
+# locally anyway).
+
+repos:
+  # Ruff (lint + format) — same rule set as CI. Local catch beats
+  # CI catch because the commit never leaves the working tree.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+        # Format issues are warnings in CI (`|| true`); the
+        # pre-commit version auto-formats so the commit lands
+        # already formatted.
+
+  # Secrets scanner — detects accidentally-committed credentials.
+  # The audit register tracks intentional fixtures via .secrets.baseline
+  # (run ``detect-secrets scan > .secrets.baseline`` to refresh).
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        # Exclude lockfiles and the docs that intentionally include
+        # secret-shaped examples (Fernet key format, audit hmac key
+        # generation snippets).
+        exclude: |
+            (?x)^(
+                requirements\.lock|
+                requirements-dev\.lock|
+                docs/.*\.md|
+                .*\.example\..*|
+                tests/.*
+            )$
+
+  # Standard hygiene — catches the small papercuts that bandit
+  # and ruff don't notice.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Markdown intentionally uses two-trailing-space line breaks.
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # Helm / kustomize-style multi-document YAML is fine; the
+        # default loader is strict and would reject jinja-templated
+        # systemd units (the install pipeline renders the
+        # placeholders separately).
+        exclude: |
+            (?x)^(
+                deploy/systemd/.*\.(service|timer)|
+                \.github/workflows/.*\.ya?ml
+            )$
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]

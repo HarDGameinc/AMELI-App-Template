@@ -14,6 +14,55 @@ python manage.py migrate --noinput
 python manage.py check
 ```
 
+### Pre-commit hooks (Phase 1 #1, 2026-06-20)
+
+`.pre-commit-config.yaml` ships with hooks that run on every
+`git commit`:
+
+* **ruff** (lint + auto-fix + format) — same rule set as CI.
+* **detect-secrets** — refuses to commit a value that looks like
+  a credential; baseline at `.secrets.baseline` lists known-OK
+  fixtures.
+* **trailing-whitespace / end-of-file-fixer / check-yaml /
+  check-toml / check-merge-conflict / check-added-large-files**.
+
+Install once per checkout (hooks do NOT travel with the repo):
+
+```bash
+pre-commit install
+# -> pre-commit installed at .git/hooks/pre-commit
+```
+
+After install, every `git commit` runs the hooks. Bypass with
+`git commit --no-verify` for the one-off (CI catches what is
+bypassed locally anyway). Refresh the secrets baseline after
+an intentional new fixture:
+
+```bash
+detect-secrets scan > .secrets.baseline
+git add .secrets.baseline
+```
+
+### Code coverage (Phase 1 #2, 2026-06-20)
+
+`coverage` measures line + branch coverage of `src/` against the
+`tests/` suite. The floor is pinned at **85%** in
+`pyproject.toml` (`[tool.coverage.report].fail_under`). A
+regression that deletes production code without replacing the
+test trips CI on the next push.
+
+Local invocation:
+
+```bash
+coverage run -m pytest -q
+coverage report          # text summary, exits non-zero if <85%
+coverage html            # browseable HTML at htmlcov/index.html
+```
+
+Baseline at sprint closeout (2026-06-20): **85% with branch
+coverage on**. Raise `fail_under` proportionally as new tests
+land; never lower it.
+
 The preferred local path is to set `DATABASE_URL` to PostgreSQL. If no local
 database is available yet, SQLite can be used temporarily through
 `AMELI_APP_SQLITE_PATH`.

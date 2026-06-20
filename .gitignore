@@ -6,6 +6,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+# Phase 1 #2 — coverage local artefacts (the .coverage SQLite
+# db and the optional HTML report). CI generates its own each
+# run; nothing useful to commit.
+.coverage
+.coverage.*
+htmlcov/
 .env
 data/
 logs/
