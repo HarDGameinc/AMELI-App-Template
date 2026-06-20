@@ -211,23 +211,130 @@ smokes son breves.
 
 ## §4. Decisiones tomadas
 
-(Pendiente al cierre del dia.)
+1. **Orden Fase 1 → 2 → 3** del mini-roadmap, NO saltear. DX
+   foundation (pre-commit + coverage + a11y) primero porque
+   cero deps externas y mejor ROI. Luego validar deploy
+   (#4 backup round-trip + #5 deep health). Luego types
+   (#6 mypy), dejando #7 OpenTelemetry pendiente porque
+   agrega varios runtime deps y el operador no aprobo aun.
+2. **Coverage floor pinned at 85% sin clavar 86%**.
+   Baseline al introducir branch coverage fue exactamente
+   85%; subir el floor a 86% obligaria a escribir tests
+   defensivos antes de cada PR. Mantener floor = baseline
+   inicial; subir solo cuando hay >2% de margen.
+3. **mypy moderada, no `--strict`**. El codebase ya tiene
+   type hints; obligar `disallow_untyped_defs = true` ahora
+   forzaria writeouts en cada def para 0 valor. Floor = 0
+   errores con la config actual; tighten via per-module
+   `disallow_untyped_defs` cuando los tests del modulo lo
+   permitan.
+4. **Auto-prompt del harness "Continue from where you left
+   off" NO se trato como instruccion del operador**. Marco
+   incorrecto el primero, corregido inmediatamente. Lecccion
+   para el playbook: solo seguir cuando hay confirmacion
+   explicita del operador.
+5. **Bump v0.3.1-django → v0.4.0-django** (minor). Justifica:
+   nuevo endpoint publico `/health/deep`, dark mode ahora
+   efectivo (UX visible), 6 items mini-roadmap en una
+   sesion. Patch hubiera subestimado el alcance.
 
 ## §5. Metricas al cierre
 
-(Pendiente al cierre del dia.)
+| Metrica | Inicio dia | Cierre dia | Δ |
+|---|---|---|---|
+| Suite local (sin deselect) | 898 | **937** | +39 (+11 phase1, +10 a11y, +7 health-deep, +3 backup-rt, +7 mypy + correcciones) |
+| Coverage % (branch + line) | n/a (no medido) | **85%** (floor pinned) | +floor |
+| mypy errors en src/ | n/a (no medido) | **0** en 47 archivos | +floor |
+| Commits sobre `dev` | 0 (start at `af6667e`) | 9 (`fd0f51a..eb764d9` + commits handoff) | — |
+| ASVS L2 active rows PASS | 151 | 151 | 0 |
+| Mini-roadmap items closed | 0 / 12 | **7 / 12** | +7 |
+| Version | `v0.3.1-django` | **`v0.4.0-django`** | minor bump |
+| Lockfile size | (existing) | +mypy/django-stubs/coverage/pre-commit/detect-secrets | — |
 
 ## §6. Hallazgos / findings
 
-(Pendiente al cierre del dia.)
+1. **`active_theme` dead context** — el context processor
+   pasaba `theme_preference` pero base.html nunca lo aplicaba.
+   El template ignoraba la preferencia del user durante
+   semanas sin que nadie notara. Wiring de 3 lineas cerro el
+   gap; ahora hay test que falla si vuelve la regresion.
+2. **Coverage = 86% line, 85% line+branch**. La diferencia
+   confirma que la mayoria del codigo tiene cobertura de
+   ambos caminos de if; los puntos sin branch coverage son
+   utils.py (error paths del CLI). Pinear el floor con
+   branch=on detecta if-sin-test mucho mas rapido que
+   line-only.
+3. **mypy = 34 errors en src/ al primer pase**. Mayoria
+   (~20) eran `AnonymousUser vs User` en views protegidas
+   por decorator. Patron template-wide: las view modules
+   tienen un invariante de runtime que mypy no puede ver.
+   La solucion (per-module disable de union-attr/call-arg)
+   es pragmatica; el cleanup proper seria `cast()` por view,
+   tracked como follow-up.
+4. **`restore.sh` tenia el mismo bug `pg_url` libpq que
+   surfacie en PT-4 del 19-jun**. Encontrado al escribir
+   el round-trip test del #4; mismo fix sed `+psycopg`
+   stripping. Lesson: cuando un bug aparece en un script,
+   greppar variantes en scripts hermanos.
 
 ## §7. Roadmap actualizado
 
-Roadmap principal: **0 items abiertos** (cerrado en sprint
-06-15..06-19).
+Roadmap principal: **0 items abiertos**.
 
-Mini-roadmap de mejoras propuesto: ver §2.
+Mini-roadmap de mejoras (2026-06-20):
+
+| Fase | Items | Status |
+|---|---|---|
+| 1. DX foundation | #1 pre-commit, #2 coverage, #3 a11y/dark | **✓ closed** |
+| 2. Validar deploy | #4 backup round-trip, #5 deep health | **✓ closed** |
+| 3. Types + tracing | #6 mypy, #7 OpenTelemetry | partial — #6 closed, #7 open |
+| 4. Hardening | #8 SRI propios, #9 circuit breakers | open |
+| 5. Performance | #10 django-silk, #11 pool tuning | open |
+| 6. E2E | #12 Playwright | open |
+
+**Net**: 7 de 12 items shipped en una sesion (~5h efectivas).
 
 ## §8. Continuidad — para el proximo agente
 
-(Pendiente al cierre del dia.)
+`dev @ <this-commit>`, `main` recien promovido a este SHA
+(version `v0.4.0-django`).
+
+**Wire test pendiente** — promoter al server `ha-report2`:
+
+```bash
+cd /opt/ameli-app-template-dev
+git fetch origin main && git reset --hard origin/main
+bash scripts/install.sh APP_SLUG=ameli-app-template APP_ENV=dev
+# Re-instala deps con el nuevo lockfile (incluye mypy/django-stubs/
+# coverage/pre-commit/detect-secrets) y reinicia servicios.
+systemctl status ameli-app-template-dev-api.service --no-pager | head
+.venv/bin/python manage.py shell <<'PY'
+from django.test import Client
+c = Client()
+r = c.get("/health/deep")
+print(f"/health/deep -> {r.status_code} {r.json()}")
+PY
+```
+
+Esperado: `200` y `{"ok": true, "status": "OPERATIVO", "checks": {"db_write": {...}, "fs_write": {...}}}`.
+
+**Tareas opcionales / proximas sesiones**:
+
+1. **#7 OpenTelemetry** (~1d) — cerrar Phase 3. Agrega
+   tracing opt-in via `AMELI_APP_OTEL_EXPORTER`.
+2. **Fase 4** — #8 SRI sobre static propios + #9 circuit
+   breakers (AV/SMTP/HIBP).
+3. **Fase 5** — #10 django-silk + #11 connection pool
+   tuning.
+4. **Fase 6** — #12 Playwright e2e.
+5. **Operacional** — verificar backup automatico nocturno
+   (20-jun ~04:11) y subsequent runs. PT-2 hook en Windows
+   checkout cuando vuelvas a la maquina.
+
+**Lecciones del dia incorporadas**:
+- `pre-commit install` per checkout no es ceremonia, es
+  cierre del loophole "test pasa local / CI revienta".
+- Floor de coverage = baseline inicial; subir solo cuando
+  hay margen real, no por aspiracional.
+- Auto-prompts del harness ≠ instruccion del operador.
+  Pausar y confirmar.
