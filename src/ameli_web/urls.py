@@ -22,6 +22,7 @@ urlpatterns = [
     path("openapi.json", dashboard_views.openapi_schema, name="openapi-schema"),
     path("api/health", dashboard_views.api_health, name="api-health"),
     path("health", dashboard_views.health, name="health"),
+    path("health/deep", dashboard_views.health_deep, name="health-deep"),
     path("metrics", dashboard_views.metrics, name="metrics"),
     path("", include(("ameli_web.accounts.urls", "accounts"), namespace="accounts")),
     path("admin/", admin_views.admin_panel, name="admin-panel"),

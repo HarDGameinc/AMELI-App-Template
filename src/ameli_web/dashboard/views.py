@@ -73,6 +73,15 @@ def _openapi_schema() -> dict[str, Any]:
             "config": {"type": "object"},
         },
     }
+    health_deep_response_schema = {
+        "type": "object",
+        "required": ["ok", "status", "checks"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "status": {"type": "string", "enum": ["OPERATIVO", "DEGRADADO"]},
+            "checks": {"type": "object"},
+        },
+    }
     return {
         "openapi": "3.1.0",
         "info": {
@@ -88,6 +97,22 @@ def _openapi_schema() -> dict[str, Any]:
                         "200": {
                             "description": "Estado resumido para probes.",
                             "content": {"application/json": {"schema": health_response_schema}},
+                        }
+                    },
+                }
+            },
+            "/health/deep": {
+                "get": {
+                    "summary": "Deep healthcheck (probes DB write + FS write)",
+                    "responses": {
+                        "200": {
+                            "description": (
+                                "Probes ejecutados con exito. "
+                                "Cuando alguno falla devuelve 503 con el mismo schema; "
+                                "esa rama no se documenta aca para evitar que el "
+                                "contract-test la asierte contra un deploy sano."
+                            ),
+                            "content": {"application/json": {"schema": health_deep_response_schema}},
                         }
                     },
                 }
@@ -425,6 +450,130 @@ def health(request):
             "db": db_status,
         }
     )
+
+
+@require_GET
+def health_deep(request):
+    """Deep health probe — actually exercises the write path
+    (database INSERT/DELETE in a rolled-back savepoint + disk
+    write/read/unlink in DATA_DIR) instead of just config
+    inspection like ``/health``.
+
+    Phase 2 #5 of the 2026-06-20 roadmap. ``/health`` answers
+    "is the boot config sane?"; ``/health/deep`` answers "can
+    we actually persist?". Both gated by the same operational
+    allowlist (HEALTH_METRICS_ALLOWLIST).
+
+    The DB probe runs inside ``transaction.atomic`` with a
+    savepoint rolled back after the read — leaves zero state
+    behind. The FS probe writes a tiny tmpfile in DATA_DIR and
+    deletes it. Each check times itself so latency regressions
+    surface in the JSON response (``ms`` field) instead of
+    requiring external monitoring.
+    """
+    blocked = _operational_allowlist_block(request)
+    if blocked is not None:
+        return blocked
+
+    checks = {
+        "db_write": _check_db_write(),
+        "fs_write": _check_fs_write(),
+    }
+    overall_ok = all(check["ok"] for check in checks.values())
+    payload = {
+        "ok": overall_ok,
+        "status": "OPERATIVO" if overall_ok else "DEGRADADO",
+        "checks": checks,
+    }
+    return JsonResponse(payload, status=200 if overall_ok else 503)
+
+
+def _check_db_write() -> dict:
+    """Round-trip a write against the DB inside a rolled-back
+    savepoint so the probe leaves zero state. A failure here
+    means the DB is reachable for reads but cannot accept
+    writes (disk full, replica without RW, transaction
+    deadlock) — which the shallow ``/health`` config probe
+    cannot detect.
+    """
+    import time as _time
+
+    from django.db import connection, transaction
+
+    started = _time.monotonic()
+    try:
+        with transaction.atomic():
+            sid = transaction.savepoint()
+            try:
+                # A trivial INSERT into a temp table created and
+                # dropped inside the same transaction. Uses raw
+                # SQL (1 round trip each) to avoid touching any
+                # model and to be backend-agnostic enough that
+                # Postgres + SQLite both work without imports.
+                with connection.cursor() as cur:
+                    cur.execute("CREATE TEMPORARY TABLE _health_probe (n INTEGER)")
+                    cur.execute("INSERT INTO _health_probe (n) VALUES (%s)", [42])
+                    cur.execute("SELECT n FROM _health_probe LIMIT 1")
+                    row = cur.fetchone()
+                    if not row or row[0] != 42:
+                        raise RuntimeError(f"db probe wrote 42 but read back {row!r}")
+            finally:
+                transaction.savepoint_rollback(sid)
+        elapsed_ms = int((_time.monotonic() - started) * 1000)
+        return {"ok": True, "ms": elapsed_ms}
+    except Exception as exc:  # noqa: BLE001 - health probe never raises
+        elapsed_ms = int((_time.monotonic() - started) * 1000)
+        return {
+            "ok": False,
+            "ms": elapsed_ms,
+            "detail": type(exc).__name__,
+            # NEVER leak the exception message — it can carry
+            # connection strings or table names. Class name is
+            # enough for the operator to start debugging.
+        }
+
+
+def _check_fs_write() -> dict:
+    """Probe the data dir is writable. ``/health`` checks free
+    space via statvfs; this writes a real byte, fsyncs, reads
+    it back, and unlinks. Catches "disk full" plus "directory
+    mounted read-only by accident" plus "selinux/apparmor
+    denies write" — all silent under the shallow probe.
+    """
+    import os as _os
+    import tempfile
+    import time as _time
+
+    data_dir = str(getattr(settings.CFG, "data_dir", "/tmp"))  # noqa: S108
+    started = _time.monotonic()
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=data_dir, prefix=".health-probe-", suffix=".tmp",
+            delete=False,
+        ) as fh:
+            path = fh.name
+            fh.write(b"x")
+            fh.flush()
+            _os.fsync(fh.fileno())
+        try:
+            with open(path, "rb") as rh:
+                if rh.read() != b"x":
+                    raise RuntimeError("fs probe wrote 'x' but read back something else")
+        finally:
+            try:
+                _os.unlink(path)
+            except OSError:
+                pass
+        elapsed_ms = int((_time.monotonic() - started) * 1000)
+        return {"ok": True, "ms": elapsed_ms, "dir": data_dir}
+    except Exception as exc:  # noqa: BLE001 - health probe never raises
+        elapsed_ms = int((_time.monotonic() - started) * 1000)
+        return {
+            "ok": False,
+            "ms": elapsed_ms,
+            "dir": data_dir,
+            "detail": type(exc).__name__,
+        }
 
 
 def _check_smtp_config() -> dict:

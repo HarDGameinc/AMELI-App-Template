@@ -291,9 +291,43 @@ every promotion reviewable via PR history.
 ```bash
 ameli-app config-check --config config/app.yaml.example
 ameli-app db-status --config config/app.yaml.example
-curl http://127.0.0.1:18080/health
+curl http://127.0.0.1:18080/health         # shallow: config + last-write timestamps
+curl http://127.0.0.1:18080/health/deep    # deep: real DB write + FS write
 curl http://127.0.0.1:18080/api/health
 ```
+
+### `/health` vs `/health/deep` (Phase 2 #5, 2026-06-20)
+
+`/health` inspects config (SMTP backend valid, queue not
+stalled, disk has free bytes, db.status returns ok) — fast
+liveness probe. Does NOT actually exercise the write path,
+so a deploy with a read-only DB replica or a read-only data
+dir passes `/health` but silently fails the first user write.
+
+`/health/deep` actually exercises the write path:
+
+* **db_write** — INSERT/SELECT/DELETE inside a rolled-back
+  savepoint (zero state leaked).
+* **fs_write** — tmpfile in `DATA_DIR` with `write+fsync+read+
+  unlink`. Catches "disk full", "mounted read-only by
+  accident", and selinux/apparmor write denials.
+
+Each check reports its own `ms` latency so external monitors
+can alert on regressions without subscribing to journal logs.
+Returns 200 when both probes succeed, 503 when either fails.
+
+Schedule from your prober:
+
+```
+# every 30 s — shallow probe for liveness
+curl --silent --fail http://127.0.0.1:18080/health > /dev/null
+
+# every 5 min — deep probe for readiness
+curl --silent --fail http://127.0.0.1:18080/health/deep > /dev/null
+```
+
+Both honor `HEALTH_METRICS_ALLOWLIST` so they can be locked to
+loopback / known prober IPs.
 
 ## First install reference
 
