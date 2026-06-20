@@ -326,39 +326,57 @@ PT-1..PT-4 estado al cierre:
 
 ## §8. Continuidad — para el proximo agente
 
-**Roadmap 100% cerrado**. PT-1..PT-4 todos verdes.
+**Roadmap 100% cerrado**. PT-1..PT-4 todos verdes + auditoria
+independiente cerro 2 bugs latentes (R-11, R-12). El template
+queda en `v0.3.1-django`, suite 898/898 verde sin deselect,
+`dev @ af6667e`, `main @ 67ae53a` (8 commits behind dev, para
+promote opcional cuando vuelvas con `gh`).
 
-**Tareas opcionales para el 20-jun o cuando convenga**:
+### Tareas operacionales pendientes (no nuevos items)
 
-1. **Verificar el primer backup automatico** (madrugada del
-   20-jun ~04:11 local):
-   ```bash
-   journalctl -u ameli-app-template-dev-backup.service --since today
-   ls -lh /var/backups/ameli-app-template-dev/
+1. **Verificar primer backup automatico** (madrugada del 20-jun
+   ~04:11 local). `journalctl -u
+   ameli-app-template-dev-backup.service --since today` +
+   `ls -lh /var/backups/ameli-app-template-dev/`. Esperado una
+   entrada nueva con fecha del 20.
+2. **Promote `dev → main`** — 8 commits ahead. Cuando el
+   operador este en una shell con `gh` autenticado:
    ```
-   Esperado: una entrada nueva con fecha de hoy.
-2. **Promote `dev → main`** (cuando el operador este en una
-   shell con `gh` autenticado o disponible para usar el
-   bypass del hook desde `ha-report2`):
-   ```bash
-   gh pr create --base main --head dev --title "promote dev -> main"
+   gh pr create --base main --head dev --title "promote dev -> main (sprint cierre)"
    gh pr merge --merge
    ```
-3. **Wire-tests de PT-2 en Windows checkout**: instalar el
-   hook + probar que bloquea + bypass anda. NO crucial
-   (es solo defense-in-depth client-side); el operador
-   decide cuando hacerlo.
+   O usar el bypass del pre-push hook si seguimos con merge
+   directo desde shell.
+3. **Wire test PT-2 en Windows checkout** (cuando vuelvas a tu
+   maquina): `bash scripts/install-pre-push-hook.sh` +
+   probar bloqueo + bypass.
 
-**Patron consolidado del sprint para futuras sesiones**:
+### Para el 2026-06-20 — sesion abierta
+
+El operador pidio un analisis de mejoras post-sprint-de-seguridad
+(buckets backend + frontend, sin desarrollo). El plan vive
+ya en `CLAUDE_HANDOFF_2026-06-20_TEMPLATE_DEV.md` como §2
+objetivo, con un mini-roadmap priorizado. Si se aprueba,
+empieza por el Bucket D (developer experience) — mejor ROI por
+unidad de esfuerzo.
+
+### Lecciones consolidadas del sprint 2026-06-15..06-19
 
 - Wire test ANTES de declarar cualquier item OPS cerrado.
-  Cada uno de los 3 bugs latentes del PT-4 se hubieran
-  ocultado bajo el closure template-side sin el wire test.
-- "Configurar X en server" → primero `probar el estado actual
-  de X` (lecccion #5 de §6). El 50% de las veces el operador
-  ya lo tiene.
-- Flake → causa real en producto; nunca dejarlo como
-  `--deselect` sin diagnostico cerrado.
+- "Configurar X en server" → primero probar el estado actual.
+- Flake → causa real en producto; nunca `--deselect` sin
+  diagnostico cerrado.
+- Boot guards deben ser SIMETRICOS entre keys (MFA vs AUDIT vs
+  AV) — la asimetria es el bug.
+- Auditor externo (agente paralelo en read-only) encuentra lo
+  que self-review da por sentado. **Patron**: despues de
+  declarar un capitulo ASVS al bar L2, mandar un agente
+  independiente con instrucciones "trust but verify".
+- IFS-safe env loader es no-negociable en wire tests.
+- `git reset --hard origin/<branch>` con `/branch` explicito;
+  sin el branch, resetea al default remote (main), confundiendo.
+- Slug derivation: dir basename primero, pyproject name despues.
+  Mismo patron en `manage.py` y `_common.sh`.
 
 ### Fix CI flake — root cause distinto al "test-state isolation"
 
