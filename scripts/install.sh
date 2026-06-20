@@ -27,6 +27,14 @@ fi
 render_systemd_units
 repair_permissions
 enable_selected_units
+# ``enable --now`` only STARTS stopped units; it does NOT restart
+# an already-running daemon to pick up new code. Without the
+# explicit restart, an in-place upgrade leaves the api/notifier
+# daemons on the old Python bytecode — operators see the new
+# VERSION via CLI but /health reports the previous one. Caught
+# 2026-06-20 wire test (v0.4.0-django shipped but /health
+# reported v0.2.0-django until manual restart).
+restart_selected_units
 
 log "Instalacion lista: ${APP_INSTANCE} (${APP_SYSTEMD_PROFILE})"
 "${APP_DIR}/scripts/validate_installation.sh"
