@@ -137,3 +137,108 @@ def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "MANIFEST" in combined.upper() or "checksum" in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 #4 of 2026-06-20 roadmap — backup + restore ROUND TRIP test.
+# Until now we tested backup.sh and restore.sh independently. This
+# exercises the actual contract: a backup must be restorable AND the
+# restore must reproduce the original state. SQLite path because
+# Postgres CI services add another moving piece; the SQLite branch
+# of backup.sh / restore.sh shares all the manifest + verify logic,
+# so a round-trip there proves the contract is sound.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+def test_backup_restore_sqlite_round_trip(stage, tmp_path):
+    """Plant a known row in SQLite → backup → wipe → restore →
+    confirm the row is back. A backup that does not restore is
+    not a backup; this is the only test that catches that.
+    """
+    import sqlite3
+
+    # 1. Seed the staged SQLite with a known fixture row.
+    sqlite_path = stage["sqlite"]
+    sqlite_path.unlink()  # remove the placeholder bytes the fixture wrote
+    conn = sqlite3.connect(str(sqlite_path))
+    conn.executescript(
+        "CREATE TABLE rt_probe (id INTEGER PRIMARY KEY, value TEXT NOT NULL); "
+        "INSERT INTO rt_probe (id, value) VALUES (1, 'before-backup');"
+    )
+    conn.commit()
+    conn.close()
+
+    # 2. Run backup.sh; produces an archive in BACKUP_DIR.
+    backup_result = _run(BACKUP_SH, env_extra=_stage_env(stage))
+    assert backup_result.returncode == 0, (
+        f"backup.sh failed: rc={backup_result.returncode}, "
+        f"stderr={backup_result.stderr[-400:]!r}"
+    )
+    archives = list(stage["backup"].glob("*.tar.gz"))
+    assert len(archives) == 1, f"expected exactly 1 archive, got {archives}"
+    archive = archives[0]
+
+    # 3. WIPE the live SQLite — restore.sh has to actually put it back.
+    sqlite_path.unlink()
+    assert not sqlite_path.exists()
+
+    # 4. Run restore.sh restore --yes.
+    restore_result = _run(
+        RESTORE_SH, "restore", str(archive), "--yes",
+        env_extra=_stage_env(stage),
+    )
+    assert restore_result.returncode == 0, (
+        f"restore.sh failed: rc={restore_result.returncode}, "
+        f"stderr={restore_result.stderr[-400:]!r}"
+    )
+
+    # 5. Verify the fixture row survived the round-trip.
+    assert sqlite_path.exists(), "restore did not recreate the sqlite file"
+    conn = sqlite3.connect(str(sqlite_path))
+    try:
+        rows = conn.execute("SELECT id, value FROM rt_probe").fetchall()
+    finally:
+        conn.close()
+    assert rows == [(1, "before-backup")], (
+        f"round-trip lost the seeded row; got: {rows!r}"
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+def test_backup_restore_round_trip_preserves_data_dir(stage, tmp_path):
+    """Same contract but for the DATA_DIR side — user-uploaded
+    media must survive the round-trip too. The ``stage`` fixture
+    already seeds ``data/hello.bin``; wipe it after backup and
+    confirm restore brings it back.
+    """
+    target = stage["data"] / "hello.bin"
+    original_bytes = target.read_bytes()
+
+    backup_result = _run(BACKUP_SH, env_extra=_stage_env(stage))
+    assert backup_result.returncode == 0
+    archive = next(stage["backup"].glob("*.tar.gz"))
+
+    target.unlink()
+    assert not target.exists()
+
+    restore_result = _run(
+        RESTORE_SH, "restore", str(archive), "--yes",
+        env_extra=_stage_env(stage),
+    )
+    assert restore_result.returncode == 0
+
+    assert target.exists(), "restore did not bring back data/hello.bin"
+    assert target.read_bytes() == original_bytes
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+def test_restore_script_strips_psycopg_url_suffix():
+    """Mirror the backup.sh test — restore.sh must also strip the
+    SQLAlchemy driver suffix before invoking pg_restore. Without
+    it libpq silently falls back to socket + peer auth (same bug
+    that PT-4 surfaced on 2026-06-19).
+    """
+    body = RESTORE_SH.read_text()
+    assert "postgresql\\+" in body, \
+        "restore.sh missing the driver-suffix sed for pg_restore URL"

@@ -79,9 +79,15 @@ cp -a "${workdir}/data/." "${DATA_DIR}/"
 if [[ -f "${workdir}/db.pgdump" ]]; then
   command -v pg_restore >/dev/null 2>&1 || fail "pg_restore not installed"
   [[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL not set for postgres restore"
-  log "pg_restore -> ${DATABASE_URL}"
+  # Mirror backup.sh: strip the SQLAlchemy driver suffix so libpq
+  # accepts the URI (it only understands postgresql:// and
+  # postgres://). Without this the dialect URL silently falls
+  # back to socket + peer auth — same bug surfaced in PT-4 of
+  # the 2026-06-19 wire test.
+  pg_url="$(echo "${DATABASE_URL}" | sed -E 's@^postgresql\+[A-Za-z0-9_]+://@postgresql://@')"
+  log "pg_restore -> (driver-stripped DATABASE_URL)"
   pg_restore --clean --if-exists --no-owner --no-acl \
-    --dbname="${DATABASE_URL}" "${workdir}/db.pgdump"
+    --dbname="${pg_url}" "${workdir}/db.pgdump"
 elif [[ -f "${workdir}/db.sqlite3" ]]; then
   [[ -n "${AMELI_APP_SQLITE_PATH:-}" ]] || fail "AMELI_APP_SQLITE_PATH not set for sqlite restore"
   log "Copying sqlite -> ${AMELI_APP_SQLITE_PATH}"
