@@ -116,9 +116,61 @@ UX. **Esfuerzo**: XS<1h, S<4h, M<1d, L>1d.
 
 | Commit | Tema | Tests |
 |---|---|---|
-| `<this>` | Open 2026-06-20 handoff + close 2026-06-19 §8 con continuidad | suite stays green |
+| `a7b9a56` | Open 2026-06-20 handoff + close 2026-06-19 §8 con continuidad | suite stays green |
+| `fd0f51a` | Phase 1 #1 + #2 — pre-commit hooks + coverage threshold (85% floor) | 898 → 909 (+11) |
+| `946222d` | Phase 1 #3 — a11y essentials + dark mode wiring en base.html | 909 → 919 (+10) |
 
-(Pendiente segun decisiones del operador.)
+### Phase 1 (DX foundation) — closed
+
+**#1 pre-commit hooks** (`fd0f51a`). Nuevo
+`.pre-commit-config.yaml` con 8 hooks: ruff + ruff-format (rule
+set del proyecto), detect-secrets con `.secrets.baseline`
+inicial (64 fixtures aceptadas), e hygiene
+(trailing-whitespace, end-of-file-fixer, check-yaml/-toml/
+-merge-conflict/-added-large-files). Hook NO viaja con el repo
+— install per checkout via `pre-commit install`. Bypass via
+`git commit --no-verify` para el one-off (CI atrapa lo que se
+bypassea local).
+
+**#2 coverage threshold** (`fd0f51a`). `[tool.coverage.*]` en
+pyproject.toml: source=src, branch=true,
+fail_under=85. Baseline al introducir el floor fue 85% con
+branch coverage (line-only era 86%). CI step renombrado
+"Pytest with coverage" wraps pytest en
+`coverage run + coverage report`. Una regresion que borre
+codigo de prod sin reemplazar el test trippea CI.
+
+**#3 a11y essentials + dark mode wiring** (`946222d`). Cerro
+el gap historico donde `theme_preference` se guardaba en User
+y se pasaba al context via `active_theme` pero base.html lo
+ignoraba.
+- `<html data-theme="...">` honra active_theme; absent cuando
+  el user no eligio -> @media prefers-color-scheme decide
+  (respeta OS-level).
+- `<meta name="color-scheme">` mirroring para native widgets.
+- Skip-link a #main-content como primer elemento focusable;
+  CSS revela on :focus, hidden de otra forma.
+- `<main id="main-content" tabindex="-1">` como skip target.
+- `aria-live=polite + role=status` en messages region.
+- CSS: `.skip-link`, `:focus-visible` con outline 2px,
+  `@media (prefers-reduced-motion: reduce)` collapsa
+  transitions.
+
+**Pruebas pendientes** — Phase 1 NO bloquea ni requiere wire
+tests para considerar done (los unit tests pinean el contrato
+estatico). Pero hay dos smokes que cierran "se ve correcto"
+que los unit no pueden verificar:
+
+a) `pre-commit install` en un checkout + intentional bad
+   commit que dispare ruff → hook debe bloquear. Trivial.
+b) Browser smoke: login + profile → cambiar tema a "Oscuro"
+   → refresh cualquier pagina → confirma que el body se
+   pone dark. Tab desde foco inicial debe revelar el
+   skip-link. ~5 min.
+
+Ambos opcionales; el codigo es deterministico y los tests
+estan green. Si el operador quiere ratificar visualmente, los
+smokes son breves.
 
 ## §4. Decisiones tomadas
 
