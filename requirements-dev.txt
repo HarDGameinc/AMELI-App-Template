@@ -36,3 +36,9 @@ coverage>=7.5,<9
 # live in pyproject.toml [tool.mypy].
 mypy>=2.0,<3
 django-stubs>=6.0,<7
+# Transitive constraint: msgpack <1.2.1 has GHSA-6v7p-g79w-8964
+# (memory corruption in C ext). pip-audit on the dev lockfile
+# flags it; pin floor to 1.2.1 so the next pip-compile picks the
+# patched version. detect-secrets and cyclonedx pull msgpack as
+# a dep.
+msgpack>=1.2.1,<2

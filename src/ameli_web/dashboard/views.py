@@ -544,7 +544,7 @@ def _check_fs_write() -> dict:
     import tempfile
     import time as _time
 
-    data_dir = str(getattr(settings.CFG, "data_dir", "/tmp"))  # noqa: S108
+    data_dir = str(getattr(settings.CFG, "data_dir", "/tmp"))  # noqa: S108  # nosec B108 - default never reached in practice (CFG.data_dir is always set by config.py)
     started = _time.monotonic()
     try:
         with tempfile.NamedTemporaryFile(
