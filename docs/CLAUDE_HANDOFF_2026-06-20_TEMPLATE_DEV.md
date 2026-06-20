@@ -120,6 +120,43 @@ UX. **Esfuerzo**: XS<1h, S<4h, M<1d, L>1d.
 | `fd0f51a` | Phase 1 #1 + #2 — pre-commit hooks + coverage threshold (85% floor) | 898 → 909 (+11) |
 | `946222d` | Phase 1 #3 — a11y essentials + dark mode wiring en base.html | 909 → 919 (+10) |
 
+| `202a470` | Phase 2 #5 — `/health/deep` endpoint con DB + FS write probes | 919 → 927 (+7) |
+| `6b66443` | Phase 2 #4 — backup ↔ restore round-trip + restore.sh URL fix | 927 → 930 (+3) |
+
+### Phase 2 (validar deploy) — closed
+
+**#5 `/health/deep` endpoint** (`202a470`). El `/health`
+existente inspeccionaba config (smtp valid, queue not stalled,
+disk has bytes, db.status ok) pero nunca escribia — un deploy
+con DB replica RO o data_dir RO pasaba `/health` y silbaba
+fallaba al primer user write. `/health/deep` cierra el gap:
+* `db_write`: INSERT/SELECT/DELETE en `transaction.atomic`
+  savepoint rolled back → cero state.
+* `fs_write`: NamedTemporaryFile en DATA_DIR con write+fsync+
+  read+unlink. Atrapa "disk full", "mounted RO", selinux/
+  apparmor denials.
+Cada check timea su `ms` para que monitores externos alerten
+en regresion sin parsear journal. 200 cuando ambos OK, 503
+cuando alguno falla. Error path nunca leak-ea la message del
+exception (solo el class NAME) — paths/connection-strings no
+salen al cliente.
+
+**#4 Backup ↔ restore round-trip** (`6b66443`). Tests previos
+verificaban backup.sh y restore.sh por separado; ninguno
+probaba el contrato completo. Nuevo SQLite round-trip:
+sembra row → backup → wipe → restore → confirma row recuperado.
++ DATA_DIR round-trip (byte-exact). + fix mismo bug pg_url
+en restore.sh (paralelo al fix de backup.sh PT-4 19-jun).
+Postgres CI service queda diferido — la rama SQLite comparte
+toda la scaffolding manifest+verify+extract con Postgres y el
+URL-stripping ya esta pineado en ambos.
+
+**Pruebas Fase 2** — NO requieren wire test. `#5` cubierto
+por 7 unit tests (todos los estados); el operador puede
+`curl http://127.0.0.1:18080/health/deep` cuando tenga el
+deploy a mano pero no es bloqueante. `#4` cubierto por el
+SQLite round-trip; Postgres ya tuvo wire test PT-4 19-jun.
+
 ### Phase 1 (DX foundation) — closed
 
 **#1 pre-commit hooks** (`fd0f51a`). Nuevo
