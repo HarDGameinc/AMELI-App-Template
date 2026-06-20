@@ -151,6 +151,10 @@ def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+@pytest.mark.skipif(
+    os.geteuid() != 0,
+    reason="backup.sh::require_root refuses non-root callers; CI runners are non-root by default",
+)
 def test_backup_restore_sqlite_round_trip(stage, tmp_path):
     """Plant a known row in SQLite → backup → wipe → restore →
     confirm the row is back. A backup that does not restore is
@@ -206,6 +210,10 @@ def test_backup_restore_sqlite_round_trip(stage, tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+@pytest.mark.skipif(
+    os.geteuid() != 0,
+    reason="backup.sh::require_root refuses non-root callers",
+)
 def test_backup_restore_round_trip_preserves_data_dir(stage, tmp_path):
     """Same contract but for the DATA_DIR side — user-uploaded
     media must survive the round-trip too. The ``stage`` fixture
