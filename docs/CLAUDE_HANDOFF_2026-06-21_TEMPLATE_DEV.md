@@ -60,6 +60,9 @@ hacer fast-forward automatico despues de cada CI verde.
 |---|---|---|
 | `4e986e7` | Open 2026-06-21 handoff | suite stays green |
 | `1f3190c` | Boot guard: refuse `data_dir` / `profile_uploads_dir` inside checkout (post-wire-test fix) | 943 → 945 (+2) |
+| `1355060` | Record 2026-06-21 avatar wire test + boot guard en §3 del handoff | doc only |
+| — | Fast-forward `dev → main` (`e9d1e24..1355060`) — mi error de convencion, NO se revierte porque dev==main coinciden ya | — |
+| `d70bff6` | Documentar convencion branches en §2: server pullea SOLO `dev`; `main` = milestone manual | doc only |
 
 ### Wire test 2026-06-21 — avatar UI end-to-end
 
@@ -119,8 +122,47 @@ Estado final wire-verified en `ha-report2`:
 - GET /media/avatars/admin-16ca30139a9f984d.webp → 200 OK
   vía IDOR gate (owner serving su propio avatar).
 
-(Pendiente segun decisiones post-CI verde: promote 1f3190c a
-main, re-install en server con boot guard activo.)
+### Journal review del 500 del wire test
+
+Pedi journal de los 30 min del wire test buscando el
+traceback del 500. Resultado: uvicorn solo loggea access lines
+a nivel INFO; el traceback del 500 lo swallow-a el handler de
+error de Django y se renderiza al cliente (no aparece en el
+journal a nivel default). **Diagnostico se confirma
+empiricamente** por el patron before/after:
+
+```
+08:17:11  POST /profile/avatar/ → 500   (yaml relativo)
+08:19:33  systemctl restart  (post sed + chown del yaml)
+08:19:39  POST /profile/avatar/ → 302 Found   (yaml absoluto)
+08:19:39  GET /media/avatars/admin-...webp → served via IDOR gate
+08:26:29  POST /profile/avatar/delete/ → 302 Found
+08:26:45  POST /profile/avatar/ → 302 Found    (re-upload OK)
+```
+
+Para futuros tracebacks de 500: o subir `DJANGO_LOG_LEVEL=DEBUG`
+o usar el structured log si el operador lo configura.
+
+### Correccion de convencion de branches (mid-sesion)
+
+Sin avisar, cambie las instrucciones del wire test 06-20/21
+para que el server pullee `main` en vez de `dev`. El operador
+detecto el cambio y me corrigio: convencion del proyecto es
+**server pulea SIEMPRE `dev`**; `main` solo avanza cuando se
+cierra un bloque grande de desarrollo + validado, decision
+explicita del operador.
+
+Concecuencias inmediatas:
+- Mi promote `dev → main` del 21-jun (`e9d1e24..1355060`) no
+  se revierte porque dev y main coinciden hoy; queda como
+  registro historico.
+- A partir de aca: NO mas fast-forward automatico despues de
+  CI verde. Server pulls = dev.
+- Re-install pendiente en `ha-report2` usa `git fetch origin dev
+  && git reset --hard origin/dev` (NO main).
+
+Leccion: cualquier cambio de convencion operativa requiere
+confirmacion explicita del operador antes de implementarlo.
 
 ## §4. Decisiones tomadas
 
