@@ -44,9 +44,69 @@ template + re-deploy (patron del 20-jun PT-4).
 
 | Commit | Tema | Tests |
 |---|---|---|
-| `<this>` | Open 2026-06-21 handoff | suite stays green |
+| `4e986e7` | Open 2026-06-21 handoff | suite stays green |
+| `1f3190c` | Boot guard: refuse `data_dir` / `profile_uploads_dir` inside checkout (post-wire-test fix) | 943 → 945 (+2) |
 
-(Pendiente segun decisiones del operador post-wire-test.)
+### Wire test 2026-06-21 — avatar UI end-to-end
+
+Server `ha-report2` sync a `main @ e9d1e24` (bundle del cierre
+20-jun). install.sh corrio con el fix d4ade5e: 23 OK / 0 WARN
+/ 0 FAIL, daemons restart-eados automaticamente, `/health`
+reporto `v0.4.0-django` SIN restart manual (fix confirmado
+in wild).
+
+Wire UI del avatar revelo dos bugs reales:
+
+1. **Comentario Django multi-linea filtrado como HTML**. Mi
+   commit del 20-jun (`676d6a2`) puso un `{# ... #}` de TRES
+   lineas en profile.html. Django solo entiende `{# ... #}`
+   en una sola linea; multi-linea se imprime como texto plano.
+   Fix: `{% comment %}...{% endcomment %}`. Caught en el wire
+   test del UI nuevo.
+
+2. **POST /profile/avatar/ → 500** al subir un webp valido.
+   Root cause: `profile_uploads_dir` defaulteaba a
+   `data/uploads/{env}` (path relativo). `path_from_value`
+   en config.py lo anclaba contra PROJECT_DIR (= /opt/<slug>/,
+   root-owned). MEDIA_ROOT terminaba en root-only dir,
+   `default_storage.save()` reventaba con PermissionError.
+   **MISMA clase de bug que el `data_dir` del 20-jun
+   /health/deep**.
+
+Fixes shippeados en `1f3190c`:
+- **Boot guard**: settings.py refuses MEDIA_ROOT / data_dir
+  inside PROJECT_DIR cuando NOT _IS_DEV_ENV. Loud fail at
+  startup beats subtle fail-at-first-write. Dev conserva
+  paths relativos por convenience.
+- **Env overrides nuevas**: `AMELI_APP_DATA_DIR` y
+  `AMELI_APP_PROFILE_UPLOADS_DIR` para que operadores
+  puedan inyectar absolutos sin tocar yaml.
+- **Helpers de test** actualizados (`test_settings_boot_guards`,
+  `test_host_cookie_prefix`) — auto-set `/tmp/test-*` en prod
+  fixtures.
+- **Test nuevo** `test_non_dev_refuses_media_root_inside_checkout`
+  pinea el guard contra la specific relative-default que
+  surface el bug.
+
+Operator workaround in wild (aplicado durante el wire):
+```bash
+sed -i.bak2 's|profile_uploads_dir:.*$|profile_uploads_dir: /var/lib/ameli-app-template-dev/uploads|' /etc/ameli-app-template-dev/app.yaml
+mkdir -p /var/lib/ameli-app-template-dev/uploads
+chown -R ameli-app-template-dev:ameli-app-template-dev /var/lib/ameli-app-template-dev/uploads
+chmod 750 /var/lib/ameli-app-template-dev/uploads
+systemctl restart ameli-app-template-dev-api.service
+```
+
+Estado final wire-verified en `ha-report2`:
+- POST /profile/avatar/ con `.webp` valido → 302 redirect a
+  /profile/ + "Imagen de perfil actualizada." flash.
+- Hero del profile swappea a `<img>` con la imagen real.
+- Top-right menu chip muestra el avatar.
+- GET /media/avatars/admin-16ca30139a9f984d.webp → 200 OK
+  vía IDOR gate (owner serving su propio avatar).
+
+(Pendiente segun decisiones post-CI verde: promote 1f3190c a
+main, re-install en server con boot guard activo.)
 
 ## §4. Decisiones tomadas
 
