@@ -197,7 +197,10 @@ def load_settings(
         database_url=os.getenv(database_url_env, ""),
         log_level=os.getenv("APP_LOG_LEVEL", "INFO"),
         config_path=selected_config,
-        data_dir=path_from_config("data_dir", "data"),
+        data_dir=path_from_value(
+            os.getenv("AMELI_APP_DATA_DIR")
+            or str(paths.get("data_dir", "data"))
+        ),
         log_dir=path_from_config("log_dir", "logs"),
         backup_dir=path_from_config("backup_dir", "backups"),
         docs_enabled=_as_bool(os.getenv("AMELI_APP_DOCS_ENABLED", docs.get("enabled")), default=True),
@@ -229,7 +232,8 @@ def load_settings(
         django_secret_key=os.getenv("AMELI_APP_DJANGO_SECRET_KEY", "ameli-app-dev-secret-key"),
         django_debug=_as_bool(os.getenv("AMELI_APP_DJANGO_DEBUG"), default=False),
         profile_uploads_dir=path_from_value(
-            str(auth.get("profile_uploads_dir", f"data/uploads/{environment}"))
+            os.getenv("AMELI_APP_PROFILE_UPLOADS_DIR")
+            or str(auth.get("profile_uploads_dir", f"data/uploads/{environment}"))
         ),
         email_backend=os.getenv(
             "AMELI_APP_EMAIL_BACKEND", str(email.get("backend", "console") or "console")

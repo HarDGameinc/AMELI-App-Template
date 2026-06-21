@@ -48,6 +48,11 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
             "AMELI_APP_AUDIT_HMAC_KEY",
             "test-audit-hmac-key-for-prod-boot-guard-fixtures-only",
         )
+    if env != "dev" and "AMELI_APP_PROFILE_UPLOADS_DIR" not in env_vars:
+        # 2026-06-21 boot guard refuses MEDIA_ROOT inside the checkout.
+        monkeypatch.setenv("AMELI_APP_PROFILE_UPLOADS_DIR", "/tmp/test-uploads")  # noqa: S108
+    if env != "dev" and "AMELI_APP_DATA_DIR" not in env_vars:
+        monkeypatch.setenv("AMELI_APP_DATA_DIR", "/tmp/test-data")  # noqa: S108
     if "ameli_web.settings" in sys.modules:
         del sys.modules["ameli_web.settings"]
     return importlib.import_module("ameli_web.settings")

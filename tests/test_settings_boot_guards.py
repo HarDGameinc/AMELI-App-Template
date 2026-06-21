@@ -43,6 +43,16 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
             "AMELI_APP_AUDIT_HMAC_KEY",
             "test-audit-hmac-key-for-prod-boot-guard-fixtures-only",
         )
+    if env != "dev" and "AMELI_APP_PROFILE_UPLOADS_DIR" not in env_vars:
+        # 2026-06-21 boot guard refuses MEDIA_ROOT inside the checkout
+        # outside dev (wire test caught the avatar 500 due to relative
+        # default). Tests that don't probe THIS guard get an absolute
+        # path so they exercise the guard they care about.
+        monkeypatch.setenv("AMELI_APP_PROFILE_UPLOADS_DIR", "/tmp/test-uploads")  # noqa: S108
+    if env != "dev" and "AMELI_APP_DATA_DIR" not in env_vars:
+        # Same trap for data_dir. /tmp is fine in tests (the guard only
+        # forbids inside-checkout paths).
+        monkeypatch.setenv("AMELI_APP_DATA_DIR", "/tmp/test-data")  # noqa: S108
 
     # Drop any cached settings module so the module-level guards re-run.
     for cached in ("ameli_web.settings",):
@@ -210,3 +220,35 @@ def test_dev_boots_with_valid_av_endpoint(monkeypatch):
     settings = _reload_settings(monkeypatch, env="dev",
                                 AMELI_APP_AV_ENDPOINT="tcp://clamd:3310")
     assert settings.AV_ENDPOINT == "tcp://clamd:3310"
+
+
+def test_non_dev_refuses_media_root_inside_checkout(monkeypatch, tmp_path):
+    """2026-06-21 wire test finding: ``profile_uploads_dir`` defaulted
+    to ``data/uploads/{env}`` (relative). ``path_from_value`` anchored
+    it against PROJECT_DIR which is root-owned on install.sh deploys;
+    the app user got PermissionError on the first avatar upload (500).
+    Boot guard now refuses paths inside the checkout outside dev.
+    """
+    # Explicitly set the relative-anchored-inside-checkout path that
+    # would silently fail at first write. The helper would otherwise
+    # auto-fill an absolute /tmp path; override that here.
+    with pytest.raises(RuntimeError, match="MEDIA_ROOT.*checkout"):
+        _reload_settings(
+            monkeypatch,
+            env="prod",
+            AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+            AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+            AMELI_APP_DJANGO_DEBUG="false",
+            AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+            AMELI_APP_EMAIL_BACKEND="smtp",
+            AMELI_APP_EMAIL_HOST="smtp.example.com",
+            # Force the relative-inside-checkout path that the wire test surfaced.
+            AMELI_APP_PROFILE_UPLOADS_DIR="data/uploads/dev",
+        )
+
+
+def test_dev_allows_media_root_inside_checkout(monkeypatch):
+    """Dev allows relative paths (convenience for local iteration)."""
+    settings = _reload_settings(monkeypatch, env="dev")
+    # The dev default points inside the checkout; that's OK in dev.
+    assert "data/uploads" in settings.MEDIA_ROOT or settings.MEDIA_ROOT

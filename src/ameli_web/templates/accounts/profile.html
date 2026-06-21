@@ -131,9 +131,14 @@
         </div>
       </form>
 
-      {# Avatar upload + delete. Backend (update_avatar / delete_avatar_view)
-         ha existido desde el sprint 06-15 con AV scan + IDOR gate, pero el
-         UI nunca llego al template. Cerrado 2026-06-20 tras feedback wire. #}
+      {% comment %}
+        Avatar upload + delete. Backend (update_avatar / delete_avatar_view)
+        ha existido desde el sprint 06-15 con AV scan + IDOR gate, pero el
+        UI nunca llego al template. Cerrado 2026-06-20 tras feedback wire.
+        OJO con multi-line {# ... #}: solo es comentario en UNA linea;
+        multi-line se filtra como HTML — bug surfacie en el wire test
+        21-jun.
+      {% endcomment %}
       <div class="form-card-head" style="margin-top:24px;">
         <div class="metric-label">Imagen de perfil</div>
         <p class="muted panel-copy">JPEG, PNG, WebP o GIF. Maximo 3 MB. Se valida y se escanea por antivirus antes de guardar.</p>
