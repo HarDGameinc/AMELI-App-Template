@@ -42,8 +42,12 @@
 {% endif %}
 <section class="panel profile-hero">
   <div class="profile-identity">
-    <div class="profile-avatar">
+    <div class="profile-avatar{% if current_user.has_avatar %} has-image{% endif %}">
+      {% if current_user.has_avatar %}
+      <img class="profile-avatar-image" src="{{ current_user.avatar_url }}" alt="Avatar de {{ current_user.display_identity_name }}">
+      {% else %}
       {{ current_user.initials }}
+      {% endif %}
     </div>
     <div class="profile-identity-copy">
       <h2 class="profile-name">{{ current_user.display_identity_name }}</h2>
@@ -126,6 +130,32 @@
           <button class="primary" type="submit">Guardar perfil</button>
         </div>
       </form>
+
+      {# Avatar upload + delete. Backend (update_avatar / delete_avatar_view)
+         ha existido desde el sprint 06-15 con AV scan + IDOR gate, pero el
+         UI nunca llego al template. Cerrado 2026-06-20 tras feedback wire. #}
+      <div class="form-card-head" style="margin-top:24px;">
+        <div class="metric-label">Imagen de perfil</div>
+        <p class="muted panel-copy">JPEG, PNG, WebP o GIF. Maximo 3 MB. Se valida y se escanea por antivirus antes de guardar.</p>
+      </div>
+      <form id="avatar-form" class="form-card" method="post" enctype="multipart/form-data" action="{% url 'accounts:profile-avatar' %}">
+        {% csrf_token %}
+        <div class="modal-form-row">
+          <label class="modal-form-label" for="avatar-file-input">Nueva imagen</label>
+          <input id="avatar-file-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required>
+        </div>
+        <div class="modal-actions-row">
+          <button class="primary" type="submit">Subir avatar</button>
+        </div>
+      </form>
+      {% if current_user.has_avatar %}
+      <form id="avatar-delete-form" class="form-card" method="post" action="{% url 'accounts:profile-avatar-delete' %}" style="margin-top:8px;">
+        {% csrf_token %}
+        <div class="modal-actions-row">
+          <button class="danger" type="submit">Borrar imagen actual</button>
+        </div>
+      </form>
+      {% endif %}
     </div>
     <div class="panel">
       <div class="metric-label">Identidad y preferencias</div>
