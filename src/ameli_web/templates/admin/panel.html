@@ -15,8 +15,12 @@
 {% block content %}
 <section class="panel profile-hero">
   <div class="profile-identity">
-    <div class="profile-avatar">
+    <div class="profile-avatar{% if current_user.has_avatar %} has-image{% endif %}">
+      {% if current_user.has_avatar %}
+      <img class="profile-avatar-image" src="{{ current_user.avatar_url }}" alt="Avatar de {{ current_user.display_identity_name }}">
+      {% else %}
       {{ current_user.initials }}
+      {% endif %}
     </div>
     <div class="profile-identity-copy">
       <h2 class="profile-name">Consola administrativa</h2>
