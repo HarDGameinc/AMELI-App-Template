@@ -122,6 +122,67 @@ UX. **Esfuerzo**: XS<1h, S<4h, M<1d, L>1d.
 
 | `202a470` | Phase 2 #5 — `/health/deep` endpoint con DB + FS write probes | 919 → 927 (+7) |
 | `6b66443` | Phase 2 #4 — backup ↔ restore round-trip + restore.sh URL fix | 927 → 930 (+3) |
+| `eb764d9` | Phase 3 #6 — mypy + django-stubs zero-error floor | 930 → 937 (+7) |
+| `80d8819` | Close handoff §4-§8 + bump v0.3.1 → **v0.4.0-django** | suite stays green |
+| `af029ef` | Hotfix CI rojo — bandit B108 anotacion + msgpack 1.2.1 CVE | suite stays green |
+| `3bcd3d6` | Skip backup round-trip tests cuando CI corre non-root | suite stays green |
+| — | **Promote `dev → main`** (`67ae53a..3bcd3d6`, 13 commits) — CI #113 verde | — |
+| `d4ade5e` | install.sh: restart daemons after enable (post-wire-test fix) | 937 → 939 (+2) |
+
+### Wire validation 2026-06-20 — items shippeados al server
+
+Server `ha-report2`, sync a `main @ 3bcd3d6` (v0.4.0-django). 4
+hallazgos durante el wire test (todos resueltos):
+
+1. **install.sh no reiniciaba daemons running**. `enable --now`
+   solo arranca units STOPPED; no restart-ea daemons ya
+   corriendo. Sintoma: el api service quedo en `v0.2.0-django`
+   por sprints; `/health` reportaba la version vieja aunque
+   el CLI veia la nueva. **Fix template-side en `d4ade5e`**:
+   install.sh ahora llama `restart_selected_units` despues de
+   `enable_selected_units`. Operator workaround manual:
+   `systemctl restart ${prefix}-api.service`. 2 tests pin
+   el contrato.
+
+2. **bandit B108 sin anotacion** — el fallback `/tmp` en
+   `_check_fs_write` tenia `# noqa: S108` (ruff) pero no
+   `# nosec B108` (bandit). Leccion #2 del 17-jun otra vez:
+   ambas anotaciones obligatorias. Fix en `af029ef`.
+
+3. **msgpack 1.2.0 CVE** (GHSA-6v7p-g79w-8964) entro como
+   transitive de detect-secrets/cyclonedx en Phase 1 #1.
+   pip-audit lo flagueo en CI. Pin a `>=1.2.1` en
+   requirements-dev.txt; lockfile regenerado. Fix en
+   `af029ef`.
+
+4. **`/health/deep` atrapo deploy config error real** — el
+   `app.yaml` del server tenia `data_dir: "data"` (path
+   relativo). Se resolvia a `/opt/.../data` (owned por
+   root, sin write para el app user). fs_write probe
+   devolvio 503 con `PermissionError`. El template NO tiene
+   bug; el deploy YAML estaba mal. Operador absolutizo el
+   path a `/var/lib/ameli-app-template-dev` (donde
+   install.sh ya crea+chowna el dir). **Esto es exactamente
+   la razon de existir de `/health/deep`** — el `/health`
+   shallow nunca habria detectado este problema.
+   **Follow-up (no shippeado, requiere autorizacion)**:
+   config.py podria rechazar paths relativos en `data_dir`
+   con boot guard, o resolverlos vs APP_DIR explicitamente
+   en lugar de CWD. Hoy son dos bugs latentes esperando
+   pasar.
+
+Estado final wire-verified:
+```json
+$ curl http://127.0.0.1:18080/health/deep
+{
+    "ok": true,
+    "status": "OPERATIVO",
+    "checks": {
+        "db_write": {"ok": true, "ms": 1},
+        "fs_write": {"ok": true, "ms": 1, "dir": "/var/lib/ameli-app-template-dev"}
+    }
+}
+```
 
 ### Phase 2 (validar deploy) — closed
 
