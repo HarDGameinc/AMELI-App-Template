@@ -303,13 +303,16 @@ smokes son breves.
 
 | Metrica | Inicio dia | Cierre dia | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 898 | **937** | +39 (+11 phase1, +10 a11y, +7 health-deep, +3 backup-rt, +7 mypy + correcciones) |
-| Coverage % (branch + line) | n/a (no medido) | **85%** (floor pinned) | +floor |
-| mypy errors en src/ | n/a (no medido) | **0** en 47 archivos | +floor |
-| Commits sobre `dev` | 0 (start at `af6667e`) | 9 (`fd0f51a..eb764d9` + commits handoff) | — |
+| Suite local (sin deselect) | 898 | **943** | +45 (+11 phase1, +10 a11y, +7 health-deep, +3 backup-rt, +7 mypy, +2 install.sh, +4 avatar UI, +1 helper) |
+| Coverage % (branch + line) | n/a | **85%** (floor pinned) | +floor |
+| mypy errors en src/ | n/a | **0** en 47 archivos | +floor |
+| Commits sobre `dev` | 0 (start at `af6667e`) | 12 (incluye install.sh fix, hotfixes CI, avatar UI tras wire feedback) | — |
 | ASVS L2 active rows PASS | 151 | 151 | 0 |
 | Mini-roadmap items closed | 0 / 12 | **7 / 12** | +7 |
-| Version | `v0.3.1-django` | **`v0.4.0-django`** | minor bump |
+| Avatar UI gap | dead-letter (UI ausente, backend ya existia) | upload + delete forms wired (676d6a2) | + |
+| Wire test full stack | 0 | 1 verde en `ha-report2` (v0.4.0-django, /health/deep operativo) | + |
+| Bugs latentes encontrados via wire | 0 | 4 (install.sh no restart, bandit B108, msgpack CVE, deploy yaml relative path) | + |
+| Version | `v0.3.1-django` | **`v0.4.0-django`** (desplegado `ha-report2`) | minor bump |
 | Lockfile size | (existing) | +mypy/django-stubs/coverage/pre-commit/detect-secrets | — |
 
 ## §6. Hallazgos / findings
@@ -357,27 +360,44 @@ Mini-roadmap de mejoras (2026-06-20):
 
 ## §8. Continuidad — para el proximo agente
 
-`dev @ <this-commit>`, `main` recien promovido a este SHA
-(version `v0.4.0-django`).
+`dev @ 676d6a2`, `main @ 3bcd3d6` (v0.4.0-django desplegado en
+`ha-report2` con todos los checks `/health/deep` verde tras el
+wire test). 4 commits adelantados en `dev`:
+- `d4ade5e` install.sh restart fix (post-wire-test)
+- `da4ab08` wire validation evidence en §3
+- `676d6a2` avatar upload + delete UI
+- handoff close + version stay v0.4.0-django
 
-**Wire test pendiente** — promoter al server `ha-report2`:
+**El siguiente agente** debe:
 
-```bash
-cd /opt/ameli-app-template-dev
-git fetch origin main && git reset --hard origin/main
-bash scripts/install.sh APP_SLUG=ameli-app-template APP_ENV=dev
-# Re-instala deps con el nuevo lockfile (incluye mypy/django-stubs/
-# coverage/pre-commit/detect-secrets) y reinicia servicios.
-systemctl status ameli-app-template-dev-api.service --no-pager | head
-.venv/bin/python manage.py shell <<'PY'
-from django.test import Client
-c = Client()
-r = c.get("/health/deep")
-print(f"/health/deep -> {r.status_code} {r.json()}")
-PY
-```
+1. **Promote `dev → main`** del bundle de fixes (4 commits)
+   cuando CI confirme verde sobre `676d6a2`. Patron S-05 ya
+   establecido.
+2. **Re-correr `install.sh` en `ha-report2`** post-promote
+   para que (a) el avatar UI llegue al deploy, (b) el install
+   automaticamente restartee los daemons (cierra el workaround
+   manual del wire test de hoy).
+3. **Wire test del avatar end-to-end**: loguear en
+   `/profile/` → subir una imagen JPEG/PNG <3 MB → verificar
+   hero cambia a la imagen + delete form aparece → click
+   delete → vuelve a iniciales.
 
-Esperado: `200` y `{"ok": true, "status": "OPERATIVO", "checks": {"db_write": {...}, "fs_write": {...}}}`.
+**Mini-roadmap pendiente (5/12)**:
+- #7 OpenTelemetry tracing
+- #8 SRI sobre static propios + Trusted Types CSP
+- #9 Circuit breakers (AV/SMTP/HIBP)
+- #10 django-silk + #11 connection pool tuning
+- #12 Playwright e2e
+
+**Follow-ups documentados, sin shippear**:
+- config.py podria rechazar paths relativos en `data_dir`
+  (boot guard) — el yaml del deploy tenia `data_dir: "data"`
+  y se resolvia relativo a CWD, causando PermissionError al
+  primer write. Lo arreglo el operador editando el yaml; el
+  template aun no enforza el path absoluto.
+- Patron "endpoint POST sin UI consumer" → check por cada
+  nuevo endpoint backend que haya UI consumer en el
+  template apropiado (avatar UI gap surgio asi).
 
 **Tareas opcionales / proximas sesiones**:
 
