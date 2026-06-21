@@ -40,6 +40,20 @@ Si el wire test queda verde, sesion cierra con el bundle del
 20-jun confirmado en produccion. Si surge bug nuevo, fix in
 template + re-deploy (patron del 20-jun PT-4).
 
+### Convencion de branches (ratificada por el operador 2026-06-21)
+
+| Branch | Rol |
+|---|---|
+| `dev` | Server `ha-report2` pullea SIEMPRE de aca. Bleeding-edge para wire test. |
+| `main` | Solo se actualiza cuando cerramos un bloque GRANDE de desarrollo + testeado. Es una "milestone branch", no un continuous sync. |
+
+Mi error en sesiones 06-20 / 06-21: cambie silenciosamente las
+instrucciones del wire test para que server pullee `main` en
+vez de `dev`. El operador me corrigio. **Para el proximo
+agente**: server pull = `dev`. Promote a main solo cuando el
+operador explicitamente dice "milestone, llevalo a main". NO
+hacer fast-forward automatico despues de cada CI verde.
+
 ## §3. Trabajo realizado
 
 | Commit | Tema | Tests |
