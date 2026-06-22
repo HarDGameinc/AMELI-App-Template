@@ -699,8 +699,29 @@ outage MUST NOT lock users out of profile updates. Operators that
 require strict fail-closed behaviour deploy a reverse proxy with a
 health probe in front of clamd.
 
-Quick test with the EICAR test signature (a harmless file every AV
-must catch as a sanity check):
+### Debian / Ubuntu first-install gotcha
+
+On a fresh ``apt install clamav-daemon``, the daemon does NOT
+auto-start because the package ships with no virus databases.
+``clamav-freshclam`` downloads ~110 MB of signatures (3–10 min on a
+typical link); when it finishes it tries to notify clamd via
+``/var/run/clamav/clamd.ctl`` but the socket does not exist yet
+(``Clamd was NOT notified: ... No such file or directory`` in the
+freshclam journal). A single manual restart wires everything up:
+
+```bash
+# Wait until /var/lib/clamav/ has main.cvd, daily.cvd, bytecode.cvd
+journalctl -u clamav-freshclam.service -n 20 | grep -E '(main|daily|bytecode)\.cvd updated'
+
+# Then start the daemon — subsequent boots / redeploys are automatic
+# via systemd socket activation.
+systemctl restart clamav-daemon.service
+ls -la /var/run/clamav/clamd.ctl   # should now exist as srw-rw-rw-
+```
+
+### Quick test with the EICAR test signature
+
+EICAR is a harmless file every AV must catch as a sanity check.
 
 ```bash
 # On a host with clamd listening on 3310:

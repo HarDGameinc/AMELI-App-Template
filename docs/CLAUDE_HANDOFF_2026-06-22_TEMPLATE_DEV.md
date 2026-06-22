@@ -277,13 +277,13 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
 
 | Metrica | Inicio dia (22-jun) | Cierre dia (22-jun) | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 948 | **970** | +22 (+4 TT, +5 SRI, +13 breaker) |
+| Suite local (sin deselect) | 948 | **976** | +28 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme) |
 | Coverage % (branch + line) | 85% | 85% (floor pinned) | 0 |
 | mypy errors en src/ | 0 / 47 | 0 / 50 | +3 archivos (sri.py, sri __init__.py, circuit_breaker.py) sin errores |
 | Commits sobre `dev` (sesion) | 0 (`c643af8`) | 5 (+ doc closer) | — |
-| ASVS L2 active rows PASS | 151 | 151 | 0 |
+| ASVS L2 active rows PASS | 151 | 151 (+ V12.4.1 ahora strict-shippable post `a51d2b8`) | 0 (+1 movido de partial → strict) |
 | Mini-roadmap items closed | 7 / 12 | **9 / 12** | +2 (#8, #9) |
-| Wire tests verdes | 1 acumulado | **2 nuevos** (#8 full smoke browser + curl, #9 manage.py shell) | +2 |
+| Wire tests verdes | 1 acumulado | **3 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real) | +3 |
 | Bugs encontrados via wire | 0 | 0 (falso positivo de `curl -I` sobre /docs descartado) | 0 |
 | Version | `v0.4.0-django` | **`v0.4.0-django`** (security hardening, no bump) | 0 |
 | Branches state | `dev @ c643af8`, `main @ 1355060` | `dev @ <this>`, `main @ 1355060` (sin tocar) | — |
@@ -364,19 +364,23 @@ Mini-roadmap de mejoras:
 
 Net: **9/12 closed**. Quedan #7 OTel + Fase 5 (#10 + #11) + #12 e2e.
 
-Follow-ups documentados (sin shippear):
-- **`unix://` scheme en `av.py`** (ver §6 hallazgo #5) — bloqueante
-  ligero para ASVS V12.4.1 strict en deploys Debian. Hoy quedo en
-  mitigacion parcial. Code change ~15 lineas + 1-2 tests; agendado
-  para proxima sesion porque el operador eligio cortar momentum del
-  22-jun y meterlo despues. Recovery path para wire-testearlo:
-  re-install de clamav-daemon (`apt install -y clamav-daemon
-  clamav-freshclam`), esperar signatures, `apt`-install deja el
-  Unix socket en `/var/run/clamav/clamd.ctl`, setear
-  `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`,
-  restart api, repetir el EICAR smoke del `manage.py shell`.
+Follow-ups documentados:
+- **`unix://` scheme en `av.py`** — **SHIPPED `a51d2b8`
+  (post-handoff-close turn)**. ~70 LOC en av.py (refactor extract
+  `_run_instream` shared + nuevo `_scan_clamd_unix`) + boot guard
+  update en settings.py + doc en OPERATIONS.md. 6 tests nuevos
+  (5 wire-shape + 1 boot guard). Wire-validado en `ha-report2`
+  contra clamd real: `clean: ('ok', '')`, `eicar: ('infected',
+  'Eicar-Test-Signature')`. ASVS V12.4.1 ahora **strict-shipped**
+  sobre Debian, sin gotchas de systemd.
+  - Sub-gotcha del wire test, ya documentado en OPERATIONS.md:
+    primer `apt install clamav-daemon` deja la unidad inactive
+    porque no hay DBs todavia; despues que freshclam termina hay
+    que hacer un `systemctl restart clamav-daemon.service` UNA
+    vez para crear el socket. Reboots / redeploys siguientes son
+    automaticos.
 - Cosmetic: format del log line del breaker (`%.0f` → `%.1f` para
-  cooldowns visibles en testing).
+  cooldowns visibles en testing). Sin shippear, no afecta prod.
 - HEAD vs GET en `_docs_csp` no es estrictamente un bug — la
   respuesta a HEAD viaja sin body y los browsers nunca envian
   HEAD para esos endpoints. Documentado en §6 como gotcha de wire
@@ -422,14 +426,13 @@ cierre del handoff es doc-only, NO require re-deploy.
 2. **Si no hay milestone**: esperar direccion del operador. NO
    inventar tareas.
 
-**Follow-up con prioridad alta** (§6 hallazgo #5 + §7
-follow-ups): agregar scheme `unix://` a
-`accounts/av.py:scan_bytes` para cerrar ASVS V12.4.1 strict.
-El wire test del 22-jun probo que en Debian 13 el path TCP
-no es viable out-of-the-box; el path correcto es Unix socket.
-~15 lineas de codigo + 1-2 tests + re-instalar clamav-daemon
-en `ha-report2` para wire-test. NO empezar sin confirmacion
-explicita del operador.
+**Follow-up del 22-jun ya cerrado** (`a51d2b8`): scheme
+`unix://` agregado a `av.py`, boot guard actualizado, docs
+actualizadas, wire-validado contra clamd real en `ha-report2`.
+ASVS V12.4.1 strict-shipped. Server queda en `a51d2b8` con
+`AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl` en
+`/etc/ameli-app-template-dev/app.env`. Ver §6 hallazgo #5 +
+§7 follow-ups para el detalle.
 
 **Mini-roadmap pendiente (3/12)**:
 - **#7 OpenTelemetry** (Fase 3) — tracing opt-in via
