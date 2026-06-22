@@ -64,7 +64,10 @@ Cierre del handoff con wire test en `ha-report2` confirmado.
 | `cb8e67b` | Re-cierre del handoff con OTel + wire test parte A (primer pase) | doc only |
 | `0bf9bca` | Configure root logging in asgi.py para que `otel.disabled/enabled` aparezca en journal | 987 → 989 (+2) |
 | `1fe35d8` | OTel: wrap ASGI app + service.version real (cierra el waterfall completo en Jaeger) | 989 → 992 (+3) |
-| `<this>` | Re-cierre del handoff con wire test parte B verde + Jaeger waterfall confirmado | doc only |
+| `68bca6a` | Re-cierre del handoff con OTel wire parte B verde + Jaeger waterfall | doc only |
+| `ca2a81f` | Postgres connection pool tuning (mini-roadmap #11) | 992 → 999 (+7) |
+| `36c4329` | django-silk opt-in profiler (mini-roadmap #10, cierra Fase 5) | 999 → 1004 (+5) |
+| `<this>` | Re-cierre con Fase 5 cerrada + 11/12 mini-roadmap done | doc only |
 
 ### Mini-roadmap #8b — Trusted Types CSP (2db09cb)
 
@@ -368,6 +371,69 @@ de Jaeger stopped + removed. El codigo OTel sigue en `dev`, listo
 para activar de nuevo cuando se necesite (sin cambio de codigo,
 solo env var + collector corriendo en algun lado).
 
+### Mini-roadmap #11 — Postgres connection pool tuning (ca2a81f)
+
+Default Django opens/cierra una Postgres connection por request,
+lo que a concurrencia moderada hace que el setup + auth latency
+domine. Este commit shippea 3 capas:
+
+1. **`CONN_MAX_AGE = 60`** (configurable via
+   `AMELI_APP_DB_CONN_MAX_AGE_SECONDS`) — persistent connections
+   amortizadas por worker. Default conservador; raise/lower a gusto.
+2. **`CONN_HEALTH_CHECKS = True`** (Django 4.1+) — probe barato
+   antes de re-usar una connection stale. Un socket killed por
+   `idle_in_transaction_session_timeout`, un restart de pgbouncer,
+   o un network blip se vuelve error controlado en vez de 500.
+3. **Real pool via psycopg3 ConnectionPool** (opt-in): si seteás
+   `AMELI_APP_DB_POOL_MIN_SIZE` / `_MAX_SIZE`, el template wirea
+   `OPTIONS["pool"] = {"min_size": ..., "max_size": ...}` y
+   Django 5.1+ delega en `psycopg_pool.ConnectionPool`. Nueva dep
+   `psycopg-pool` en lockfile pero el pool stays OFF hasta que el
+   env var existe.
+
+SQLite installs ignoran las 3 (no tiene sentido pooling sobre file
+lock). Tests pinearon: defaults postgres, env override, invalid
+value → fallback, sqlite no carga ninguno, pool wired only when
+env present, pool con solo min_size.
+
+Sizing rule of thumb en `docs/OPERATIONS.md`: `max_size × workers <
+Postgres max_connections − headroom`. Para uvicorn 2-worker contra
+`max_connections=100`, `max_size=20` per worker es conservador.
+
+### Mini-roadmap #10 — django-silk opt-in profiler (36c4329)
+
+Complementa OTel: silk graba cada request match-eada a sus propias
+tablas DB + drill-down panel `/silk/` con **stack trace Python por
+query** (la pregunta "¿qué línea del view dispara este SQL?" que
+OTel no responde barato). Cierra Fase 5 entera.
+
+Three-stage activation previene leaks accidentales en prod:
+
+1. **OFF por default** — INSTALLED_APPS / MIDDLEWARE / URL conf no
+   referencian silk a menos que `AMELI_APP_SILK_ENABLED=true`.
+2. **Enable en dev** wirea app + middleware + `/silk/` URL + defaults
+   sensatos: `SILKY_AUTHENTICATION=True` + `SILKY_AUTHORISATION=True`
+   (panel auth-gated a logged-in superadmins), intercept regex
+   `^/(profile|admin|api)/` (no profilea health / static / favicon),
+   cap de 1000 records con sweep al 10%.
+3. **Enable en non-dev requiere SEGUNDO flag**:
+   `AMELI_APP_SILK_ALLOW_PROD=true`. Sin el, settings.py raise
+   RuntimeError al boot. Razón: silk persiste full request +
+   response bodies → leak PII a `silk_*` tables → ASVS V8.3.1
+   violation by accident. El segundo flag es la aceptación
+   explícita del trade-off (para profiling window en
+   staging-prod-clone, NO en real prod traffic).
+
+Tests (+5): off por default; on en dev wirea correctamente; prod
+refuses sin segundo flag; prod accepts con ambos flags; intercept
+regex honored desde env. Lockfile +20 lineas para django-silk +
+transitives.
+
+Doc en `OPERATIONS.md` cubre dev quickstart, customising scope,
+boot guard rationale, rollback, y tabla comparativa OTel vs silk
+explicando por qué shippeamos ambos (complementan, no replazan —
+OTel para producción aggregate, silk para "debug ESTE request").
+
 ### Wire test 2026-06-22 — bundle #8 + #9 en `ha-report2`
 
 `scripts/update.sh` (segun `docs/FIRST_INSTALL_DJANGO.md` §"Primera
@@ -484,12 +550,12 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
 
 | Metrica | Inicio dia (22-jun) | Cierre dia (22-jun) | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 948 | **992** | +44 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme, +11 OTel, +2 asgi-logging, +3 ASGI wrap + version) |
+| Suite local (sin deselect) | 948 | **1004** | +56 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme, +11 OTel, +2 asgi-logging, +3 ASGI wrap + version, +7 pool tuning, +5 silk) |
 | Coverage % (branch + line) | 85% | 85% (floor pinned) | 0 |
 | mypy errors en src/ | 0 / 47 | 0 / 50 | +3 archivos (sri.py, sri __init__.py, circuit_breaker.py) sin errores |
 | Commits sobre `dev` (sesion) | 0 (`c643af8`) | 5 (+ doc closer) | — |
 | ASVS L2 active rows PASS | 151 | 151 (+ V12.4.1 ahora strict-shippable post `a51d2b8`) | 0 (+1 movido de partial → strict) |
-| Mini-roadmap items closed | 7 / 12 | **10 / 12** | +3 (#7, #8, #9 — Fase 3 + Fase 4 ambas closed) |
+| Mini-roadmap items closed | 7 / 12 | **11 / 12** | +5 (#7, #8, #9, #10, #11 — Fases 3, 4, 5 todas closed; solo Fase 6 #12 Playwright queda) |
 | Wire tests verdes | 1 acumulado | **6 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify, OTel boot log visibility post-fix, OTel parte B con Jaeger waterfall) | +6 |
 | Bugs encontrados via wire | 0 | 2 cerrados in-session (`otel.disabled` log no visible → fix `0bf9bca`; HTTP requests sin parent span en ASGI → fix `1fe35d8`) | +2 found+fixed |
 | Version | `v0.4.0-django` | **`v0.4.0-django`** (security + observabilidad opt-in, no bump funcional) | 0 |
@@ -592,10 +658,10 @@ Mini-roadmap de mejoras:
 | 2. Validar deploy | #4 backup round-trip, #5 deep health | ✓ closed |
 | 3. Types + tracing | #6 mypy, #7 OpenTelemetry | **✓ closed esta sesion** |
 | 4. Hardening | #8 SRI+TT, #9 circuit breakers + unix:// AV | **✓ closed esta sesion** |
-| 5. Performance | #10 django-silk, #11 pool tuning | open |
+| 5. Performance | #10 django-silk, #11 pool tuning | **✓ closed esta sesion** |
 | 6. E2E | #12 Playwright | open |
 
-Net: **10/12 closed**. Quedan SOLO Fase 5 (#10 + #11) + Fase 6 (#12).
+Net: **11/12 closed**. Solo Fase 6 (#12 Playwright e2e) queda abierta.
 
 Follow-ups documentados:
 - **`unix://` scheme en `av.py`** — SHIPPED `a51d2b8` + wire test
@@ -653,12 +719,18 @@ adelantados en `dev` desde el ultimo match con main:
 - `cb8e67b` Doc re-cierre con OTel (primer pase, parte A)
 - `0bf9bca` Configure root logging before OTel bootstrap (visibility)
 - `1fe35d8` OTel: wrap ASGI app + service.version fix
-- (+ `<this>` re-cierre handoff 22-jun con OTel wire parte B verde)
+- `68bca6a` Doc re-cierre con OTel wire parte B verde
+- `ca2a81f` Mini-roadmap #11 — Postgres connection pool tuning
+- `36c4329` Mini-roadmap #10 — django-silk opt-in profiler (Fase 5 closed)
+- (+ `<this>` re-cierre con Fase 5 cerrada + 11/12 mini-roadmap done)
 
-Server `ha-report2` corriendo `1fe35d8` (wire test parte B del
-OTel confirmado contra Jaeger, luego rollback del env var: OTel
-queda dormant en el server pero el codigo del template esta
-listo). El re-cierre del handoff es doc-only, NO require re-deploy.
+Server `ha-report2` corriendo `1fe35d8` (último deploy del wire
+test parte B de OTel). NO se redeployaron #11 + #10 todavía — el
+operador puede hacerlo cuando quiera. Ambos items son safe: pool
+tuning con defaults conservadores activos al next-deploy
+automatically; silk OFF por default (no rompe nada hasta que
+operador setee `AMELI_APP_SILK_ENABLED=true` + corra
+`manage.py migrate silk`).
 
 **El siguiente agente NO debe**:
 - Promote `dev → main` automaticamente. Esperar instruccion
@@ -676,26 +748,27 @@ listo). El re-cierre del handoff es doc-only, NO require re-deploy.
 2. **Si no hay milestone**: esperar direccion del operador. NO
    inventar tareas.
 
-**Follow-ups del 22-jun ya cerrados en esta misma sesion**:
+**Items del mini-roadmap shippeados en esta sesion**:
 - `a51d2b8` scheme `unix://` en `av.py` — ASVS V12.4.1
   strict-shipped + wire test contra clamd real en `ha-report2`.
-  Server tiene `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`
-  en `app.env`.
-- `8de62d1` OpenTelemetry tracing — Fase 3 closed. Tracing
-  opt-in via `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT`. Deps
-  pesadas (grpcio + 16 packages) ya en lockfile. Wire test
-  parte A verde; parte B (Jaeger) requiere docker (no
-  disponible en `ha-report2` hoy).
+- `8de62d1` + `0bf9bca` + `1fe35d8` OpenTelemetry tracing
+  (Fase 3) — bootstrap opt-in + boot log visibility + ASGI wrap
+  + service.version fix. Wire test parte A + B verdes contra
+  Jaeger (luego rollback del container + env var per pedido del
+  operador, codigo queda dormant).
+- `ca2a81f` Postgres connection pool tuning (#11) — CONN_MAX_AGE
+  + health checks por default; pool real opt-in via
+  `AMELI_APP_DB_POOL_*`.
+- `36c4329` django-silk opt-in profiler (#10, Fase 5 closed) —
+  three-stage activation con prod boot guard.
 
-**Mini-roadmap pendiente (2/12)**:
-- **#10 django-silk** + **#11 connection pool tuning** (Fase 5
-  Performance) — silk para profiling local de DB queries +
-  templates; pool tuning para que el deploy aguante mas
-  concurrencia sin que psycopg se vuelva el bottleneck.
+**Mini-roadmap pendiente (1/12)**:
 - **#12 Playwright e2e** (Fase 6) — cerraria los tests de
   regresion visual del avatar listados en follow-ups del 21-jun
-  §7. Toca CI + agrega Node deps + un docker-compose para
-  correr el browser headless. Mas pesado que #10/#11.
+  §7. Toca CI + agrega Node deps + un docker-compose (o un
+  driver headless) para correr el browser. El item mas pesado
+  del roadmap; vale la pena evaluar si se prioriza vs cosas
+  nuevas que aparezcan en el dominio.
 
 **Otros candidatos NO en el mini-roadmap** que pueden interesar:
 - Bump cosmetico del format del log line del breaker (§7
