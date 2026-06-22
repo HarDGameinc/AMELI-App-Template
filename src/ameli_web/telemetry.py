@@ -108,9 +108,20 @@ def setup_otel() -> bool:
             sample_ratio = 1.0
         sample_ratio = max(0.0, min(1.0, sample_ratio))
 
+        # Resolve the live package version via ameli_app.__version__
+        # rather than reading an env var that systemd never sets. The
+        # env var stays as an override hook for advanced operators
+        # (e.g. canary tagging) but the default matches what /health
+        # reports.
+        try:
+            from ameli_app import __version__ as _pkg_version
+        except Exception:  # noqa: BLE001 — never block boot on a version lookup hiccup
+            _pkg_version = "0.0.0"
+        service_version = os.environ.get("AMELI_APP_VERSION", _pkg_version).strip() or _pkg_version
+
         resource = Resource.create({
             "service.name": service_name,
-            "service.version": os.environ.get("AMELI_APP_VERSION", "0.0.0"),
+            "service.version": service_version,
             "deployment.environment": os.environ.get("APP_ENV", "dev"),
         })
 
@@ -164,6 +175,35 @@ def get_tracer(module_name: str) -> Any:
     except ImportError:
         return _NoopTracer()
     return trace.get_tracer(module_name)
+
+
+def wrap_asgi_application(app: Any) -> Any:
+    """Wrap the Django ASGI application so every HTTP request becomes
+    a parent span containing the DB / outbound / manual spans the
+    rest of the codebase emits.
+
+    ``opentelemetry-instrumentation-django`` only auto-instruments the
+    WSGI path. On the ASGI side (uvicorn + Django ASGI), Django's
+    middleware stack is invoked through ``async`` plumbing the WSGI
+    hook does not see, so requests never produce a parent span and
+    every psycopg / urllib / manual span lands as its own orphan
+    trace. The ASGI middleware below closes that gap: it observes the
+    raw ASGI scope before Django dispatches it and emits a
+    ``HTTP <method>`` span that becomes the natural parent of
+    everything downstream.
+
+    Passthrough when OTel is inactive or the package is missing —
+    callers can wire ``application = wrap_asgi_application(...)``
+    unconditionally without breaking the deploy.
+    """
+    if not _active:
+        return app
+    try:
+        from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+    except ImportError as exc:
+        logger.warning("otel.asgi_wrap_skipped reason=missing detail=%s", exc)
+        return app
+    return OpenTelemetryMiddleware(app)
 
 
 class _NoopSpan:

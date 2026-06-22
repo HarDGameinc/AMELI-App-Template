@@ -24,8 +24,11 @@ if not logging.getLogger().hasHandlers():
 # the Django auto-instrumentation can wrap middlewares as they load.
 # When ``AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT`` is empty, this is a
 # no-op — see ``telemetry.setup_otel``.
-from .telemetry import setup_otel  # noqa: E402 - must follow settings env setup
+from .telemetry import setup_otel, wrap_asgi_application  # noqa: E402
 
 setup_otel()
 
-application = get_asgi_application()
+# Wrap the ASGI app so each HTTP request becomes the parent span of
+# the DB / outbound / manual spans emitted downstream. NoOp when
+# OTel is inactive — returns the original application unchanged.
+application = wrap_asgi_application(get_asgi_application())

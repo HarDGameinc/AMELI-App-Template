@@ -53,3 +53,8 @@ opentelemetry-exporter-otlp-proto-grpc>=1.27,<2
 opentelemetry-instrumentation-django>=0.48b0,<1
 opentelemetry-instrumentation-psycopg>=0.48b0,<1
 opentelemetry-instrumentation-urllib>=0.48b0,<1
+# ASGI wrapper — produces the parent HTTP request span that
+# Django auto-instrumentation skips on the ASGI path. Without it
+# psycopg / urllib / manual spans appear as orphan traces instead
+# of children of "POST /path/".
+opentelemetry-instrumentation-asgi>=0.48b0,<1

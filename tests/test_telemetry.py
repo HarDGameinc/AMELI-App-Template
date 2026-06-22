@@ -241,6 +241,78 @@ def test_asgi_configures_logging_when_root_has_no_handlers():
         sys.modules.pop("ameli_web.asgi", None)
 
 
+def test_wrap_asgi_application_is_passthrough_when_inactive(monkeypatch):
+    """When OTel is not active (default state — no endpoint configured),
+    ``wrap_asgi_application`` MUST return the original app unchanged.
+    Asgi.py wires it unconditionally; a runtime wrap when the SDK is
+    inactive would add zero-benefit overhead to every request."""
+    monkeypatch.setattr(telemetry, "_active", False)
+
+    def fake_app(scope, receive, send):
+        return None
+
+    wrapped = telemetry.wrap_asgi_application(fake_app)
+    assert wrapped is fake_app
+
+
+def test_wrap_asgi_application_wraps_when_active(monkeypatch):
+    """When OTel is active, the wrapper MUST return a different
+    callable so the ASGI middleware can observe requests and emit
+    parent HTTP spans. Pinning identity-change is enough — the actual
+    span emission is owned by the upstream OpenTelemetry library and
+    not worth re-pinning here."""
+    monkeypatch.setattr(telemetry, "_active", True)
+
+    def fake_app(scope, receive, send):
+        return None
+
+    wrapped = telemetry.wrap_asgi_application(fake_app)
+    assert wrapped is not fake_app
+
+
+def test_resource_carries_package_version_not_zero_zero_zero(_reset_setup_state, monkeypatch):
+    """``service.version`` on the OTel resource MUST reflect the live
+    ``ameli_app.__version__`` (what /health reports). The previous
+    implementation read ``AMELI_APP_VERSION`` env var with a "0.0.0"
+    fallback; systemd never set the env var so the resource always
+    surfaced "0.0.0" in Jaeger — surfaced 22-jun wire test."""
+    from ameli_app import __version__ as pkg_version
+
+    monkeypatch.delenv("AMELI_APP_VERSION", raising=False)
+    monkeypatch.setenv("AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
+    # Patch the SDK pieces so setup_otel does not actually try to
+    # reach the collector — we only care about the resource it builds.
+    from opentelemetry.sdk.resources import Resource
+    captured = {}
+    real_create = Resource.create
+
+    def _capture(attrs):
+        captured["attrs"] = dict(attrs)
+        return real_create(attrs)
+
+    monkeypatch.setattr(Resource, "create", staticmethod(_capture))
+    # Stub the exporter constructor so no network connection is
+    # attempted and no background thread is left dangling.
+    import opentelemetry.exporter.otlp.proto.grpc.trace_exporter as exporter_mod
+
+    class _StubExporter:
+        def __init__(self, *_, **__):
+            pass
+
+        def export(self, *_a, **_kw):
+            return None
+
+        def shutdown(self, *_a, **_kw):
+            return None
+
+    monkeypatch.setattr(exporter_mod, "OTLPSpanExporter", _StubExporter)
+
+    telemetry.setup_otel()
+
+    assert captured["attrs"]["service.version"] == pkg_version
+    assert captured["attrs"]["service.version"] != "0.0.0"
+
+
 def test_asgi_does_not_stomp_existing_handlers():
     """When root ALREADY has a handler (pytest's caplog, an upstream
     log harness, the operator's custom config), asgi.py MUST NOT
