@@ -10,7 +10,18 @@ from django.core.exceptions import ValidationError
 
 from ameli_app.password_policy import password_policy_help_text, validate_password_policy
 
+from .circuit_breaker import CircuitBreaker, get_hibp_breaker
+
 logger = logging.getLogger(__name__)
+
+_breaker: CircuitBreaker | None = None
+
+
+def _get_breaker() -> CircuitBreaker:
+    global _breaker
+    if _breaker is None:
+        _breaker = get_hibp_breaker()
+    return _breaker
 
 
 class PasswordPolicyValidator:
@@ -90,11 +101,17 @@ class HIBPPasswordValidator:
         # to silence bandit B324 / ruff S324 without disabling them globally.
         digest = hashlib.sha1(plaintext.encode("utf-8"), usedforsecurity=False).hexdigest().upper()  # noqa: S324
         prefix, suffix = digest[:5], digest[5:]
+        breaker = _get_breaker()
+        if not breaker.allow():
+            logger.warning("HIBP check unavailable; allowing password: breaker_open")
+            return
         try:
             body = _query_hibp(prefix)
         except (URLError, TimeoutError, OSError) as exc:
             logger.warning("HIBP check unavailable; allowing password: %s", exc)
+            breaker.record_failure()
             return
+        breaker.record_success()
         # Each line is "SUFFIX:COUNT". Walk until we find ours.
         for line in body.splitlines():
             parts = line.strip().split(":")

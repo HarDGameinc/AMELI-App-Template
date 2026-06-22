@@ -33,7 +33,20 @@ import struct
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from .circuit_breaker import CircuitBreaker, get_av_breaker
+
 logger = logging.getLogger(__name__)
+
+# Lazy singleton: built on first use so importing this module does
+# not pin Django settings (matters for the AV unit tests).
+_breaker: CircuitBreaker | None = None
+
+
+def _get_breaker() -> CircuitBreaker:
+    global _breaker
+    if _breaker is None:
+        _breaker = get_av_breaker()
+    return _breaker
 
 # clamd INSTREAM chunks. The protocol limits the per-chunk size to
 # 25 MB by default; our avatar cap is 3 MB so a single chunk is fine.
@@ -65,28 +78,46 @@ def scan_bytes(data: bytes, endpoint: str, *, timeout: float = 5.0) -> tuple[str
     """
     if not endpoint:
         return ("disabled", "")
+    breaker = _get_breaker()
+    if not breaker.allow():
+        # Open circuit: fast-fail. The caller follows the same audit
+        # branch it would on a real timeout (fail-open with audit).
+        return ("check_failed", "breaker_open")
     try:
         if endpoint.startswith("tcp://"):
-            return _scan_clamd_tcp(data, endpoint, timeout=timeout)
-        if endpoint.startswith(("http://", "https://")):
-            return _scan_http(data, endpoint, timeout=timeout)
-        logger.warning("AV endpoint scheme not recognised: %r", endpoint)
-        return ("check_failed", "bad_scheme")
+            verdict = _scan_clamd_tcp(data, endpoint, timeout=timeout)
+        elif endpoint.startswith(("http://", "https://")):
+            verdict = _scan_http(data, endpoint, timeout=timeout)
+        else:
+            logger.warning("AV endpoint scheme not recognised: %r", endpoint)
+            return ("check_failed", "bad_scheme")
     except TimeoutError:
         logger.warning("AV scan timed out against %s", _redact(endpoint))
+        breaker.record_failure()
         return ("check_failed", "timeout")
     except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError) as exc:
         logger.warning("AV scan transport failure against %s: %s",
                        _redact(endpoint), type(exc).__name__)
+        breaker.record_failure()
         return ("check_failed", type(exc).__name__.lower())
     except (URLError, OSError) as exc:
         logger.warning("AV scan unreachable against %s: %s",
                        _redact(endpoint), exc)
+        breaker.record_failure()
         return ("check_failed", "unreachable")
     except Exception as exc:  # noqa: BLE001 — any other transport error is fail-open
         logger.warning("AV scan unexpected failure against %s: %s",
                        _redact(endpoint), type(exc).__name__)
+        breaker.record_failure()
         return ("check_failed", "unexpected")
+    # ok / infected both prove the daemon is reachable and answering;
+    # "bad_response" means we talked to clamd but its reply was off,
+    # so still a transport-side failure for breaker purposes.
+    if verdict[0] in ("ok", "infected"):
+        breaker.record_success()
+    else:
+        breaker.record_failure()
+    return verdict
 
 
 def _redact(endpoint: str) -> str:

@@ -28,6 +28,7 @@ from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
 
 from . import mfa
+from .circuit_breaker import CircuitBreaker, get_smtp_breaker
 from .models import (
     EmailChangeRequest,
     MaintenanceMode,
@@ -50,6 +51,18 @@ ROLE_GROUPS = {
 # index by ``queue_id`` / ``audit_action`` / ``error_class`` without
 # parsing the message body.
 email_queue_logger = logging.getLogger("ameli.email_queue")
+
+# Lazy SMTP circuit breaker — see circuit_breaker.py. Built on first
+# use so importing services.py from a test that has no Django settings
+# binding still works.
+_smtp_breaker: CircuitBreaker | None = None
+
+
+def _get_smtp_breaker() -> CircuitBreaker:
+    global _smtp_breaker
+    if _smtp_breaker is None:
+        _smtp_breaker = get_smtp_breaker()
+    return _smtp_breaker
 
 
 def _validate_password_value(password: str, *, user=None) -> None:
@@ -2524,7 +2537,37 @@ def process_email_queue(
     requeued = 0
     failed = 0
     expired = 0
+    skipped_breaker = 0
+    breaker = _get_smtp_breaker()
+    if pending_ids and not breaker.allow():
+        # Circuit is open: skip the entire batch without bumping
+        # attempts so the rows stay pending for the next tick.
+        # Burning ``max_attempts`` on a known outage would silently
+        # mark legitimate emails as permanently failed.
+        email_queue_logger.warning(
+            "email.queue_tick_skipped considered=%d reason=breaker_open",
+            len(pending_ids),
+        )
+        return {
+            "ok": True,
+            "considered": len(pending_ids),
+            "sent": 0,
+            "requeued": 0,
+            "failed": 0,
+            "expired": 0,
+            "skipped_breaker": len(pending_ids),
+        }
     for pk in pending_ids:
+        if not breaker.allow():
+            # Breaker tripped MID-batch (e.g. SMTP went down after we
+            # already sent some). Leave the remaining rows pending —
+            # the next tick will retry after cooldown.
+            skipped_breaker = len(pending_ids) - (sent + requeued + failed + expired)
+            email_queue_logger.warning(
+                "email.queue_tick_partial skipped=%d reason=breaker_open",
+                skipped_breaker,
+            )
+            break
         with transaction.atomic():
             qs = OutboundEmail.objects.filter(
                 pk=pk, status=OutboundEmail.STATUS_PENDING,
@@ -2563,6 +2606,7 @@ def process_email_queue(
             try:
                 _build_email_message(row).send(fail_silently=False)
             except Exception as exc:  # noqa: BLE001 - by design
+                breaker.record_failure()
                 exc_class = exc.__class__.__name__
                 row.attempts += 1
                 row.last_error = f"{exc_class}: {exc}"
@@ -2614,6 +2658,7 @@ def process_email_queue(
                     )
                     requeued += 1
                 continue
+            breaker.record_success()
             row.status = OutboundEmail.STATUS_SENT
             # Purge body + recipients now that delivery succeeded. The
             # body may contain a one-time password-reset token whose
@@ -2652,6 +2697,7 @@ def process_email_queue(
         "requeued": requeued,
         "failed": failed,
         "expired": expired,
+        "skipped_breaker": skipped_breaker,
     }
     if pending_ids:
         email_queue_logger.info(
