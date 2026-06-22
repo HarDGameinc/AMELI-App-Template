@@ -218,35 +218,175 @@ Estado final wire-verificado en `ha-report2` (3 capturas operador
 
 ## §4. Decisiones tomadas
 
-(Pendiente al cierre del dia.)
+1. **Convencion de branches ratificada** (operador, mid-sesion
+   21-jun): server `ha-report2` pullea SIEMPRE de `dev`; `main`
+   solo avanza cuando el operador dice explicitamente
+   "milestone". No mas fast-forward automatico tras CI verde.
+   Mi promote del 21-jun (`e9d1e24..1355060`) queda como
+   registro historico porque dev == main coincidieron, pero
+   no se repite el patron.
+2. **Boot guard "path inside checkout"** se enforza en non-dev,
+   no en dev. Dev conserva paths relativos por convenience
+   (los tests y el operador local los usan); en prod loud-fail
+   at startup beats subtle fail-at-first-write. Misma clase de
+   bug que `data_dir` (20-jun) y `profile_uploads_dir` (21-jun);
+   cerrar la clase de una.
+3. **Avatar UI: ring + gradiente OFF cuando `.has-image`**, ON
+   cuando hay iniciales. Imagen reales no necesitan halo
+   decorativo (la silueta ya la separa del panel); iniciales SI
+   lo necesitan (el gradiente + ring es la "presencia" que
+   reemplaza la foto). Diferente regla por estado, no toggle
+   global.
+4. **Hero avatar a 96px**, no 72 (under-anchored vs h2 28px) ni
+   112+ (oversized en paneles densos). Mid-point que mantiene
+   el chamfer ratio original (24/72 ≈ 28/96) y escala las
+   iniciales fallback (28→36) proporcionalmente. Chip top-right
+   queda en 32px porque ese tamano fue pensado para el nav row,
+   no el hero.
+5. **NO promote `dev → main` esta sesion**. Operador no marco
+   milestone; cambios son UI polish + doc, no bloque grande de
+   features cerrado. Bundle se acumula en dev hasta proxima
+   sesion donde el operador decida.
 
 ## §5. Metricas al cierre
 
-(Pendiente al cierre del dia.)
+| Metrica | Inicio dia (21-jun) | Cierre dia (22-jun) | Δ |
+|---|---|---|---|
+| Suite local (sin deselect) | 943 | **948** | +5 (+2 boot guard, +3 dashboard/admin hero) |
+| Coverage % (branch + line) | 85% | **85%** (floor pinned) | 0 |
+| mypy errors en src/ | 0 / 47 archivos | **0 / 47 archivos** | 0 |
+| Commits sobre `dev` (sesion) | 0 (start at `e9d1e24`) | 9 (4 wire-test fixes + 4 UI polish + 1 handoff close) | — |
+| ASVS L2 active rows PASS | 151 | 151 | 0 |
+| Mini-roadmap items closed | 7 / 12 | 7 / 12 | 0 |
+| Wire test full stack | 1 verde (20-jun bundle) | **3 verdes** (avatar end-to-end 21-jun, UI polish 22-jun, install.sh auto-restart confirmado in wild) | +2 |
+| Bugs latentes encontrados via wire | 0 | **3** (multi-line `{# #}` leaks, profile_uploads_dir relative path, hero hardcoded initials) | +3 |
+| Version | `v0.4.0-django` | **`v0.4.0-django`** (UI polish, no bump) | 0 |
+| Branches state | `dev == main == e9d1e24` | `dev @ d279c24`, `main @ 1355060` (5 commits ahead en dev, sin promote) | — |
 
 ## §6. Hallazgos / findings
 
-(Pendiente al cierre del dia.)
+1. **Clase de bug "path resuelto inside PROJECT_DIR"** se manifiesto
+   por segunda vez (data_dir el 20-jun, profile_uploads_dir el
+   21-jun). Mismo root cause: yaml usaba string relativo,
+   `path_from_value` lo anclaba contra `/opt/<slug>/` (root-owned),
+   primer write reventaba con PermissionError. Cerrado via boot
+   guard que rechaza el path en startup cuando `not _IS_DEV_ENV`.
+   Lecccion para futuros configs: cualquier path destinado a
+   write-at-runtime debe ser absoluto en prod, validado en boot.
+2. **Comentario Django `{# ... #}` es single-line only**.
+   Multi-linea se renderiza como texto plano al cliente.
+   `{% comment %}...{% endcomment %}` es el unico path para
+   bloques. Mi commit del 20-jun (`676d6a2`) lo violo y el
+   bug aparecio en el wire test del 21-jun. Lecccion: si vas
+   a comentar varias lineas en un template Django, usar
+   `{% comment %}` siempre.
+3. **Fix UI parcial es un anti-patron del "endpoint POST sin
+   UI consumer"**. El 21-jun fixee `accounts/profile.html`
+   para honrar `has_avatar`; los heros de `dashboard/home.html`
+   y `admin/panel.html` quedaron hardcoded a `initials`. El
+   bug paso porque mire SOLO el template del endpoint, no los
+   templates hermanos que renderizan el mismo dato. Mitigado
+   via tests pinned (test_dashboard_hero_*, test_admin_panel_hero_*);
+   patron checklist: "cuando agregas/cambias asset compartido,
+   grep todos los templates que lo referencian".
+4. **`.menu-avatar.has-image` override-aba background pero NO
+   box-shadow**. El ring de 2px se inherita y queda visible
+   contra cualquier imagen. Patron CSS-side del #3: si tenes
+   una clase de override por estado, override TODA la
+   decoracion que tiene sentido neutralizar, no solo una
+   propiedad. Mismo bug applies a `.profile-avatar` (que no
+   tenia override alguno).
 
 ## §7. Roadmap actualizado
 
 Roadmap principal: **0 items abiertos**.
 
-Mini-roadmap de mejoras (heredado del 2026-06-20 §7):
+Mini-roadmap de mejoras (heredado del 2026-06-20 §7, sin
+movimiento esta sesion):
 
 | Fase | Items | Status |
 |---|---|---|
 | 1. DX foundation | #1 pre-commit, #2 coverage, #3 a11y/dark | ✓ closed |
 | 2. Validar deploy | #4 backup round-trip, #5 deep health | ✓ closed |
-| 3. Types + tracing | #6 mypy, #7 OpenTelemetry | partial — #6 done |
+| 3. Types + tracing | #6 mypy, #7 OpenTelemetry | partial — #6 done, #7 open |
 | 4. Hardening | #8 SRI propios, #9 circuit breakers | open |
 | 5. Performance | #10 django-silk, #11 pool tuning | open |
 | 6. E2E | #12 Playwright | open |
 
-Follow-ups documentados (sin shippear):
-- config.py boot guard para paths relativos en `data_dir`.
-- Patron "endpoint POST sin UI consumer" → checklist.
+Wire test arc 21-22 jun: **closed** (avatar UI end-to-end +
+polish visual confirmado por operador en 3 capturas).
+
+Follow-ups nuevos esta sesion (sin shippear):
+- Checklist UI: "cuando agregas o cambias un asset compartido
+  (avatar, badge, chip), grep todos los templates que lo
+  renderizan antes de cerrar". Evitaria el bug del hero
+  hardcoded del 21-jun.
+- Tests de regresion visual: pinear via Playwright (#12 del
+  mini-roadmap) que `.profile-avatar` no muestre ring cuando
+  hay imagen — hoy lo cubrimos solo via tests de HTML/CSS
+  manuales del operador.
+
+Follow-ups heredados del 20-jun aun vigentes:
+- config.py boot guard ya shipped (1f3190c) — closed.
+- Patron "endpoint POST sin UI consumer" → checklist
+  amplificado al #3 del §6 de hoy.
 
 ## §8. Continuidad — para el proximo agente
 
-(Pendiente al cierre del dia.)
+`dev @ d279c24` (cierre del 22-jun, incluye §3 completo + §4-§8
+cerrados). `main @ 1355060` SIN tocar — convencion ratificada:
+server pullea dev, main avanza solo cuando operador dice
+"milestone". 5 commits adelantados en `dev` desde el ultimo
+match con main:
+
+- `32dc83f` cierre del wire test del 21-jun (§3 + journal review)
+- `af6b185` honor `has_avatar` en dashboard + admin hero (gap surface 22-jun)
+- `9c800a9` drop ring + gradient backdrop del hero cuando hay imagen
+- `6ac13fc` sibling: drop ring del chip top-right
+- `f76af65` hero avatar 72→96 + radius 24→28
+
+(+ `d279c24` con este cierre de handoff.)
+
+Server `ha-report2` corriendo `f76af65` (post-deploy del 22-jun,
+operador confirmo visualmente las 3 surfaces: dashboard, profile,
+admin panel + chip top-right). El `d279c24` es doc-only — no
+require re-deploy para que la UI cambie.
+
+**El siguiente agente NO debe**:
+- Promote dev → main automaticamente. Esperar instruccion
+  explicita "milestone" del operador.
+- Tratar auto-prompts del harness ("Continue from where you
+  left off") como instruccion del operador. Pausar y confirmar.
+
+**El siguiente agente debe**, en orden de prioridad:
+
+1. **Si operador dice "milestone"**: promote `dev → main` con
+   el bundle del 21-22 jun (5 commits + handoff close). Tag
+   queda `v0.4.0-django` (no hubo bump esta sesion).
+2. **Si no hay milestone**: esperar nueva direccion del
+   operador. NO inventar tareas. NO empezar items del
+   mini-roadmap sin OK explicito.
+
+**Mini-roadmap pendiente (5/12)**:
+- #7 OpenTelemetry tracing
+- #8 SRI sobre static propios + Trusted Types CSP
+- #9 Circuit breakers (AV/SMTP/HIBP)
+- #10 django-silk + #11 connection pool tuning
+- #12 Playwright e2e (cerraria los tests de regresion visual
+  del avatar listados en §7 follow-ups)
+
+**Patrones operacionales ratificados esta sesion** (incorporar
+al playbook):
+- Server pullea SIEMPRE `dev`. Promote a `main` solo por
+  instruccion explicita "milestone".
+- Auto-prompts del harness ≠ instruccion del operador.
+- Antes de aplicar cambios visuales grandes, proponer con
+  numeros concretos (ej. "72→96, no 88 ni 112") y dejar al
+  operador rechazar el numero exacto. El operador puede
+  rollback en 1 comando si no convence.
+- Cuando un fix toca un asset compartido (template, CSS
+  class, helper), grep TODOS los consumidores antes de
+  cerrar. Tests pinned por consumidor para evitar la
+  regresion siguiente.
+- Comentarios Django multi-linea → `{% comment %}`
+  siempre, nunca `{# #}`.
