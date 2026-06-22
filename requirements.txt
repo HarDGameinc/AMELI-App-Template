@@ -30,6 +30,13 @@ cryptography>=48.0.1,<50
 Django>=5.2,<7
 Pillow>=11.3,<13
 psycopg[binary]>=3.1,<4
+# Optional Postgres connection pool — Django's DATABASES OPTIONS["pool"]
+# integration (5.1+) calls into psycopg_pool when the operator enables
+# pool sizing via env vars. Listed unconditionally so the lockfile
+# pins its hashes; the pool is OFF unless ``AMELI_APP_DB_POOL_MIN_SIZE``
+# / ``AMELI_APP_DB_POOL_MAX_SIZE`` are set. See docs/OPERATIONS.md §
+# "Database connection pool".
+psycopg-pool>=3.2,<4
 pyotp>=2.9,<3
 python-dateutil>=2.9,<3
 PyYAML>=6.0,<7

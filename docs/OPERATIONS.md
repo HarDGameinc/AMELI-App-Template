@@ -662,6 +662,66 @@ Sample alert rules:
     summary: "Maintenance mode active for > 2h, operator may have forgotten to disable"
 ```
 
+## Database connection pool
+
+Django opens a fresh Postgres connection per request by default, which
+at moderate concurrency (~10 RPS or more) makes connection setup +
+authentication latency the dominant cost. The template enables two
+cheap mitigations out of the box on Postgres backends, plus an
+opt-in real pool for higher concurrency.
+
+### Persistent connections + health checks (always on, Postgres only)
+
+`DATABASES["default"]` carries:
+
+- `CONN_MAX_AGE = 60` (configurable via
+  `AMELI_APP_DB_CONN_MAX_AGE_SECONDS`) — keep each worker's
+  connection alive across requests for up to 60 s before recycling.
+  Set to `0` to disable (back to per-request connections); set to
+  a larger value to amortise more aggressively.
+- `CONN_HEALTH_CHECKS = True` — Django 4.1+ probes a stale connection
+  before reuse so a socket killed by Postgres'
+  `idle_in_transaction_session_timeout`, a pgbouncer restart, or
+  a network blip surfaces as a controlled error rather than a 500.
+
+SQLite installs ignore both settings (no connection pooling makes
+sense on a file lock).
+
+### Real pool (opt-in)
+
+For higher concurrency or workers behind pgbouncer, opt into
+`psycopg3`'s built-in `ConnectionPool` via two env vars:
+
+```env
+AMELI_APP_DB_POOL_MIN_SIZE=2     # connections kept warm at idle
+AMELI_APP_DB_POOL_MAX_SIZE=10    # cap during burst
+```
+
+When both (or just one) is set, the template adds
+`OPTIONS["pool"] = {"min_size": ..., "max_size": ...}` to the
+`DATABASES` entry. Django 5.1+ hands the dict to
+`psycopg_pool.ConnectionPool` at connection time. `psycopg-pool`
+is declared as a runtime dep (already pinned in
+`requirements.lock`) so the package is present on every deploy;
+the pool stays OFF unless the env vars are set.
+
+Sizing rule of thumb: `max_size` per worker × number of workers
+must stay below your Postgres `max_connections` minus headroom
+(superuser slots, replication). For a 2-worker uvicorn fronting
+`max_connections=100`, `max_size=20` per worker is conservative.
+
+### Disable / rollback
+
+```bash
+# Per-request connections (Django default behaviour)
+echo 'AMELI_APP_DB_CONN_MAX_AGE_SECONDS=0' >> /etc/<instance>/app.env
+
+# Turn the real pool off
+sed -i '/AMELI_APP_DB_POOL/d' /etc/<instance>/app.env
+
+systemctl restart <instance>-api.service
+```
+
 ## Avatar AV scan (ASVS V12.4.1)
 
 Avatar uploads can be funnelled through an antivirus scanner before
