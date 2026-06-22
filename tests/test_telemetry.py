@@ -200,3 +200,71 @@ def test_hibp_span_records_breaker_open(captured_spans, settings):
     spans = captured_spans.get_finished_spans()
     hibp_span = next(s for s in spans if s.name == "hibp.range_query")
     assert _attrs(hibp_span)["hibp.outcome"] == "breaker_open"
+
+
+# ---------------------------------------------------------------------------
+# asgi.py boot logging — visibility for ``otel.enabled`` / ``otel.disabled``
+# ---------------------------------------------------------------------------
+
+
+def test_asgi_configures_logging_when_root_has_no_handlers():
+    """When the ASGI app is imported from a process whose root logger
+    has no handlers yet (the systemd-launched ``ameli_app.api`` path),
+    ``asgi.py`` MUST install a handler so the OTel boot log lines and
+    any other ``logger.info()`` from startup helpers are visible in
+    ``journalctl``. The guard in ``asgi.py`` checks ``hasHandlers()``
+    so that test harnesses (pytest) keep their own handlers."""
+    import importlib
+    import logging
+    import sys
+
+    saved_handlers = list(logging.getLogger().handlers)
+    saved_level = logging.getLogger().level
+    sys.modules.pop("ameli_web.asgi", None)
+    try:
+        # Simulate a fresh process: root logger with no handlers.
+        for h in list(logging.getLogger().handlers):
+            logging.getLogger().removeHandler(h)
+        assert not logging.getLogger().hasHandlers()
+        importlib.import_module("ameli_web.asgi")
+        # After import, the guard should have installed a handler.
+        assert logging.getLogger().hasHandlers(), \
+            "asgi.py should configure logging when root has no handlers"
+    finally:
+        # Restore pytest's handler set so subsequent tests still see
+        # their captures.
+        for h in list(logging.getLogger().handlers):
+            logging.getLogger().removeHandler(h)
+        for h in saved_handlers:
+            logging.getLogger().addHandler(h)
+        logging.getLogger().setLevel(saved_level)
+        sys.modules.pop("ameli_web.asgi", None)
+
+
+def test_asgi_does_not_stomp_existing_handlers():
+    """When root ALREADY has a handler (pytest's caplog, an upstream
+    log harness, the operator's custom config), asgi.py MUST NOT
+    replace it. Verified by counting handlers before / after the
+    import: count is unchanged."""
+    import importlib
+    import logging
+    import sys
+
+    root = logging.getLogger()
+    sentinel = logging.NullHandler()
+    saved_handlers = list(root.handlers)
+    sys.modules.pop("ameli_web.asgi", None)
+    try:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        root.addHandler(sentinel)
+        before = list(root.handlers)
+        importlib.import_module("ameli_web.asgi")
+        after = list(root.handlers)
+        assert after == before, "asgi.py must not modify root handlers when already configured"
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved_handlers:
+            root.addHandler(h)
+        sys.modules.pop("ameli_web.asgi", None)
