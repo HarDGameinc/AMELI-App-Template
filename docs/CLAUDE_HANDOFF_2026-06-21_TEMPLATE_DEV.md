@@ -63,6 +63,11 @@ hacer fast-forward automatico despues de cada CI verde.
 | `1355060` | Record 2026-06-21 avatar wire test + boot guard en §3 del handoff | doc only |
 | — | Fast-forward `dev → main` (`e9d1e24..1355060`) — mi error de convencion, NO se revierte porque dev==main coinciden ya | — |
 | `d70bff6` | Documentar convencion branches en §2: server pullea SOLO `dev`; `main` = milestone manual | doc only |
+| `32dc83f` | Cierre del wire test del 21-jun + journal review del 500 en §3 | doc only |
+| `af6b185` | Hero del dashboard + admin panel honran `current_user.has_avatar` (mismo patron que profile.html) | 945 → 948 (+3) |
+| `9c800a9` | Avatar UI polish: drop ring + gradient backdrop del hero cuando hay imagen | suite stays green |
+| `6ac13fc` | Sibling: drop ring del chip top-right (`.menu-avatar.has-image`) | suite stays green |
+| `f76af65` | Hero avatar 72→96px (radius 24→28, iniciales 28→36) para mejor proporcion respecto al panel | suite stays green |
 
 ### Wire test 2026-06-21 — avatar UI end-to-end
 
@@ -163,6 +168,53 @@ Concecuencias inmediatas:
 
 Leccion: cualquier cambio de convencion operativa requiere
 confirmacion explicita del operador antes de implementarlo.
+
+### Avatar UI polish — follow-up 2026-06-22
+
+Re-deploy del wire test del 21-jun en `ha-report2` (sync a `af6b185`
+con `git fetch origin dev && git reset --hard origin/dev && ./install.sh`,
+23 OK / 0 WARN / 0 FAIL, daemons restart-eados automaticamente
+otra vez por d4ade5e). Operador subio una captura del dashboard
+mostrando que el hero seguia con la "A" inicial pese a tener avatar
+seteado. Root cause: el 06-21 yo habia agregado el swap `has_avatar`
+SOLO a `accounts/profile.html`; los hero de `dashboard/home.html`
+y `admin/panel.html` seguian hardcoded a `current_user.initials`.
+
+Fix `af6b185` aplica el mismo bloque en los tres templates y los
+tests `test_dashboard_hero_shows_avatar_image_when_set` +
+`test_admin_panel_hero_shows_avatar_image_when_set` lo pinean.
+
+Luego de wire-verificar visualmente, operador pidio dos rondas de
+pulido del avatar UI:
+
+1. **Quitar el "halo" plateado alrededor de la imagen**. CSS de
+   `.profile-avatar` y `.menu-avatar` aplicaba `box-shadow: ... 0 0 0
+   2px rgba(148,163,184,.22)` (ring de 2px) ademas del drop shadow
+   suave. El ring quedaba visible como halo plateado contra la foto.
+   `.menu-avatar.has-image` ya neutralizaba el background gradient
+   pero NO el ring; `.profile-avatar.has-image` no tenia override
+   ninguno.
+
+   Fix `9c800a9` + `6ac13fc`: cuando `.has-image` esta on, drop del
+   gradient backdrop Y del ring; solo queda el drop shadow inferior
+   en el hero, nada en el chip top-right. El path de iniciales
+   (sin `has-image`) conserva el gradiente + ring originales — los
+   PNG con transparencia ahora respetan su silueta sobre el panel
+   en vez de mostrar el gradiente accent/ok detras.
+
+2. **Subir el tamano del hero avatar** para mejor proporcion con
+   el panel. Fix `f76af65`: 72→96px, radius 24→28 (conserva el
+   ratio 24/72 ≈ 28/96), iniciales fallback 28→36 para que la
+   letra escale. Chip top-right (`.menu-avatar`) sin tocar — 32px
+   esta sized correcto para el nav row, no el hero.
+
+Estado final wire-verificado en `ha-report2` (3 capturas operador
+2026-06-22):
+- Hero del dashboard: avatar 96px nitido sin halo, sticker rojo
+  respeta el panel oscuro.
+- Hero del profile: idem, mismo tamano, sin halo.
+- Hero del admin panel: idem.
+- Chip top-right: 32px sin halo, proporcionado al nav.
 
 ## §4. Decisiones tomadas
 
