@@ -38,9 +38,12 @@ import struct
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from ameli_web.telemetry import get_tracer
+
 from .circuit_breaker import CircuitBreaker, get_av_breaker
 
 logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
 
 # Lazy singleton: built on first use so importing this module does
 # not pin Django settings (matters for the AV unit tests).
@@ -84,10 +87,31 @@ def scan_bytes(data: bytes, endpoint: str, *, timeout: float = 5.0) -> tuple[str
     if not endpoint:
         return ("disabled", "")
     breaker = _get_breaker()
-    if not breaker.allow():
-        # Open circuit: fast-fail. The caller follows the same audit
-        # branch it would on a real timeout (fail-open with audit).
-        return ("check_failed", "breaker_open")
+    with _tracer.start_as_current_span("av.scan_bytes") as span:
+        scheme = endpoint.split("://", 1)[0] if "://" in endpoint else "unknown"
+        span.set_attribute("av.endpoint_scheme", scheme)
+        span.set_attribute("av.bytes", len(data))
+        if not breaker.allow():
+            # Open circuit: fast-fail. The caller follows the same audit
+            # branch it would on a real timeout (fail-open with audit).
+            span.set_attribute("av.verdict", "check_failed")
+            span.set_attribute("av.reason", "breaker_open")
+            return ("check_failed", "breaker_open")
+        verdict = _scan_with_breaker(data, endpoint, timeout=timeout, breaker=breaker)
+        span.set_attribute("av.verdict", verdict[0])
+        if verdict[0] == "infected":
+            span.set_attribute("av.signature", verdict[1])
+        elif verdict[0] == "check_failed":
+            span.set_attribute("av.reason", verdict[1])
+        return verdict
+
+
+def _scan_with_breaker(
+    data: bytes, endpoint: str, *, timeout: float, breaker: CircuitBreaker,
+) -> tuple[str, str]:
+    """Inner transport dispatch + breaker accounting. Extracted so the
+    outer ``scan_bytes`` only has to worry about the span wrapper +
+    short-circuit on ``breaker.allow() is False``."""
     try:
         if endpoint.startswith("tcp://"):
             verdict = _scan_clamd_tcp(data, endpoint, timeout=timeout)

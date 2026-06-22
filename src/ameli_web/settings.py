@@ -311,6 +311,35 @@ if AV_ENDPOINT:
             "See docs/OPERATIONS.md § 'Avatar AV scan' for examples."
         )
 
+# OpenTelemetry — mini-roadmap #7 (2026-06-22). The actual SDK
+# bootstrap lives in ``ameli_web.telemetry`` and runs from ``asgi.py``
+# so the auto-instrumentations attach before Django builds the
+# middleware stack. Here we only validate that the operator-supplied
+# endpoint URL is well-formed; a misconfigured value would otherwise
+# crash the gRPC exporter on first export, AFTER the request that
+# triggered it was already serving.
+OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get(
+    "AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT", "",
+).strip()
+
+if OTEL_EXPORTER_OTLP_ENDPOINT:
+    _otel_scheme = (
+        OTEL_EXPORTER_OTLP_ENDPOINT.split("://", 1)[0].lower()
+        if "://" in OTEL_EXPORTER_OTLP_ENDPOINT else ""
+    )
+    # gRPC OTLP accepts http:// (cleartext) and https:// (TLS). A
+    # bare host:port without scheme would silently default to
+    # cleartext-on-some-versions / TLS-on-others depending on the
+    # SDK release — refuse it at boot so the operator picks
+    # explicitly.
+    if _otel_scheme not in ("http", "https"):
+        raise RuntimeError(
+            "AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT must start with http:// "
+            f"or https:// (got scheme={_otel_scheme!r} from value "
+            f"{OTEL_EXPORTER_OTLP_ENDPOINT!r}). See docs/OPERATIONS.md "
+            "§ 'OpenTelemetry tracing' for examples."
+        )
+
 # TOTP shared secrets are wrapped with Fernet (AES-128-CBC + HMAC-SHA256)
 # before they hit the DB. The key is a 32-byte url-safe base64 token —
 # generate with:

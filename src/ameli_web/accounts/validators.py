@@ -9,10 +9,12 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from ameli_app.password_policy import password_policy_help_text, validate_password_policy
+from ameli_web.telemetry import get_tracer
 
 from .circuit_breaker import CircuitBreaker, get_hibp_breaker
 
 logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
 
 _breaker: CircuitBreaker | None = None
 
@@ -102,16 +104,22 @@ class HIBPPasswordValidator:
         digest = hashlib.sha1(plaintext.encode("utf-8"), usedforsecurity=False).hexdigest().upper()  # noqa: S324
         prefix, suffix = digest[:5], digest[5:]
         breaker = _get_breaker()
-        if not breaker.allow():
-            logger.warning("HIBP check unavailable; allowing password: breaker_open")
-            return
-        try:
-            body = _query_hibp(prefix)
-        except (URLError, TimeoutError, OSError) as exc:
-            logger.warning("HIBP check unavailable; allowing password: %s", exc)
-            breaker.record_failure()
-            return
-        breaker.record_success()
+        with _tracer.start_as_current_span("hibp.range_query") as span:
+            span.set_attribute("hibp.prefix", prefix)
+            if not breaker.allow():
+                logger.warning("HIBP check unavailable; allowing password: breaker_open")
+                span.set_attribute("hibp.outcome", "breaker_open")
+                return
+            try:
+                body = _query_hibp(prefix)
+            except (URLError, TimeoutError, OSError) as exc:
+                logger.warning("HIBP check unavailable; allowing password: %s", exc)
+                breaker.record_failure()
+                span.set_attribute("hibp.outcome", "unreachable")
+                span.record_exception(exc)
+                return
+            breaker.record_success()
+            span.set_attribute("hibp.outcome", "ok")
         # Each line is "SUFFIX:COUNT". Walk until we find ours.
         for line in body.splitlines():
             parts = line.strip().split(":")

@@ -233,6 +233,25 @@ def test_dev_boots_with_unix_av_endpoint(monkeypatch):
     assert settings.AV_ENDPOINT == "unix:///var/run/clamav/clamd.ctl"
 
 
+def test_dev_refuses_otel_endpoint_with_bad_scheme(monkeypatch):
+    """OTel OTLP/gRPC accepts http:// (cleartext) and https:// (TLS).
+    A bare ``host:port`` or any other scheme would either default
+    ambiguously or fail at first export — boot guard refuses early."""
+    with pytest.raises(RuntimeError, match="AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT"):
+        _reload_settings(
+            monkeypatch, env="dev",
+            AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT="grpc://collector:4317",
+        )
+
+
+def test_dev_boots_with_valid_otel_endpoint(monkeypatch):
+    settings = _reload_settings(
+        monkeypatch, env="dev",
+        AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317",
+    )
+    assert settings.OTEL_EXPORTER_OTLP_ENDPOINT == "http://otel-collector:4317"
+
+
 def test_non_dev_refuses_media_root_inside_checkout(monkeypatch, tmp_path):
     """2026-06-21 wire test finding: ``profile_uploads_dir`` defaulted
     to ``data/uploads/{env}`` (relative). ``path_from_value`` anchored

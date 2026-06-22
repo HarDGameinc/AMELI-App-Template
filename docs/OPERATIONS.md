@@ -736,6 +736,104 @@ echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
 # Expected: stream: Eicar-Test-Signature FOUND
 ```
 
+## OpenTelemetry tracing
+
+Distributed tracing is opt-in. The SDK is loaded by `asgi.py` on
+every boot but stays dormant unless the operator points it at a
+collector:
+
+```env
+AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+AMELI_APP_OTEL_SERVICE_NAME=ameli-app-template          # optional, default "ameli-app-template"
+AMELI_APP_OTEL_SAMPLE_RATIO=1.0                         # optional, default 1.0 (all spans)
+```
+
+The endpoint MUST start with `http://` (cleartext) or `https://`
+(TLS). A bare `host:port` would behave inconsistently across SDK
+versions — the boot guard refuses it loud at settings load.
+
+What you get when the endpoint is set:
+
+- Every HTTP request gets a span via the Django auto-instrumentation,
+  with route attribute and status code.
+- Every Postgres query gets a child span (truncated SQL + duration)
+  via psycopg auto-instrumentation.
+- Every outbound HTTPS call (HIBP password breach check) gets a
+  child span via urllib auto-instrumentation.
+- Manual spans for diagnostic-heavy code paths:
+  - `av.scan_bytes` — attributes: `av.endpoint_scheme`, `av.bytes`,
+    `av.verdict`, `av.signature` (when infected), `av.reason`
+    (when check_failed / breaker_open).
+  - `hibp.range_query` — attributes: `hibp.prefix`, `hibp.outcome`
+    (`ok` / `unreachable` / `breaker_open`).
+  - `smtp.send` (per outbound email) — attributes: `smtp.queue_id`,
+    `smtp.attempts`, `smtp.audit_action`.
+
+The existing `X-Request-Id` middleware already accepts and emits
+W3C traceparent-compatible IDs, so a trace started by an upstream
+load balancer continues into the app and the same id appears as
+`request_id` in every log line (links log → trace in any backend
+that supports it).
+
+### Dev quickstart — Jaeger all-in-one
+
+For local poking, run Jaeger and point the env var at it:
+
+```bash
+docker run -d --name jaeger \
+  -p 16686:16686 -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+
+# In /etc/<instance>/app.env or your local shell:
+export AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+
+# Restart the API
+python -m ameli_app.api
+
+# Make a few requests, then open http://127.0.0.1:16686
+# and search service "ameli-app-template".
+```
+
+Spans appear in the Jaeger UI with parent-child relationships,
+attributes, exception events, and duration.
+
+### Production: pick a collector
+
+For a real deploy use an OTel collector (`otel-collector` from the
+opentelemetry-collector-contrib distribution) so you can route to
+multiple backends (Tempo, Loki, Honeycomb, Datadog, …) and apply
+sampling / redaction policies in one place. The minimum config:
+
+```yaml
+# /etc/otelcol/config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+processors:
+  batch:
+exporters:
+  otlphttp:
+    endpoint: https://your-backend.example.com/otlp
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp]
+```
+
+`AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` then
+ships spans to the local collector, which forwards.
+
+### Disabling
+
+Unset (or comment out) `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT` and
+restart. The SDK loads but registers no provider; `av.scan_bytes`,
+HIBP and SMTP code paths run unchanged but spans are no-ops with
+zero per-request cost.
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles

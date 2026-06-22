@@ -36,3 +36,20 @@ PyYAML>=6.0,<7
 qrcode>=7.4,<9
 SQLAlchemy>=2.0,<3
 uvicorn[standard]>=0.30,<2
+
+# OpenTelemetry — mini-roadmap #7 (2026-06-22). Opt-in tracing
+# activated when the operator sets
+# ``AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT``. Without that env var
+# these packages load but stay dormant — see
+# ``src/ameli_web/telemetry.py`` and ``docs/OPERATIONS.md`` §
+# "OpenTelemetry tracing".
+# Core API + SDK + OTLP/gRPC exporter use semver (1.x). Contrib
+# instrumentation packages still use pre-release versioning
+# (``0.NN bM``) per the OTel release process; upper bound stays
+# below ``1`` since the contrib track has no 1.x track.
+opentelemetry-api>=1.27,<2
+opentelemetry-sdk>=1.27,<2
+opentelemetry-exporter-otlp-proto-grpc>=1.27,<2
+opentelemetry-instrumentation-django>=0.48b0,<1
+opentelemetry-instrumentation-psycopg>=0.48b0,<1
+opentelemetry-instrumentation-urllib>=0.48b0,<1

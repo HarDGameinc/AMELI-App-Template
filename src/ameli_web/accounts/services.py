@@ -27,6 +27,8 @@ from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
 from ameli_web.utils import format_timestamp_ui
 
+from ameli_web.telemetry import get_tracer
+
 from . import mfa
 from .circuit_breaker import CircuitBreaker, get_smtp_breaker
 from .models import (
@@ -51,6 +53,7 @@ ROLE_GROUPS = {
 # index by ``queue_id`` / ``audit_action`` / ``error_class`` without
 # parsing the message body.
 email_queue_logger = logging.getLogger("ameli.email_queue")
+_tracer = get_tracer(__name__)
 
 # Lazy SMTP circuit breaker — see circuit_breaker.py. Built on first
 # use so importing services.py from a test that has no Django settings
@@ -2604,7 +2607,12 @@ def process_email_queue(
                 expired += 1
                 continue
             try:
-                _build_email_message(row).send(fail_silently=False)
+                with _tracer.start_as_current_span("smtp.send") as send_span:
+                    send_span.set_attribute("smtp.queue_id", row.pk)
+                    send_span.set_attribute("smtp.attempts", row.attempts)
+                    if row.audit_action:
+                        send_span.set_attribute("smtp.audit_action", row.audit_action)
+                    _build_email_message(row).send(fail_silently=False)
             except Exception as exc:  # noqa: BLE001 - by design
                 breaker.record_failure()
                 exc_class = exc.__class__.__name__
