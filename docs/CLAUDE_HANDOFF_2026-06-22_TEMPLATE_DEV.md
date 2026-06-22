@@ -315,6 +315,37 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
    por el `%.0f` del format string. Cosmetic, no afecta prod
    (cooldowns 30/60 s), pero documenta el cuidado al formatear
    floats que pueden ser <1 en testing.
+5. **Debian 13 (trixie) `clamav-daemon` shippea con systemd socket
+   activation por default**, y el drop-in
+   `/etc/systemd/system/clamav-daemon.service.d/extend.conf`
+   restringe la red de forma que aunque pongas `TCPSocket 3310 +
+   TCPAddr 127.0.0.1` en `/etc/clamav/clamd.conf` y deshabilites
+   `clamav-daemon.socket`, el daemon NO termina bindeando TCP
+   (clamd arranca limpio pero `ss -ltnp | grep 3310` queda
+   vacio y `connect()` da `ConnectionRefusedError`). El path
+   "Debian-correcto" es hablar con clamd via su Unix socket
+   `/var/run/clamav/clamd.ctl` (que ES el que socket-activation
+   expone). El template hoy solo soporta `tcp://` y `http://`
+   en `AMELI_APP_AV_ENDPOINT` — agregar el scheme `unix://...`
+   es la fix correcta (~15 lineas en `scan_bytes` + un
+   `_scan_clamd_unix` que use `AF_UNIX`). Documentado como
+   follow-up de Fase 4 (ver §7).
+
+   Wire test del 22-jun confirmo el gotcha en vivo: install
+   limpio de `clamav-daemon` + `clamav-freshclam`, signatures
+   bajadas ok (~110 MB), clamd corriendo, `clamdscan` local
+   detectando EICAR via Unix socket — pero el endpoint TCP
+   nunca bindeo. Operador rollback-eo limpio
+   (purge de paquetes + remove env var). ASVS V12.4.1 queda
+   como **mitigacion parcial** (Pillow + Content-Type
+   whitelist + noexec FS + IDOR gate del serve) hasta que se
+   shippee el soporte `unix://`.
+
+   **Beneficio adicional del fix**: con `unix://` el template
+   queda plug-and-play en cualquier Debian futuro — el
+   operador hace `apt install clamav-daemon` y setea
+   `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`
+   sin tocar systemd ni clamd.conf.
 
 ## §7. Roadmap actualizado
 
@@ -334,6 +365,16 @@ Mini-roadmap de mejoras:
 Net: **9/12 closed**. Quedan #7 OTel + Fase 5 (#10 + #11) + #12 e2e.
 
 Follow-ups documentados (sin shippear):
+- **`unix://` scheme en `av.py`** (ver §6 hallazgo #5) — bloqueante
+  ligero para ASVS V12.4.1 strict en deploys Debian. Hoy quedo en
+  mitigacion parcial. Code change ~15 lineas + 1-2 tests; agendado
+  para proxima sesion porque el operador eligio cortar momentum del
+  22-jun y meterlo despues. Recovery path para wire-testearlo:
+  re-install de clamav-daemon (`apt install -y clamav-daemon
+  clamav-freshclam`), esperar signatures, `apt`-install deja el
+  Unix socket en `/var/run/clamav/clamd.ctl`, setear
+  `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`,
+  restart api, repetir el EICAR smoke del `manage.py shell`.
 - Cosmetic: format del log line del breaker (`%.0f` → `%.1f` para
   cooldowns visibles en testing).
 - HEAD vs GET en `_docs_csp` no es estrictamente un bug — la
@@ -380,6 +421,15 @@ cierre del handoff es doc-only, NO require re-deploy.
    esta sesion).
 2. **Si no hay milestone**: esperar direccion del operador. NO
    inventar tareas.
+
+**Follow-up con prioridad alta** (§6 hallazgo #5 + §7
+follow-ups): agregar scheme `unix://` a
+`accounts/av.py:scan_bytes` para cerrar ASVS V12.4.1 strict.
+El wire test del 22-jun probo que en Debian 13 el path TCP
+no es viable out-of-the-box; el path correcto es Unix socket.
+~15 lineas de codigo + 1-2 tests + re-instalar clamav-daemon
+en `ha-report2` para wire-test. NO empezar sin confirmacion
+explicita del operador.
 
 **Mini-roadmap pendiente (3/12)**:
 - **#7 OpenTelemetry** (Fase 3) — tracing opt-in via
