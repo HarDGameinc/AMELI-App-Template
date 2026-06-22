@@ -222,6 +222,17 @@ def test_dev_boots_with_valid_av_endpoint(monkeypatch):
     assert settings.AV_ENDPOINT == "tcp://clamd:3310"
 
 
+def test_dev_boots_with_unix_av_endpoint(monkeypatch):
+    """The ``unix://`` scheme is the recommended Debian/Ubuntu shape
+    (apt installs clamd with socket activation at
+    /var/run/clamav/clamd.ctl). The boot guard MUST accept it."""
+    settings = _reload_settings(
+        monkeypatch, env="dev",
+        AMELI_APP_AV_ENDPOINT="unix:///var/run/clamav/clamd.ctl",
+    )
+    assert settings.AV_ENDPOINT == "unix:///var/run/clamav/clamd.ctl"
+
+
 def test_non_dev_refuses_media_root_inside_checkout(monkeypatch, tmp_path):
     """2026-06-21 wire test finding: ``profile_uploads_dir`` defaulted
     to ``data/uploads/{env}`` (relative). ``path_from_value`` anchored

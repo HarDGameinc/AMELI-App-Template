@@ -667,10 +667,17 @@ Sample alert rules:
 Avatar uploads can be funnelled through an antivirus scanner before
 they hit disk. Opt-in by setting ``AMELI_APP_AV_ENDPOINT`` to one of:
 
-- ``tcp://host:port`` — clamd over TCP (INSTREAM). The classic
-  deployment: ``apt install clamav-daemon`` on the same host, then
-  ``AMELI_APP_AV_ENDPOINT=tcp://127.0.0.1:3310``. Port defaults to
-  3310 if omitted.
+- ``unix:///path/to/clamd.ctl`` — clamd over a Unix-domain socket
+  (INSTREAM). **Recommended on Debian / Ubuntu**: ``apt install
+  clamav-daemon`` ships with systemd socket activation pinned to
+  ``/var/run/clamav/clamd.ctl`` and a hardening drop-in that blocks
+  the TCP path even when ``clamd.conf`` carries ``TCPSocket``. The
+  Unix endpoint sidesteps that entirely:
+  ``AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl``.
+- ``tcp://host:port`` — clamd over TCP (INSTREAM). Useful when the
+  AV daemon runs on a separate host. Port defaults to 3310 if
+  omitted. Requires ``TCPSocket`` enabled in ``clamd.conf`` and any
+  systemd socket-activation / hardening drop-ins reviewed.
 - ``http://...`` or ``https://...`` — an HTTP endpoint that accepts
   ``POST`` of the raw bytes and returns JSON
   ``{"stream": "OK"|"FOUND", "signature": "<name>"?}``. Suitable for

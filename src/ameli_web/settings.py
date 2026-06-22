@@ -282,9 +282,12 @@ if not _IS_DEV_ENV and not AUDIT_HMAC_KEY:
     )
 
 # ASVS V12.4.1 — optional antivirus scan for avatar uploads. Operator
-# opt-in by setting ``AMELI_APP_AV_ENDPOINT``. Two transports are
+# opt-in by setting ``AMELI_APP_AV_ENDPOINT``. Three transports are
 # supported:
-#   - ``tcp://host:port`` — clamd over TCP (INSTREAM protocol)
+#   - ``unix:///path/to/clamd.ctl`` — clamd over Unix-domain socket
+#     (recommended on Debian/Ubuntu where the apt package ships
+#     socket activation that blocks the TCP path).
+#   - ``tcp://host:port`` — clamd over TCP (INSTREAM protocol).
 #   - ``http://...`` / ``https://...`` — HTTP endpoint that accepts
 #     POST of the raw bytes and returns JSON {"stream": "OK"|"FOUND"}
 # Empty = scanning disabled (current residual risk R-05). Failure
@@ -301,9 +304,9 @@ AV_ENDPOINT = os.environ.get("AMELI_APP_AV_ENDPOINT", "").strip()
 
 if AV_ENDPOINT:
     _av_scheme = AV_ENDPOINT.split("://", 1)[0].lower() if "://" in AV_ENDPOINT else ""
-    if _av_scheme not in ("tcp", "http", "https"):
+    if _av_scheme not in ("unix", "tcp", "http", "https"):
         raise RuntimeError(
-            f"AMELI_APP_AV_ENDPOINT must start with tcp://, http://, or https:// "
+            f"AMELI_APP_AV_ENDPOINT must start with unix://, tcp://, http://, or https:// "
             f"(got scheme={_av_scheme!r} from value {AV_ENDPOINT!r}). "
             "See docs/OPERATIONS.md § 'Avatar AV scan' for examples."
         )

@@ -1,11 +1,16 @@
 """Antivirus scanning for user uploads (ASVS V12.4.1).
 
 The template ships an optional integration that the operator enables
-by setting ``AMELI_APP_AV_ENDPOINT``. Two transports are supported:
+by setting ``AMELI_APP_AV_ENDPOINT``. Three transports are supported:
 
 * ``tcp://host:port`` — clamd's INSTREAM protocol over a raw TCP
-  socket. The classic deployment shape: ``apt install clamav-daemon``
-  on the same host, then ``AMELI_APP_AV_ENDPOINT=tcp://127.0.0.1:3310``.
+  socket. Works when clamd has ``TCPSocket`` enabled in its config.
+* ``unix:///path/to/clamd.ctl`` — same INSTREAM protocol, over a
+  Unix-domain socket. This is the default on Debian / Ubuntu where
+  ``clamav-daemon`` ships with systemd socket activation pinned to
+  ``/var/run/clamav/clamd.ctl``. Recommended for single-host
+  deployments — no need to touch ``clamd.conf`` or the systemd
+  socket unit.
 * ``http://...`` / ``https://...`` — an HTTP endpoint that accepts a
   POST of the raw bytes and returns JSON ``{"stream": "OK"|"FOUND",
   "signature": "<name>"?}``. Suited for a sidecar (e.g. clamav-rest)
@@ -22,7 +27,7 @@ results MUST block the upload at the call site.
 
 stdlib-only on purpose: the template's HTTP-client policy
 (``validators.py:33``) is "no requests / no httpx" so we use
-``socket`` for clamd TCP and ``urllib`` for HTTP.
+``socket`` for clamd TCP/Unix and ``urllib`` for HTTP.
 """
 from __future__ import annotations
 
@@ -86,6 +91,8 @@ def scan_bytes(data: bytes, endpoint: str, *, timeout: float = 5.0) -> tuple[str
     try:
         if endpoint.startswith("tcp://"):
             verdict = _scan_clamd_tcp(data, endpoint, timeout=timeout)
+        elif endpoint.startswith("unix://"):
+            verdict = _scan_clamd_unix(data, endpoint, timeout=timeout)
         elif endpoint.startswith(("http://", "https://")):
             verdict = _scan_http(data, endpoint, timeout=timeout)
         else:
@@ -132,7 +139,43 @@ def _redact(endpoint: str) -> str:
 
 
 def _scan_clamd_tcp(data: bytes, endpoint: str, *, timeout: float) -> tuple[str, str]:
-    """Scan via clamd's INSTREAM TCP protocol.
+    """Scan via clamd's INSTREAM protocol over TCP."""
+    _, _, hostport = endpoint.partition("://")
+    host, _, port_str = hostport.partition(":")
+    port = int(port_str) if port_str else 3310
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        return _run_instream(sock, data, timeout=timeout)
+
+
+def _scan_clamd_unix(data: bytes, endpoint: str, *, timeout: float) -> tuple[str, str]:
+    """Scan via clamd's INSTREAM protocol over a Unix-domain socket.
+
+    Debian / Ubuntu's ``clamav-daemon`` ships with systemd socket
+    activation pinned to ``/var/run/clamav/clamd.ctl`` and a
+    ``RestrictAddressFamilies=AF_UNIX``-style hardening drop-in
+    that prevents the daemon from honoring a ``TCPSocket`` directive
+    in ``clamd.conf``. Talking via Unix bypasses that whole class of
+    gotchas and is the recommended single-host configuration.
+
+    The endpoint is parsed with the standard ``unix://`` scheme so
+    operators can drop the path into env / yaml without escaping:
+
+        AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl
+    """
+    path = endpoint[len("unix://"):]
+    if not path:
+        return ("check_failed", "bad_scheme")
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(path)
+        return _run_instream(sock, data, timeout=timeout)
+    finally:
+        sock.close()
+
+
+def _run_instream(sock: socket.socket, data: bytes, *, timeout: float) -> tuple[str, str]:
+    """INSTREAM wire protocol — shared between TCP and Unix transports.
 
     Wire shape:
         ``zINSTREAM\\0`` <chunk_1_len:4be> <chunk_1_bytes> ...
@@ -141,24 +184,20 @@ def _scan_clamd_tcp(data: bytes, endpoint: str, *, timeout: float) -> tuple[str,
         ``stream: OK\\0``                — clean
         ``stream: <signature> FOUND\\0`` — infected
     """
-    _, _, hostport = endpoint.partition("://")
-    host, _, port_str = hostport.partition(":")
-    port = int(port_str) if port_str else 3310
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall(b"zINSTREAM\0")
-        for offset in range(0, len(data), _CHUNK_SIZE):
-            chunk = data[offset:offset + _CHUNK_SIZE]
-            sock.sendall(struct.pack("!I", len(chunk)) + chunk)
-        sock.sendall(struct.pack("!I", 0))
-        response = b""
-        while True:
-            piece = sock.recv(4096)
-            if not piece:
-                break
-            response += piece
-            if response.endswith(b"\0"):
-                break
+    sock.settimeout(timeout)
+    sock.sendall(b"zINSTREAM\0")
+    for offset in range(0, len(data), _CHUNK_SIZE):
+        chunk = data[offset:offset + _CHUNK_SIZE]
+        sock.sendall(struct.pack("!I", len(chunk)) + chunk)
+    sock.sendall(struct.pack("!I", 0))
+    response = b""
+    while True:
+        piece = sock.recv(4096)
+        if not piece:
+            break
+        response += piece
+        if response.endswith(b"\0"):
+            break
     text = response.rstrip(b"\0").decode("ascii", errors="replace").strip()
     # Typical replies:
     #   "stream: OK"

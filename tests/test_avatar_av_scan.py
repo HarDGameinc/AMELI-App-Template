@@ -234,6 +234,91 @@ def test_clamd_tcp_default_port_3310():
 
 
 # ---------------------------------------------------------------------------
+# clamd Unix-socket transport — Debian / Ubuntu apt default
+# ---------------------------------------------------------------------------
+
+
+class _FakeUnixClamdSocket(_FakeClamdSocket):
+    """Same wire-shape mock as the TCP fake, plus ``connect`` / ``close``
+    so it stands in for the raw ``socket.socket(AF_UNIX, SOCK_STREAM)``
+    instance built inside ``_scan_clamd_unix``."""
+
+    def __init__(self, reply: bytes):
+        super().__init__(reply)
+        self.connected_to: str | None = None
+        self.closed = False
+
+    def connect(self, path):
+        self.connected_to = path
+
+    def close(self):
+        self.closed = True
+
+
+def test_clamd_unix_clean_verdict():
+    fake = _FakeUnixClamdSocket(b"stream: OK\0")
+    with patch.object(av.socket, "socket", return_value=fake):
+        verdict, detail = av._scan_clamd_unix(
+            b"data", "unix:///var/run/clamav/clamd.ctl", timeout=1.0,
+        )
+    assert verdict == "ok"
+    assert detail == ""
+    assert fake.connected_to == "/var/run/clamav/clamd.ctl"
+    assert fake.closed is True
+    # Wire shape: same INSTREAM framing as the TCP path.
+    assert fake.sent.startswith(b"zINSTREAM\0")
+    assert fake.sent.endswith(b"\0\0\0\0")
+
+
+def test_clamd_unix_infected_extracts_signature():
+    fake = _FakeUnixClamdSocket(b"stream: Eicar-Test-Signature FOUND\0")
+    with patch.object(av.socket, "socket", return_value=fake):
+        verdict, sig = av._scan_clamd_unix(
+            b"data", "unix:///var/run/clamav/clamd.ctl", timeout=1.0,
+        )
+    assert verdict == "infected"
+    assert sig == "Eicar-Test-Signature"
+
+
+def test_clamd_unix_missing_path_returns_bad_scheme():
+    """``unix://`` without a path is misconfiguration; surface it as
+    ``bad_scheme`` rather than letting ``connect("")`` raise an
+    obscure OSError that gets bucketed as ``unreachable``."""
+    verdict, detail = av._scan_clamd_unix(b"x", "unix://", timeout=1.0)
+    assert verdict == "check_failed"
+    assert detail == "bad_scheme"
+
+
+def test_scan_bytes_dispatches_unix_scheme():
+    """End-to-end through ``scan_bytes``: a ``unix://`` endpoint must
+    route through ``_scan_clamd_unix`` (not the TCP path)."""
+    with patch.object(av, "_scan_clamd_unix", return_value=("ok", "")) as mocked_unix, \
+         patch.object(av, "_scan_clamd_tcp") as mocked_tcp:
+        # Reset the breaker so a stale state from earlier tests cannot
+        # short-circuit this assertion to ``breaker_open``.
+        av._get_breaker().reset()
+        verdict, detail = av.scan_bytes(
+            b"x", "unix:///var/run/clamav/clamd.ctl",
+        )
+    assert verdict == "ok"
+    assert mocked_unix.call_count == 1
+    assert mocked_tcp.call_count == 0
+
+
+def test_scan_bytes_treats_missing_unix_socket_as_unreachable():
+    """A non-existent socket path raises ``FileNotFoundError``
+    (subclass of ``OSError``). ``scan_bytes`` must bucket that as
+    ``unreachable`` so the existing fail-open audit path handles it,
+    matching the TCP equivalent of an unreachable host."""
+    av._get_breaker().reset()
+    verdict, detail = av.scan_bytes(
+        b"x", "unix:///nonexistent/clamd.ctl",
+    )
+    assert verdict == "check_failed"
+    assert detail == "unreachable"
+
+
+# ---------------------------------------------------------------------------
 # View integration — policy
 # ---------------------------------------------------------------------------
 
