@@ -92,7 +92,7 @@
              font-size:13px; font-weight:800; color:#fff;
              background:linear-gradient(135deg, var(--accent), var(--ok));
              box-shadow:0 0 0 2px rgba(148,163,184,.22); }
-    .menu-avatar.has-image { background:rgba(127,140,170,.08); }
+    .menu-avatar.has-image { background:transparent; box-shadow:none; }
     .menu-avatar-image { width:100%; height:100%; object-fit:cover; display:block; }
     .user-menu-copy { display:grid; text-align:left; line-height:1.05; }
     .user-menu-copy strong { font-size:13px; }
