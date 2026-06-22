@@ -260,7 +260,7 @@ async function swapPanelTo(panel, targetUrl) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const html = await response.text();
-    panel.innerHTML = html;
+    panel.innerHTML = window.ameliTrusted.createHTML(html);
     const newUrl = url.pathname + url.search + url.hash;
     window.history.pushState({ panel: panelKey }, "", newUrl);
     return true;
@@ -450,9 +450,14 @@ function setupBackToTop() {
   button.setAttribute("data-back-to-top", "");
   button.setAttribute("aria-label", "Volver al inicio de la pagina");
   button.hidden = true;
-  button.innerHTML =
-    '<span class="material-symbols-rounded icon-glyph" aria-hidden="true">keyboard_arrow_up</span>' +
-    '<span class="back-to-top-label">Arriba</span>';
+  const glyph = document.createElement("span");
+  glyph.className = "material-symbols-rounded icon-glyph";
+  glyph.setAttribute("aria-hidden", "true");
+  glyph.textContent = "keyboard_arrow_up";
+  const label = document.createElement("span");
+  label.className = "back-to-top-label";
+  label.textContent = "Arriba";
+  button.append(glyph, label);
   document.body.appendChild(button);
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

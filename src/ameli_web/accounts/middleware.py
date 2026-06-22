@@ -29,6 +29,16 @@ def build_csp(nonce: str) -> str:
     them all would be a giant refactor for marginal value. Inline
     styles cannot execute JavaScript, so the residual risk is cosmetic
     (an attacker could rewrite layout, never run code).
+
+    ``require-trusted-types-for 'script'`` + ``trusted-types
+    ameli-template`` enforce that every DOM-XSS sink assignment
+    (``innerHTML``, ``outerHTML``, ``document.write`` …) routes
+    through the single ``ameli-template`` policy created in
+    ``base.html``. A future XSS that survives ``script-src`` (e.g. a
+    nonce reuse bug) would still be unable to inject HTML through
+    these sinks unless it ALSO names our policy. Firefox / Safari
+    historically ignore the directive — the same code still works
+    there via the identity fallback.
     """
     return (
         "default-src 'self'; "
@@ -39,7 +49,9 @@ def build_csp(nonce: str) -> str:
         "connect-src 'self'; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
-        "form-action 'self'"
+        "form-action 'self'; "
+        "require-trusted-types-for 'script'; "
+        "trusted-types ameli-template"
     )
 
 

@@ -694,7 +694,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (activateFeedback) activateFeedback.textContent = "Generando codigo QR...";
     try {
       const data = await postJson("{% url 'accounts:profile-mfa-start' %}");
-      if (qrSlot) qrSlot.innerHTML = data.qr_svg || "";
+      if (qrSlot) qrSlot.innerHTML = window.ameliTrusted.createHTML(data.qr_svg || "");
       if (secretText) secretText.textContent = data.secret || "-";
       if (codeInput) codeInput.value = "";
       if (verifyFeedback) verifyFeedback.textContent = "";
@@ -723,7 +723,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (recoveryList) {
-      recoveryList.innerHTML = "";
+      recoveryList.replaceChildren();
       codes.forEach((codeValue) => {
         const li = document.createElement("li");
         li.textContent = codeValue;
@@ -776,12 +776,24 @@ document.addEventListener("DOMContentLoaded", () => {
       printBtn.onclick = () => {
         const w = window.open("", "_blank");
         if (!w) { flash("Habilita popups para imprimir"); return; }
-        w.document.write("<html><head><title>Codigos de recuperacion AMELI</title>");
-        w.document.write("<style>body{font-family:monospace;font-size:14pt;padding:24pt;}li{margin:6pt 0;}</style>");
-        w.document.write("</head><body><h2>Codigos de recuperacion</h2><p><em>Guarda esta hoja en un lugar seguro.</em></p><ul>");
-        codes.forEach((c) => { w.document.write(`<li>${c}</li>`); });
-        w.document.write("</ul></body></html>");
-        w.document.close();
+        const doc = w.document;
+        doc.title = "Codigos de recuperacion AMELI";
+        const style = doc.createElement("style");
+        style.textContent = "body{font-family:monospace;font-size:14pt;padding:24pt;}li{margin:6pt 0;}";
+        doc.head.appendChild(style);
+        const h2 = doc.createElement("h2");
+        h2.textContent = "Codigos de recuperacion";
+        const intro = doc.createElement("p");
+        const em = doc.createElement("em");
+        em.textContent = "Guarda esta hoja en un lugar seguro.";
+        intro.appendChild(em);
+        const ul = doc.createElement("ul");
+        codes.forEach((c) => {
+          const li = doc.createElement("li");
+          li.textContent = c;
+          ul.appendChild(li);
+        });
+        doc.body.append(h2, intro, ul);
         w.focus();
         w.print();
       };
@@ -882,7 +894,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const data = await postJson("{% url 'accounts:profile-mfa-regenerate' %}");
       if (recoveryList && Array.isArray(data.recovery_codes)) {
-        recoveryList.innerHTML = "";
+        recoveryList.replaceChildren();
         data.recovery_codes.forEach((codeValue) => {
           const li = document.createElement("li");
           li.textContent = codeValue;
