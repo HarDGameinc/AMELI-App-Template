@@ -56,7 +56,12 @@ Cierre del handoff con wire test en `ha-report2` confirmado.
 | `2db09cb` | Enforce Trusted Types CSP on own pages (mini-roadmap #8b) | 948 → 952 (+4) |
 | `afa083d` | SRI on own static bundles (mini-roadmap #8a) | 952 → 957 (+5) |
 | `39d3243` | Circuit breakers AV/HIBP/SMTP (mini-roadmap #9) | 957 → 970 (+13) |
-| `<this>` | Cierre del handoff §2-§8 + wire test evidence | doc only |
+| `1a2ea7f` | Cierre §2-§8 del handoff (primer pase) | doc only |
+| `3885252` | Documentar follow-up clamav Unix-socket (Debian gotcha) | doc only |
+| `a51d2b8` | Scheme `unix://` en `av.py` (cierra ASVS V12.4.1 strict) | 970 → 976 (+6) |
+| `9c16b2d` | Wire test unix:// AV verde + close follow-up + doc gotcha primer install | doc only |
+| `8de62d1` | OpenTelemetry tracing opt-in (mini-roadmap #7, cierra Fase 3) | 976 → 987 (+11) |
+| `<this>` | Re-cierre del handoff con OTel + wire test parte A | doc only |
 
 ### Mini-roadmap #8b — Trusted Types CSP (2db09cb)
 
@@ -160,6 +165,100 @@ cooldown, close on probe success, re-open on probe failure,
 counter resets on interleaved success), AV short-circuit + reset
 en ok/infected, HIBP short-circuit, SMTP batch skip con attempts
 NO bumpeados.
+
+### Mini-roadmap #7 — OpenTelemetry tracing (8de62d1)
+
+Cierra Fase 3 entera (que tenia abierto SOLO #7 desde el 20-jun;
+#6 mypy se cerro ese mismo dia). Operador pidio explicacion previa
+de "que hace OTel en el desarrollo o app" antes de implementar —
+respondida con escenarios concretos del template (waterfall de
+avatar upload, debug del 500 del 21-jun, login + MFA chain) que
+ayudaron a tomar la decision "integremoslo".
+
+Tracing opt-in: el SDK se carga en `asgi.py` en cada boot pero NO
+registra TracerProvider a menos que el operador setee
+`AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT` apuntando a un collector.
+Sin endpoint configurado, `get_tracer()` devuelve un `ProxyTracer`
+de la API de OTel (NoOp por default), los spans del codigo
+degradan a no-ops con costo per-request cercano a cero.
+
+Modulo nuevo `src/ameli_web/telemetry.py` (~190 LOC):
+- `setup_otel()` — bootstrap idempotente con lock, lee endpoint +
+  service_name + sample_ratio del env. Activa TracerProvider +
+  BatchSpanProcessor + OTLP/gRPC exporter cuando hay endpoint.
+- `get_tracer(name)` — safe wrapper que funciona pre/post setup,
+  con o sin el package `opentelemetry` instalado (fallback
+  `_NoopTracer` para envs minimos).
+- `is_enabled()` — refleja estado REAL del SDK (no solo el env);
+  endpoint sin exporter package reporta False.
+
+Auto-instrumentations activadas en setup: **Django** (middleware
++ views + DB), **psycopg** (queries), **urllib** (cubre HIBP
+outbound). Cada una en su try/except — un fallo en una no bloquea
+las otras ni el boot.
+
+Spans manuales agregados en los 3 puntos diagnostico-heavy:
+- `av.scan_bytes` — atributos `av.endpoint_scheme`, `av.bytes`,
+  `av.verdict`, `av.signature` (cuando infected), `av.reason`
+  (cuando check_failed / breaker_open). Refactor extract de
+  `_scan_with_breaker` para que el outer `scan_bytes` quede limpio
+  con span wrapper + short-circuit.
+- `hibp.range_query` en `HIBPPasswordValidator.validate` —
+  atributos `hibp.prefix`, `hibp.outcome` (`ok` / `unreachable` /
+  `breaker_open`), `span.record_exception` cuando network falla.
+- `smtp.send` en `process_email_queue` (per row) — atributos
+  `smtp.queue_id`, `smtp.attempts`, `smtp.audit_action`.
+
+Boot guard en `settings.py`: endpoint debe empezar con `http://`
+o `https://`. Bare `host:port` se comportaria distinto entre
+versiones del SDK — refuse loud at boot.
+
+Deps nuevas (6 declared + transitives): `opentelemetry-api`,
+`-sdk`, `-exporter-otlp-proto-grpc`, `-instrumentation-django`,
+`-instrumentation-psycopg`, `-instrumentation-urllib`. Transitives:
+`grpcio` (~7 MB compiled), `protobuf`, `googleapis-common-protos`,
+`wrapt`, `opentelemetry-semantic-conventions`, etc. — 17 packages
+nuevos en total. Lockfile crece +254 lineas con hash-pinned
+entries.
+
+Docs: nueva seccion en `docs/OPERATIONS.md` con dev quickstart
+(Jaeger all-in-one via docker) + minimum otel-collector pipeline
+para prod.
+
+Tests nuevos (`tests/test_telemetry.py`, +9):
+- bootstrap NoOp cuando endpoint vacio
+- idempotencia de setup
+- `get_tracer` funciona pre-setup
+- fallback NoOp cuando opentelemetry no esta instalado
+- spans de AV/HIBP capturados via `InMemorySpanExporter`
+- atributos correctos (scheme, verdict, signature, outcome, prefix)
+- breaker_open registrado en spans
+
++2 tests en `test_settings_boot_guards.py` para el scheme check.
+
+### Wire test 2026-06-22 — OTel parte A en `ha-report2`
+
+Solo se ejecuto la parte "A" (deploy + verificar dormant correcto)
+porque el servidor no tiene docker → la parte "B" (activar
+endpoint apuntado a Jaeger) no es posible sin instalar docker o
+el otel-collector standalone. La parte A confirma:
+
+- `update.sh`: 23 OK / 0 WARN / 0 FAIL. 17 paquetes nuevos
+  descargados + instalados via `--require-hashes`. `grpcio-1.81.1`
+  (6.8 MB compiled) fue el mas pesado.
+- `/health` reporta `v0.4.0-django`.
+- `manage.py shell` confirma:
+  - `is_enabled (no endpoint): False`
+  - `tracer type: ProxyTracer` (OTel API default, NoOp transparent)
+  - Span context manager corre sin error.
+
+**Hallazgo cosmetico** (no shippeado, documentado en §6 #6): el
+log line `otel.disabled reason=no_endpoint` no aparece en
+`journalctl` porque `setup_otel()` corre en `asgi.py` **antes** de
+que Django configure `LOGGING` desde `settings.LOGGING`. El
+`logger.info()` se va al root logger que filtra INFO por default
+(solo deja pasar WARNING+). Estado funcional verificado via
+`manage.py shell`; visibility-only gap.
 
 ### Wire test 2026-06-22 — bundle #8 + #9 en `ha-report2`
 
@@ -277,15 +376,17 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
 
 | Metrica | Inicio dia (22-jun) | Cierre dia (22-jun) | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 948 | **976** | +28 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme) |
+| Suite local (sin deselect) | 948 | **987** | +39 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme, +11 OTel) |
 | Coverage % (branch + line) | 85% | 85% (floor pinned) | 0 |
 | mypy errors en src/ | 0 / 47 | 0 / 50 | +3 archivos (sri.py, sri __init__.py, circuit_breaker.py) sin errores |
 | Commits sobre `dev` (sesion) | 0 (`c643af8`) | 5 (+ doc closer) | — |
 | ASVS L2 active rows PASS | 151 | 151 (+ V12.4.1 ahora strict-shippable post `a51d2b8`) | 0 (+1 movido de partial → strict) |
-| Mini-roadmap items closed | 7 / 12 | **9 / 12** | +2 (#8, #9) |
-| Wire tests verdes | 1 acumulado | **3 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real) | +3 |
-| Bugs encontrados via wire | 0 | 0 (falso positivo de `curl -I` sobre /docs descartado) | 0 |
-| Version | `v0.4.0-django` | **`v0.4.0-django`** (security hardening, no bump) | 0 |
+| Mini-roadmap items closed | 7 / 12 | **10 / 12** | +3 (#7, #8, #9 — Fase 3 + Fase 4 ambas closed) |
+| Wire tests verdes | 1 acumulado | **4 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify) | +4 |
+| Bugs encontrados via wire | 0 | 0 (falso positivo de `curl -I` sobre /docs descartado; visibility gap del log line de OTel boot documentado) | 0 |
+| Version | `v0.4.0-django` | **`v0.4.0-django`** (security + observabilidad opt-in, no bump funcional) | 0 |
+| Lockfile entries (líneas con hash) | baseline | +254 (deps OTel + transitives) | — |
+| Source files (mypy clean) | 47 | **51** (+SRI tag, +circuit_breaker, +telemetry) | +4 |
 | Branches state | `dev @ c643af8`, `main @ 1355060` | `dev @ <this>`, `main @ 1355060` (sin tocar) | — |
 
 ## §6. Hallazgos / findings
@@ -347,6 +448,29 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
    `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`
    sin tocar systemd ni clamd.conf.
 
+6. **`setup_otel()` corre antes que Django configure logging**
+   (asgi.py llama bootstrap antes de `get_asgi_application`), asi
+   que el `logger.info("otel.disabled reason=no_endpoint")` se
+   filtra del root logger y nunca aparece en `journalctl`. NO es
+   bug funcional — `manage.py shell` + `is_enabled()` confirman
+   estado correcto — pero la observabilidad del propio bootstrap
+   queda muda. Fix posibles: bump a `WARNING` (semantica rara
+   pero garantiza visibility), o `logging.basicConfig(level=INFO)`
+   en asgi.py antes de `setup_otel`. Documentado como follow-up
+   cosmetico en §7.
+
+7. **Primer install de clamav-daemon en Debian deja el unit
+   inactive** hasta el primer `systemctl restart` post-freshclam.
+   Causa: el package shippea sin DBs, el daemon refuses to start
+   hasta tener signatures, freshclam baja signatures pero no
+   puede notificar a clamd (`/var/run/clamav/clamd.ctl` no existe
+   todavia — "Clamd was NOT notified" en el freshclam journal).
+   Una vez que freshclam baja `main.cvd + daily.cvd + bytecode.cvd`,
+   `systemctl restart clamav-daemon.service` crea el socket y
+   subsequent boots / redeploys son automaticos via socket
+   activation. Documentado en `docs/OPERATIONS.md` § "Debian /
+   Ubuntu first-install gotcha" con commands.
+
 ## §7. Roadmap actualizado
 
 Roadmap principal: **0 items abiertos**.
@@ -357,39 +481,47 @@ Mini-roadmap de mejoras:
 |---|---|---|
 | 1. DX foundation | #1 pre-commit, #2 coverage, #3 a11y/dark | ✓ closed |
 | 2. Validar deploy | #4 backup round-trip, #5 deep health | ✓ closed |
-| 3. Types + tracing | #6 mypy, #7 OpenTelemetry | partial — #6 done, #7 open |
-| 4. Hardening | #8 SRI+TT, #9 circuit breakers | **✓ closed esta sesion** |
+| 3. Types + tracing | #6 mypy, #7 OpenTelemetry | **✓ closed esta sesion** |
+| 4. Hardening | #8 SRI+TT, #9 circuit breakers + unix:// AV | **✓ closed esta sesion** |
 | 5. Performance | #10 django-silk, #11 pool tuning | open |
 | 6. E2E | #12 Playwright | open |
 
-Net: **9/12 closed**. Quedan #7 OTel + Fase 5 (#10 + #11) + #12 e2e.
+Net: **10/12 closed**. Quedan SOLO Fase 5 (#10 + #11) + Fase 6 (#12).
 
 Follow-ups documentados:
-- **`unix://` scheme en `av.py`** — **SHIPPED `a51d2b8`
-  (post-handoff-close turn)**. ~70 LOC en av.py (refactor extract
-  `_run_instream` shared + nuevo `_scan_clamd_unix`) + boot guard
-  update en settings.py + doc en OPERATIONS.md. 6 tests nuevos
-  (5 wire-shape + 1 boot guard). Wire-validado en `ha-report2`
-  contra clamd real: `clean: ('ok', '')`, `eicar: ('infected',
-  'Eicar-Test-Signature')`. ASVS V12.4.1 ahora **strict-shipped**
-  sobre Debian, sin gotchas de systemd.
-  - Sub-gotcha del wire test, ya documentado en OPERATIONS.md:
-    primer `apt install clamav-daemon` deja la unidad inactive
-    porque no hay DBs todavia; despues que freshclam termina hay
-    que hacer un `systemctl restart clamav-daemon.service` UNA
-    vez para crear el socket. Reboots / redeploys siguientes son
-    automaticos.
-- Cosmetic: format del log line del breaker (`%.0f` → `%.1f` para
+- **`unix://` scheme en `av.py`** — SHIPPED `a51d2b8` + wire test
+  contra clamd real (`unix:///var/run/clamav/clamd.ctl`):
+  `clean: ('ok', '')`, `eicar: ('infected', 'Eicar-Test-Signature')`.
+  ASVS V12.4.1 **strict-shipped** sobre Debian.
+- **OpenTelemetry tracing** — SHIPPED `8de62d1` + wire test parte
+  A (deploy dormant verify) en `ha-report2`. Parte B (Jaeger via
+  docker) NO se ejecuto porque el servidor no tiene docker
+  instalado; el bootstrap + integracion estan pinneados via los
+  9 unit tests + `manage.py shell` smoke. Cuando el operador
+  quiera activar tracing en wild, solo necesita un collector
+  (otel-collector standalone via apt, o docker si lo instala) +
+  un `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://...:4317` en
+  app.env + restart api.
+- **Cosmetic — OTel boot log no aparece en journal** (§6 #6):
+  `setup_otel()` corre antes que Django configure LOGGING.
+  Solucion 2-liner: bump `logger.info` → `logger.warning` en
+  ambos paths (enabled / disabled) o `logging.basicConfig` en
+  asgi.py. NO afecta funcionalidad. Reagendar si la proxima vez
+  que activemos OTel queremos ver el "enabled" line en journal.
+- **Cosmetic — log format del breaker** (`%.0f` → `%.1f` para
   cooldowns visibles en testing). Sin shippear, no afecta prod.
-- HEAD vs GET en `_docs_csp` no es estrictamente un bug — la
-  respuesta a HEAD viaja sin body y los browsers nunca envian
-  HEAD para esos endpoints. Documentado en §6 como gotcha de wire
-  testing, no como fix pendiente.
+- **HEAD vs GET en `_docs_csp`** no es bug — los browsers nunca
+  envian HEAD para esos endpoints. Documentado en §6 como gotcha
+  de wire testing.
+
+Sub-gotcha de primer install de clamav-daemon en Debian (§6 #7)
+ya documentado en `docs/OPERATIONS.md` § "Debian / Ubuntu
+first-install gotcha".
 
 ## §8. Continuidad — para el proximo agente
 
-`dev @ <closer-commit>` (cierre del 22-jun). `main @ 1355060`
-sin tocar — convencion del 21-jun ratificada. 10 commits
+`dev @ <closer-commit>` (cierre re-cerrado del 22-jun). `main @ 1355060`
+sin tocar — convencion del 21-jun ratificada. 14 commits
 adelantados en `dev` desde el ultimo match con main:
 
 - `d70bff6` Convencion branches en §2 del 21-jun
@@ -404,11 +536,17 @@ adelantados en `dev` desde el ultimo match con main:
 - `2db09cb` Mini-roadmap #8b Trusted Types CSP
 - `afa083d` Mini-roadmap #8a SRI sobre propios
 - `39d3243` Mini-roadmap #9 circuit breakers AV/HIBP/SMTP
-- (+ `<this>` cierre handoff 22-jun)
+- `1a2ea7f` Cierre §2-§8 del handoff (primer pase)
+- `3885252` Doc follow-up clamav Unix-socket
+- `a51d2b8` Scheme `unix://` en `av.py` (ASVS V12.4.1 strict)
+- `9c16b2d` Wire test unix:// AV verde + close follow-up
+- `8de62d1` OpenTelemetry tracing opt-in (Fase 3 closed)
+- (+ `<this>` re-cierre handoff 22-jun con OTel + wire test parte A)
 
-Server `ha-report2` corriendo `39d3243` (wire test del 22-jun
-confirmado por operador via update.sh + manage.py shell). El
-cierre del handoff es doc-only, NO require re-deploy.
+Server `ha-report2` corriendo `8de62d1` (wire test parte A del
+OTel confirmado via update.sh + manage.py shell + `is_enabled()`
+False / ProxyTracer en dormant state). El re-cierre del handoff
+es doc-only, NO require re-deploy.
 
 **El siguiente agente NO debe**:
 - Promote `dev → main` automaticamente. Esperar instruccion
@@ -426,26 +564,35 @@ cierre del handoff es doc-only, NO require re-deploy.
 2. **Si no hay milestone**: esperar direccion del operador. NO
    inventar tareas.
 
-**Follow-up del 22-jun ya cerrado** (`a51d2b8`): scheme
-`unix://` agregado a `av.py`, boot guard actualizado, docs
-actualizadas, wire-validado contra clamd real en `ha-report2`.
-ASVS V12.4.1 strict-shipped. Server queda en `a51d2b8` con
-`AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl` en
-`/etc/ameli-app-template-dev/app.env`. Ver §6 hallazgo #5 +
-§7 follow-ups para el detalle.
+**Follow-ups del 22-jun ya cerrados en esta misma sesion**:
+- `a51d2b8` scheme `unix://` en `av.py` — ASVS V12.4.1
+  strict-shipped + wire test contra clamd real en `ha-report2`.
+  Server tiene `AMELI_APP_AV_ENDPOINT=unix:///var/run/clamav/clamd.ctl`
+  en `app.env`.
+- `8de62d1` OpenTelemetry tracing — Fase 3 closed. Tracing
+  opt-in via `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT`. Deps
+  pesadas (grpcio + 16 packages) ya en lockfile. Wire test
+  parte A verde; parte B (Jaeger) requiere docker (no
+  disponible en `ha-report2` hoy).
 
-**Mini-roadmap pendiente (3/12)**:
-- **#7 OpenTelemetry** (Fase 3) — tracing opt-in via
-  `AMELI_APP_OTEL_EXPORTER`. Touch grandes: agrega 4-5 runtime
-  deps (`opentelemetry-api`, `opentelemetry-sdk`,
-  `opentelemetry-instrumentation-django`, etc.). Operador no
-  aprobo aun la adicion de deps; preguntar antes.
+**Mini-roadmap pendiente (2/12)**:
 - **#10 django-silk** + **#11 connection pool tuning** (Fase 5
-  Performance) — silk para profiling local, pool tuning para
-  prod load.
+  Performance) — silk para profiling local de DB queries +
+  templates; pool tuning para que el deploy aguante mas
+  concurrencia sin que psycopg se vuelva el bottleneck.
 - **#12 Playwright e2e** (Fase 6) — cerraria los tests de
   regresion visual del avatar listados en follow-ups del 21-jun
-  §7. Toca CI + agrega Node deps.
+  §7. Toca CI + agrega Node deps + un docker-compose para
+  correr el browser headless. Mas pesado que #10/#11.
+
+**Otros candidatos NO en el mini-roadmap** que pueden interesar:
+- Wire test parte B de OTel cuando haya docker disponible en
+  el server, o cuando se instale `otel-collector` standalone
+  via apt — para validar in-wild que los spans se exportan
+  correctamente y se ven en el viewer.
+- Fix cosmetico del log line de OTel boot (§7 follow-ups).
+- Bump cosmetico del format del log line del breaker (§7
+  follow-ups).
 
 **Patrones operacionales ratificados** (incorporar al playbook):
 - Server pullea SIEMPRE `dev`. Promote a `main` solo por
