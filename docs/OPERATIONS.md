@@ -722,6 +722,96 @@ sed -i '/AMELI_APP_DB_POOL/d' /etc/<instance>/app.env
 systemctl restart <instance>-api.service
 ```
 
+## django-silk profiler
+
+`django-silk` records every matching request to its own DB tables and
+exposes a drill-down panel at `/silk/`. Useful for "which view has
+the N+1 query?" or "which template render is slow?" — complements
+OpenTelemetry tracing (which is great for production aggregates but
+hides the Python stack-trace of each query).
+
+### Enabling in dev
+
+```env
+AMELI_APP_SILK_ENABLED=true
+```
+
+Restart the API. On boot the conditional in `settings.py` adds
+`silk` to `INSTALLED_APPS`, `silk.middleware.SilkyMiddleware` to
+`MIDDLEWARE`, and the `/silk/` URL route. Run migrations to create
+the silk DB tables:
+
+```bash
+python manage.py migrate silk
+```
+
+Then navigate any path matching `^/(profile|admin|api)/` (the default
+intercept regex) and open `http://<host>/silk/` as a logged-in
+superadmin. The panel shows recent requests with SQL queries,
+template renders, and per-callsite drill-down.
+
+### Customising scope
+
+```env
+# Profile EVERYTHING (overrides the default intercept regex)
+AMELI_APP_SILK_INTERCEPT_REGEX=.*
+
+# Or limit to a single endpoint
+AMELI_APP_SILK_INTERCEPT_REGEX=^/api/payments/
+
+# Cap retained records (default 1000)
+AMELI_APP_SILK_MAX_RECORDED_REQUESTS=500
+```
+
+The panel auto-prunes oldest records when the cap is hit
+(`SILKY_MAX_RECORDED_REQUESTS_CHECK_PERCENT=10` runs the sweep on
+~10% of incoming requests so it amortises cheaply).
+
+### Why the prod boot guard
+
+By default silk persists **the full request body and response body**
+to its DB tables. On a real-user prod (passwords, MFA codes, PII)
+that violates ASVS V8.3.1 (no PII in logs) unless the operator
+explicitly accepts the trade-off. Enabling silk outside dev
+therefore requires a second flag:
+
+```env
+AMELI_APP_SILK_ENABLED=true
+AMELI_APP_SILK_ALLOW_PROD=true
+```
+
+Without the second flag, settings.py raises `RuntimeError` at boot.
+For a real prod profiling window the recommended pattern is:
+
+1. Clone the prod DB to a staging host.
+2. Set both flags in the staging env.
+3. Replay anonymised traffic, drill into silk panel.
+4. Disable + truncate `silk_*` tables before promoting back.
+
+### Disable / rollback
+
+```bash
+sed -i '/AMELI_APP_SILK/d' /etc/<instance>/app.env
+systemctl restart <instance>-api.service
+
+# Optionally drop the silk tables (Django migration reverse)
+python manage.py migrate silk zero
+```
+
+### Why ship silk if OTel already covers profiling?
+
+| | OTel | django-silk |
+|---|---|---|
+| Backend infra | Needs collector + viewer (Jaeger/Tempo/Honeycomb) | Self-contained in app DB |
+| Query callsite (Python stack) | No | **Yes** — links each query to the view line that fired it |
+| Aggregate p99 / per-route | **Yes** | No |
+| Production-grade overhead | Low (~1ms) | Higher (DB writes per request) |
+| Storage cost | External backend | App DB tables |
+| Cross-service correlation | **Yes** (W3C traceparent) | No |
+
+They complement, not replace. OTel is the day-to-day production
+observability; silk is the "debug this specific request" tool.
+
 ## Avatar AV scan (ASVS V12.4.1)
 
 Avatar uploads can be funnelled through an antivirus scanner before

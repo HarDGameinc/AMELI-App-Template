@@ -193,11 +193,21 @@ cryptography==49.0.0 \
 django==5.2.15 \
     --hash=sha256:0eb4a9bb1853a35b0286dbc6d916bd352c8c2687195a7f2d6f80cefd840e4970 \
     --hash=sha256:5154a9bf84ac01dde011e367f355c07dbb329532e06810dcf3ef2af269e236e7
+    # via
+    #   -r requirements.txt
+    #   django-silk
+django-silk==5.5.0 \
+    --hash=sha256:41fcabe65d59d31ccdb69daeb3c3e6d30879ab2c00b0875b111fda0f69aec065 \
+    --hash=sha256:82b5a690d623935be916dd145e2f605a4ac9454d54e03df6a7ffcf38333c8444
     # via -r requirements.txt
 googleapis-common-protos==1.75.0 \
     --hash=sha256:53a062ff3c32552fbd62c11fe23768b78e4ddf0494d5e5fd97d3f4689c75fbbd \
     --hash=sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed
     # via opentelemetry-exporter-otlp-proto-grpc
+gprof2dot==2025.4.14 \
+    --hash=sha256:0742e4c0b4409a5e8777e739388a11e1ed3750be86895655312ea7c20bd0090e \
+    --hash=sha256:35743e2d2ca027bf48fa7cba37021aaf4a27beeae1ae8e05a50b55f1f921a6ce
+    # via django-silk
 greenlet==3.5.2 \
     --hash=sha256:01e32e9d2b1714a2b06184cb3071ff2a2fd9bc7d065e39198ab21f7253dad421 \
     --hash=sha256:0488ca77c94da5e09d1d9958f98b58cebba1b8fd9664c24898499133de927574 \
@@ -917,7 +927,9 @@ sqlalchemy==2.0.51 \
 sqlparse==0.5.5 \
     --hash=sha256:12a08b3bf3eec877c519589833aed092e2444e68240a3577e8e26148acc7b1ba \
     --hash=sha256:e20d4a9b0b8585fdf63b10d30066c7c94c5d7a7ec47c889a2d83a3caa93ff28e
-    # via django
+    # via
+    #   django
+    #   django-silk
 typing-extensions==4.15.0 \
     --hash=sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548

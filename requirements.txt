@@ -65,3 +65,12 @@ opentelemetry-instrumentation-urllib>=0.48b0,<1
 # psycopg / urllib / manual spans appear as orphan traces instead
 # of children of "POST /path/".
 opentelemetry-instrumentation-asgi>=0.48b0,<1
+
+# django-silk — opt-in profiler (mini-roadmap #10, 2026-06-22). When
+# ``AMELI_APP_SILK_ENABLED=true`` the project installs silk's app +
+# middleware + urls and starts recording every request to its own DB
+# tables for drill-down via /silk/. Outside dev the boot guard
+# refuses to enable unless ``AMELI_APP_SILK_ALLOW_PROD=true`` is set
+# too — silk records full request/response bodies, which would
+# violate ASVS V8.3.1 (no PII in logs) by default.
+django-silk>=5.3,<6

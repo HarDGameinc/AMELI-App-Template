@@ -197,6 +197,14 @@ urlpatterns += [
     re_path(r"^media/(?P<path>.*)$", _authenticated_media),
 ]
 
+# django-silk panel — mounted only when ``AMELI_APP_SILK_ENABLED=true``
+# at settings load time. The panel itself enforces auth via
+# ``SILKY_AUTHENTICATION/AUTHORISATION`` (configured in settings.py),
+# so the URL being reachable does not equate to data being readable
+# by anonymous users.
+if getattr(settings, "SILK_ENABLED", False):
+    urlpatterns += [path("silk/", include("silk.urls", namespace="silk"))]
+
 # Branded HTTP error handlers (ASVS V7.4.1). Django invokes these
 # only when ``DEBUG=False`` — in dev the yellow screen of death wins.
 # All four go through ``ameli_web.error_views._render`` which extends

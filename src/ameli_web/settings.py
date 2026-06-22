@@ -220,6 +220,29 @@ def _int_env(name: str, *, default: int) -> int:
         return default
 
 
+# django-silk — mini-roadmap #10 (2026-06-22). Opt-in profiler that
+# records every request to its own DB tables for drill-down via /silk/.
+# Off by default; enable in dev with ``AMELI_APP_SILK_ENABLED=true``.
+# Outside dev the second guard ``AMELI_APP_SILK_ALLOW_PROD=true`` is
+# required because silk persists full request / response bodies which
+# would otherwise leak PII into the silk_* tables (ASVS V8.3.1 violation
+# by accident). The conditional install means silk's migrations only
+# run when the app is actually in the bundle — operators that never
+# enable silk never have the silk_* tables in their DB.
+_silk_enabled_raw = os.environ.get("AMELI_APP_SILK_ENABLED", "").strip().lower()
+SILK_ENABLED = _silk_enabled_raw in ("true", "1", "yes", "on")
+if SILK_ENABLED and not _IS_DEV_ENV:
+    _silk_prod_ok = os.environ.get("AMELI_APP_SILK_ALLOW_PROD", "").strip().lower()
+    if _silk_prod_ok not in ("true", "1", "yes", "on"):
+        raise RuntimeError(
+            "AMELI_APP_SILK_ENABLED=true outside dev requires "
+            "AMELI_APP_SILK_ALLOW_PROD=true as a second confirmation. "
+            "django-silk records full request / response bodies, which "
+            "leaks PII into the silk_* tables unless the operator has "
+            "explicitly accepted the trade-off. See docs/OPERATIONS.md "
+            "§ 'django-silk profiler' for the full rationale."
+        )
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -231,6 +254,8 @@ INSTALLED_APPS = [
     "ameli_web.audit",
     "ameli_web.dashboard",
 ]
+if SILK_ENABLED:
+    INSTALLED_APPS.append("silk")
 
 MIDDLEWARE = [
     "ameli_web.request_id.RequestIdMiddleware",
@@ -249,6 +274,32 @@ MIDDLEWARE = [
     "ameli_web.accounts.middleware.DjangoAdminSudoGateMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+if SILK_ENABLED:
+    # Silk's middleware must run AFTER auth (so it can attribute requests
+    # to users) but BEFORE the request-body is consumed. Appending at
+    # the end keeps it after our auth + session machinery; silk reads
+    # the body lazily so it does not interfere with downstream
+    # middleware that needs to re-read.
+    MIDDLEWARE.append("silk.middleware.SilkyMiddleware")
+    # Silk defaults below match docs/OPERATIONS.md § "django-silk
+    # profiler". The most important one is SILKY_AUTHENTICATION /
+    # SILKY_AUTHORISATION: the /silk/ panel exposes raw SQL and full
+    # request data, so it MUST be gated to authenticated superadmins.
+    SILKY_AUTHENTICATION = True
+    SILKY_AUTHORISATION = True
+    # Only request paths matching this regex get profiled — keep the
+    # health probes / static assets out of the silk DB so it stays
+    # small. Operators can override via env if they want everything.
+    _silk_intercept = os.environ.get("AMELI_APP_SILK_INTERCEPT_REGEX", "").strip()
+    if _silk_intercept:
+        SILKY_INTERCEPT_REGEX = _silk_intercept
+    else:
+        SILKY_INTERCEPT_REGEX = r"^/(profile|admin|api)/"
+    # Cap on records retained — silk would otherwise grow unbounded.
+    SILKY_MAX_RECORDED_REQUESTS = int(
+        os.environ.get("AMELI_APP_SILK_MAX_RECORDED_REQUESTS", "1000")
+    )
+    SILKY_MAX_RECORDED_REQUESTS_CHECK_PERCENT = 10
 
 ROOT_URLCONF = "ameli_web.urls"
 

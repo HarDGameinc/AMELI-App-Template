@@ -252,6 +252,78 @@ def test_dev_boots_with_valid_otel_endpoint(monkeypatch):
     assert settings.OTEL_EXPORTER_OTLP_ENDPOINT == "http://otel-collector:4317"
 
 
+# ---------------------------------------------------------------------------
+# Mini-roadmap #10 — django-silk opt-in profiler (2026-06-22)
+# ---------------------------------------------------------------------------
+
+
+def test_silk_disabled_by_default(monkeypatch):
+    settings = _reload_settings(monkeypatch, env="dev")
+    assert settings.SILK_ENABLED is False
+    assert "silk" not in settings.INSTALLED_APPS
+    assert not any("silk" in m.lower() for m in settings.MIDDLEWARE)
+
+
+def test_silk_enabled_in_dev_wires_app_and_middleware(monkeypatch):
+    settings = _reload_settings(
+        monkeypatch, env="dev",
+        AMELI_APP_SILK_ENABLED="true",
+    )
+    assert settings.SILK_ENABLED is True
+    assert "silk" in settings.INSTALLED_APPS
+    assert "silk.middleware.SilkyMiddleware" in settings.MIDDLEWARE
+    # Default intercept regex limits profiling to app routes only
+    assert settings.SILKY_INTERCEPT_REGEX == r"^/(profile|admin|api)/"
+    # Auth gating MUST be on — silk panel exposes raw SQL
+    assert settings.SILKY_AUTHENTICATION is True
+    assert settings.SILKY_AUTHORISATION is True
+
+
+def _prod_minimum_env() -> dict:
+    """Env vars every prod-mode test needs to satisfy unrelated boot
+    guards so the test isolates the guard it actually probes."""
+    return {
+        "AMELI_APP_DJANGO_SECRET_KEY": "a-very-long-random-real-secret-not-default",
+        "AMELI_APP_DJANGO_ALLOWED_HOSTS": "ameli.example.com",
+        "AMELI_APP_TRUSTED_PROXIES": "127.0.0.1,::1",
+        "AMELI_APP_EMAIL_BACKEND": "file",
+    }
+
+
+def test_silk_refuses_to_enable_in_prod_without_second_opt_in(monkeypatch):
+    """Silk persists full request/response bodies. Enabling it
+    outside dev without an explicit second flag would leak PII into
+    the silk_* tables (ASVS V8.3.1). The boot guard fails loud."""
+    with pytest.raises(RuntimeError, match="AMELI_APP_SILK_ALLOW_PROD"):
+        _reload_settings(
+            monkeypatch, env="prod",
+            AMELI_APP_SILK_ENABLED="true",
+            **_prod_minimum_env(),
+        )
+
+
+def test_silk_can_be_enabled_in_prod_with_both_opt_ins(monkeypatch):
+    """Operator who has accepted the PII trade-off (e.g. for a
+    short profiling window in a staging-prod-clone) can override
+    by setting both env vars."""
+    settings = _reload_settings(
+        monkeypatch, env="prod",
+        AMELI_APP_SILK_ENABLED="true",
+        AMELI_APP_SILK_ALLOW_PROD="true",
+        **_prod_minimum_env(),
+    )
+    assert settings.SILK_ENABLED is True
+
+
+def test_silk_intercept_regex_honors_env_override(monkeypatch):
+    settings = _reload_settings(
+        monkeypatch, env="dev",
+        AMELI_APP_SILK_ENABLED="true",
+        AMELI_APP_SILK_INTERCEPT_REGEX=r"^/api/",
+    )
+    assert settings.SILKY_INTERCEPT_REGEX == r"^/api/"
+
+
 def test_non_dev_refuses_media_root_inside_checkout(monkeypatch, tmp_path):
     """2026-06-21 wire test finding: ``profile_uploads_dir`` defaulted
     to ``data/uploads/{env}`` (relative). ``path_from_value`` anchored
