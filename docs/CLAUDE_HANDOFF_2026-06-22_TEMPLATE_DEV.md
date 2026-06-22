@@ -61,7 +61,10 @@ Cierre del handoff con wire test en `ha-report2` confirmado.
 | `a51d2b8` | Scheme `unix://` en `av.py` (cierra ASVS V12.4.1 strict) | 970 → 976 (+6) |
 | `9c16b2d` | Wire test unix:// AV verde + close follow-up + doc gotcha primer install | doc only |
 | `8de62d1` | OpenTelemetry tracing opt-in (mini-roadmap #7, cierra Fase 3) | 976 → 987 (+11) |
-| `<this>` | Re-cierre del handoff con OTel + wire test parte A | doc only |
+| `cb8e67b` | Re-cierre del handoff con OTel + wire test parte A (primer pase) | doc only |
+| `0bf9bca` | Configure root logging in asgi.py para que `otel.disabled/enabled` aparezca en journal | 987 → 989 (+2) |
+| `1fe35d8` | OTel: wrap ASGI app + service.version real (cierra el waterfall completo en Jaeger) | 989 → 992 (+3) |
+| `<this>` | Re-cierre del handoff con wire test parte B verde + Jaeger waterfall confirmado | doc only |
 
 ### Mini-roadmap #8b — Trusted Types CSP (2db09cb)
 
@@ -252,13 +255,118 @@ el otel-collector standalone. La parte A confirma:
   - `tracer type: ProxyTracer` (OTel API default, NoOp transparent)
   - Span context manager corre sin error.
 
-**Hallazgo cosmetico** (no shippeado, documentado en §6 #6): el
-log line `otel.disabled reason=no_endpoint` no aparece en
+**Hallazgo cosmetico inicial** (luego shippeado en `0bf9bca`):
+el log line `otel.disabled reason=no_endpoint` no aparecia en
 `journalctl` porque `setup_otel()` corre en `asgi.py` **antes** de
-que Django configure `LOGGING` desde `settings.LOGGING`. El
-`logger.info()` se va al root logger que filtra INFO por default
-(solo deja pasar WARNING+). Estado funcional verificado via
-`manage.py shell`; visibility-only gap.
+que Django configure `LOGGING`. Fix: `asgi.py` llama
+`configure_logging()` (de `ameli_app.logging_utils`) antes de
+importar telemetry, con guard `hasHandlers()` para no pisar a
+pytest u otros consumidores con handlers existentes. Wire test
+post-fix confirmo:
+
+```
+jun 22 15:02:30 ... INFO [ameli_web.telemetry] [req=-] otel.disabled reason=no_endpoint
+```
+
+Visibility cerrada.
+
+### Wire test 2026-06-22 — OTel parte B en `ha-report2` (con docker)
+
+Operador instalo docker (`apt-get install -y docker.io`) y levanto
+Jaeger all-in-one:
+
+```bash
+docker run -d --name jaeger \
+  -p 127.0.0.1:16686:16686 -p 127.0.0.1:4317:4317 \
+  jaegertracing/all-in-one:latest
+```
+
+Bind a `127.0.0.1` para NO exponer a la LAN; UI accesible solo via
+tunel SSH `-L 16686:127.0.0.1:16686` desde el desktop. Activacion
+con `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317`
+en `app.env` + restart api. journalctl confirmo:
+
+```
+otel.enabled endpoint=http://127.0.0.1:4317 service=ameli-app-template sample_ratio=1.00
+otel.instrumented name=django
+otel.instrumented name=psycopg
+otel.instrumented name=urllib
+```
+
+Trafico generado: smoke EICAR via `manage.py shell` + navegacion
+manual del browser (login, /, /profile/, avatar upload, /health).
+
+Capturas operador (4 traces revisados en Jaeger):
+
+1. **`av.scan_bytes` con EICAR**: span con atributos
+   `av.bytes=68`, `av.endpoint_scheme=unix`, `av.verdict=infected`,
+   `av.signature=Eicar-Test-Signature`, `otel.scope.name=
+   ameli_web.accounts.av`. Resource: `service.name=ameli-app-template`,
+   `deployment.environment=dev`. Duracion 5.81 ms.
+2. **`UPDATE accounts_usersession`** via psycopg auto-instrument:
+   span con `db.statement` (UPDATE completo con placeholders %s),
+   `db.system=postgresql`, `db.user=ameli_app_template_dev`,
+   `net.peer.name=127.0.0.1`, `net.peer.port=5432`,
+   `otel.scope.name=opentelemetry.instrumentation.psycopg`,
+   `span.kind=client`. Duracion 604µs.
+3. **`UPDATE django_session`** via psycopg (session backend de
+   Django). Mismo shape que #2. Duracion 2.19 ms.
+
+**PERO** los traces 2 y 3 aparecieron como **standalone**, sin un
+parent HTTP. Causa: `opentelemetry-instrumentation-django` solo
+engancha el path WSGI; en ASGI Django dispatcha la request por
+async plumbing que el WSGI hook no ve, asi que la request NUNCA
+producia un span padre.
+
+Fix shippeado en `1fe35d8`:
+- Nueva dep `opentelemetry-instrumentation-asgi` (+ contrib package).
+- `telemetry.py` exporta `wrap_asgi_application(app)` que devuelve
+  el app envuelto en `OpenTelemetryMiddleware` cuando OTel esta
+  activo, NoOp passthrough cuando no.
+- `asgi.py` ahora hace
+  `application = wrap_asgi_application(get_asgi_application())`.
+- Bonus fix en el mismo commit: `service.version` ahora lee
+  `ameli_app.__version__` (lo que `/health` reporta) en vez del
+  env var `AMELI_APP_VERSION` que systemd NO setea. Antes
+  apareciaba `0.0.0` en todas las traces.
+
+Re-deploy + browser nav y se vio el waterfall completo. Traces
+post-fix (capturas operador):
+
+- **`GET /` 133 ms** (dashboard):
+  ```
+  GET /                      [parent ASGI middleware span]
+  ├─ GET / http receive      22 µs
+  ├─ GET dashboard-home      57 ms  [Django URL pattern name]
+  │  ├─ SELECT 529 µs
+  │  ├─ SELECT 671 µs
+  │  ├─ select 480 µs
+  │  ├─ select 195 µs
+  │  ├─ show 103 µs
+  │  ├─ show 91 µs
+  │  └─ select 196 µs
+  └─ GET / http send         24 µs
+  ```
+
+- **`GET /media/avatars/admin-xxx.png` 340 ms** (40 spans en total):
+  parent ASGI → ASGI lifecycle (`http receive`, `http send` por
+  chunks del PNG de 1.77 MB) → `GET ^media/(?P<path>.*)$` (URL
+  pattern Django) → 7 DB ops (SELECT/UPDATE) como children.
+
+- **Search dropdown** muestra **33 operations** distintas: cada
+  URL pattern Django + los manuales (`av.scan_bytes`,
+  `hibp.range_query`, `smtp.send`).
+
+OTel queda **end-to-end validado en wild**: SDK boot → ASGI
+middleware → Django auto-instrument → psycopg children → manual
+spans → BatchSpanProcessor → OTLP/gRPC exporter → Jaeger.
+
+**Rollback post-wire-test** (operador no va a mantener Jaeger
+activo dia-a-dia, solo ad-hoc): env var quitado de `app.env`,
+api restart vuelve a `otel.disabled reason=no_endpoint`, container
+de Jaeger stopped + removed. El codigo OTel sigue en `dev`, listo
+para activar de nuevo cuando se necesite (sin cambio de codigo,
+solo env var + collector corriendo en algun lado).
 
 ### Wire test 2026-06-22 — bundle #8 + #9 en `ha-report2`
 
@@ -376,17 +484,18 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
 
 | Metrica | Inicio dia (22-jun) | Cierre dia (22-jun) | Δ |
 |---|---|---|---|
-| Suite local (sin deselect) | 948 | **987** | +39 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme, +11 OTel) |
+| Suite local (sin deselect) | 948 | **992** | +44 (+4 TT, +5 SRI, +13 breaker, +6 unix scheme, +11 OTel, +2 asgi-logging, +3 ASGI wrap + version) |
 | Coverage % (branch + line) | 85% | 85% (floor pinned) | 0 |
 | mypy errors en src/ | 0 / 47 | 0 / 50 | +3 archivos (sri.py, sri __init__.py, circuit_breaker.py) sin errores |
 | Commits sobre `dev` (sesion) | 0 (`c643af8`) | 5 (+ doc closer) | — |
 | ASVS L2 active rows PASS | 151 | 151 (+ V12.4.1 ahora strict-shippable post `a51d2b8`) | 0 (+1 movido de partial → strict) |
 | Mini-roadmap items closed | 7 / 12 | **10 / 12** | +3 (#7, #8, #9 — Fase 3 + Fase 4 ambas closed) |
-| Wire tests verdes | 1 acumulado | **4 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify) | +4 |
-| Bugs encontrados via wire | 0 | 0 (falso positivo de `curl -I` sobre /docs descartado; visibility gap del log line de OTel boot documentado) | 0 |
+| Wire tests verdes | 1 acumulado | **6 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify, OTel boot log visibility post-fix, OTel parte B con Jaeger waterfall) | +6 |
+| Bugs encontrados via wire | 0 | 2 cerrados in-session (`otel.disabled` log no visible → fix `0bf9bca`; HTTP requests sin parent span en ASGI → fix `1fe35d8`) | +2 found+fixed |
 | Version | `v0.4.0-django` | **`v0.4.0-django`** (security + observabilidad opt-in, no bump funcional) | 0 |
 | Lockfile entries (líneas con hash) | baseline | +254 (deps OTel + transitives) | — |
 | Source files (mypy clean) | 47 | **51** (+SRI tag, +circuit_breaker, +telemetry) | +4 |
+| OTel pipeline wire-validated | n/a | full waterfall end-to-end (Jaeger UI confirmed 33 operations, parent HTTP spans + DB children + manual spans) | + |
 | Branches state | `dev @ c643af8`, `main @ 1355060` | `dev @ <this>`, `main @ 1355060` (sin tocar) | — |
 
 ## §6. Hallazgos / findings
@@ -493,21 +602,21 @@ Follow-ups documentados:
   contra clamd real (`unix:///var/run/clamav/clamd.ctl`):
   `clean: ('ok', '')`, `eicar: ('infected', 'Eicar-Test-Signature')`.
   ASVS V12.4.1 **strict-shipped** sobre Debian.
-- **OpenTelemetry tracing** — SHIPPED `8de62d1` + wire test parte
-  A (deploy dormant verify) en `ha-report2`. Parte B (Jaeger via
-  docker) NO se ejecuto porque el servidor no tiene docker
-  instalado; el bootstrap + integracion estan pinneados via los
-  9 unit tests + `manage.py shell` smoke. Cuando el operador
-  quiera activar tracing en wild, solo necesita un collector
-  (otel-collector standalone via apt, o docker si lo instala) +
-  un `AMELI_APP_OTEL_EXPORTER_OTLP_ENDPOINT=http://...:4317` en
-  app.env + restart api.
-- **Cosmetic — OTel boot log no aparece en journal** (§6 #6):
-  `setup_otel()` corre antes que Django configure LOGGING.
-  Solucion 2-liner: bump `logger.info` → `logger.warning` en
-  ambos paths (enabled / disabled) o `logging.basicConfig` en
-  asgi.py. NO afecta funcionalidad. Reagendar si la proxima vez
-  que activemos OTel queremos ver el "enabled" line en journal.
+- **OpenTelemetry tracing** — SHIPPED `8de62d1` (bootstrap) +
+  `0bf9bca` (boot log visibility) + `1fe35d8` (ASGI wrap +
+  service.version fix). Wire-validado FULL en `ha-report2` post-
+  install de docker + Jaeger all-in-one: waterfall completo de
+  cada request (HTTP parent → Django URL pattern → psycopg DB
+  queries → manual spans de av/hibp/smtp). Operador hizo rollback
+  del Jaeger container y del env var post-validation porque no
+  va a mantenerlo activo dia-a-dia; el codigo OTel sigue en
+  `dev` listo para re-activacion sin tocar source.
+- **OTel boot log visibility** — SHIPPED `0bf9bca`. asgi.py
+  llama `configure_logging()` con guard `hasHandlers()` antes de
+  importar telemetry. Wire-verified: la línea
+  `otel.disabled reason=no_endpoint` (y la `otel.enabled ...`
+  cuando se activa) ahora aparece en `journalctl` con timestamp,
+  level, modulo y request_id filter.
 - **Cosmetic — log format del breaker** (`%.0f` → `%.1f` para
   cooldowns visibles en testing). Sin shippear, no afecta prod.
 - **HEAD vs GET en `_docs_csp`** no es bug — los browsers nunca
@@ -541,12 +650,15 @@ adelantados en `dev` desde el ultimo match con main:
 - `a51d2b8` Scheme `unix://` en `av.py` (ASVS V12.4.1 strict)
 - `9c16b2d` Wire test unix:// AV verde + close follow-up
 - `8de62d1` OpenTelemetry tracing opt-in (Fase 3 closed)
-- (+ `<this>` re-cierre handoff 22-jun con OTel + wire test parte A)
+- `cb8e67b` Doc re-cierre con OTel (primer pase, parte A)
+- `0bf9bca` Configure root logging before OTel bootstrap (visibility)
+- `1fe35d8` OTel: wrap ASGI app + service.version fix
+- (+ `<this>` re-cierre handoff 22-jun con OTel wire parte B verde)
 
-Server `ha-report2` corriendo `8de62d1` (wire test parte A del
-OTel confirmado via update.sh + manage.py shell + `is_enabled()`
-False / ProxyTracer en dormant state). El re-cierre del handoff
-es doc-only, NO require re-deploy.
+Server `ha-report2` corriendo `1fe35d8` (wire test parte B del
+OTel confirmado contra Jaeger, luego rollback del env var: OTel
+queda dormant en el server pero el codigo del template esta
+listo). El re-cierre del handoff es doc-only, NO require re-deploy.
 
 **El siguiente agente NO debe**:
 - Promote `dev → main` automaticamente. Esperar instruccion
@@ -586,13 +698,9 @@ es doc-only, NO require re-deploy.
   correr el browser headless. Mas pesado que #10/#11.
 
 **Otros candidatos NO en el mini-roadmap** que pueden interesar:
-- Wire test parte B de OTel cuando haya docker disponible en
-  el server, o cuando se instale `otel-collector` standalone
-  via apt — para validar in-wild que los spans se exportan
-  correctamente y se ven en el viewer.
-- Fix cosmetico del log line de OTel boot (§7 follow-ups).
 - Bump cosmetico del format del log line del breaker (§7
-  follow-ups).
+  follow-ups). `%.0f` → `%.1f` para cooldowns visibles en testing.
+  No afecta prod.
 
 **Patrones operacionales ratificados** (incorporar al playbook):
 - Server pullea SIEMPRE `dev`. Promote a `main` solo por
