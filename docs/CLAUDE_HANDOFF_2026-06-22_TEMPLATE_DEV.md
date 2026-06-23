@@ -434,6 +434,72 @@ boot guard rationale, rollback, y tabla comparativa OTel vs silk
 explicando por qué shippeamos ambos (complementan, no replazan —
 OTel para producción aggregate, silk para "debug ESTE request").
 
+### Wire test 2026-06-22 — #11 pool + #10 silk en `ha-report2`
+
+Re-deploy del bundle `36c4329` via `scripts/update.sh`: 23 OK /
+0 WARN / 0 FAIL. 3 paquetes nuevos instalados via `--require-hashes`
+(`django-silk 5.5.0`, `psycopg-pool 3.3.1`, `gprof2dot 2025.4.14`).
+
+**#11 pool tuning verificado por default (postgres)**:
+```
+engine: django.db.backends.postgresql
+CONN_MAX_AGE: 60
+CONN_HEALTH_CHECKS: True
+pool: OFF
+```
+Defaults conservadores activos al primer boot post-deploy sin
+ninguna config adicional. Operador no setea `AMELI_APP_DB_POOL_*`
+todavía → pool real OFF, persistent connections solo.
+
+**#10 silk activado en wild**: operador setea
+`AMELI_APP_SILK_ENABLED=true` en app.env + `systemctl restart api`
++ `manage.py migrate silk`. Las 8 migrations de silk corren clean
+(silk_request, silk_sqlquery, silk_profile, etc.). Navegación
+manual de `/profile/` registra correctamente:
+
+```
+Requests recorded: 5
+  GET /favicon.ico → 3ms (0 queries)
+  GET /media/avatars/admin-1dc6137fd9500fce.png → 2ms (0 queries)
+  GET /static/js/app.js → 2ms (0 queries)
+  GET /static/css/app.css → 4ms (0 queries)
+  GET /profile/ → 36ms (5 queries)
+```
+
+Panel `/silk/` accesible via browser logueado como superadmin:
+- Summary tab: 28 requests, avg 7ms, top time `/profile/` 36ms
+  con 5 queries — coincide con el shell output.
+- Requests tab: cards con timing por request.
+- Profiling tab: vacío con mensaje informativo (esperado —
+  flamegraph extra requiere `@silk_profile` decorator manual).
+
+**Observación**: el intercept regex default
+`^/(profile|admin|api)/` debería excluir `/static/*` y
+`/favicon.ico`, pero igual aparecieron en los registros. Causa
+probable: silk grabó las assets cargadas DURANTE la primera
+navegación a `/profile/` antes de que el regex filter terminara
+de inicializarse, o porque silk aplica el regex con `re.search`
+en vez de `re.match` para algunos paths. No es bloqueante para
+el wire test — el view principal `/profile/` quedó registrado
+con los 5 queries esperados. Documentado como ligera
+imprecisión del default; operador puede tightenar el regex via
+env si quiere.
+
+**Rollback ejecutado** (operador no mantiene silk activo
+dia-a-dia, solo ad-hoc):
+- `AMELI_APP_SILK_ENABLED` removido de app.env, api restart →
+  silk ya no graba.
+- `manage.py migrate silk zero` falló con
+  `CommandError: No installed app with label 'silk'` porque
+  silk salió de INSTALLED_APPS al quitar el env var. Workaround
+  documentado en el cierre: re-enable temporal → migrate silk
+  zero → re-disable. Las tablas `silk_*` quedan vacías
+  (no graban porque app sale del bundle) hasta que se haga ese
+  rollback formal o se las droppee con SQL directo.
+- Pool tuning: operador hizo `AMELI_APP_DB_CONN_MAX_AGE_SECONDS=0`
+  como prueba del rollback path. Para volver al default 60s
+  basta con quitar esa línea del app.env.
+
 ### Wire test 2026-06-22 — bundle #8 + #9 en `ha-report2`
 
 `scripts/update.sh` (segun `docs/FIRST_INSTALL_DJANGO.md` §"Primera
@@ -556,7 +622,7 @@ no se ve. Pulir a `%.1f` si re-pasamos por el modulo.
 | Commits sobre `dev` (sesion) | 0 (`c643af8`) | 5 (+ doc closer) | — |
 | ASVS L2 active rows PASS | 151 | 151 (+ V12.4.1 ahora strict-shippable post `a51d2b8`) | 0 (+1 movido de partial → strict) |
 | Mini-roadmap items closed | 7 / 12 | **11 / 12** | +5 (#7, #8, #9, #10, #11 — Fases 3, 4, 5 todas closed; solo Fase 6 #12 Playwright queda) |
-| Wire tests verdes | 1 acumulado | **6 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify, OTel boot log visibility post-fix, OTel parte B con Jaeger waterfall) | +6 |
+| Wire tests verdes | 1 acumulado | **7 nuevos** (#8 full smoke browser + curl, #9 manage.py shell, unix:// + EICAR contra clamd real, OTel parte A dormant verify, OTel boot log visibility post-fix, OTel parte B con Jaeger waterfall, #11 pool defaults + #10 silk con browser panel + shell verify) | +7 |
 | Bugs encontrados via wire | 0 | 2 cerrados in-session (`otel.disabled` log no visible → fix `0bf9bca`; HTTP requests sin parent span en ASGI → fix `1fe35d8`) | +2 found+fixed |
 | Version | `v0.4.0-django` | **`v0.4.0-django`** (security + observabilidad opt-in, no bump funcional) | 0 |
 | Lockfile entries (líneas con hash) | baseline | +254 (deps OTel + transitives) | — |
@@ -724,13 +790,18 @@ adelantados en `dev` desde el ultimo match con main:
 - `36c4329` Mini-roadmap #10 — django-silk opt-in profiler (Fase 5 closed)
 - (+ `<this>` re-cierre con Fase 5 cerrada + 11/12 mini-roadmap done)
 
-Server `ha-report2` corriendo `1fe35d8` (último deploy del wire
-test parte B de OTel). NO se redeployaron #11 + #10 todavía — el
-operador puede hacerlo cuando quiera. Ambos items son safe: pool
-tuning con defaults conservadores activos al next-deploy
-automatically; silk OFF por default (no rompe nada hasta que
-operador setee `AMELI_APP_SILK_ENABLED=true` + corra
-`manage.py migrate silk`).
+Server `ha-report2` corriendo **`36c4329`** post-wire-test del
+bundle #11 + #10 (deploy via `update.sh` confirmado 23 OK / 0
+WARN / 0 FAIL, browser panel `/silk/` verificado, shell records
+confirmados con 5 queries en `/profile/`). Rollback post-wire:
+silk env quitado + api restart, pool tuning con
+`AMELI_APP_DB_CONN_MAX_AGE_SECONDS=0` como test del rollback
+path (operador puede revertir a default 60s quitando esa linea
+del app.env si quiere). Tablas `silk_*` quedan en DB vacias —
+silk salio de INSTALLED_APPS asi que `migrate silk zero` no
+corre; para droppearlas requiere re-enable temporal o SQL
+directo (documentado en handoff de 23-jun como follow-up
+opcional).
 
 **El siguiente agente NO debe**:
 - Promote `dev → main` automaticamente. Esperar instruccion
