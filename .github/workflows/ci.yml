@@ -220,5 +220,15 @@ jobs:
           AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
           DJANGO_SETTINGS_MODULE: ameli_web.settings
           AMELI_APP_SQLITE_PATH: /tmp/ameli-e2e.sqlite3
+          # pytest-playwright initialises an event loop in the main
+          # thread to back its sync API (the python ``page.click()``
+          # calls). Django's async-safety check then rejects ORM ops
+          # like ``connection.close()`` during ``create_test_db`` with
+          # SynchronousOnlyOperation. The escape hatch is documented
+          # by Django for exactly this scenario (sync ORM calls from
+          # a thread that happens to have a loop in the callstack).
+          # Scope is narrow: only applied inside the e2e job, never
+          # in the runtime image.
+          DJANGO_ALLOW_ASYNC_UNSAFE: "true"
         run: |
           python -m pytest tests/e2e/ -v --tb=short
