@@ -984,6 +984,101 @@ restart. The SDK loads but registers no provider; `av.scan_bytes`,
 HIBP and SMTP code paths run unchanged but spans are no-ops with
 zero per-request cost.
 
+## Troubleshooting: SMTP "Network is unreachable" (Errno 101)
+
+Symptom: a user attempts an email-based action (MFA email code,
+password reset) and the UI surfaces `"No pudimos enviar el codigo
+por email ahora mismo"`. The audit chain records an
+`email_failed_permanent` (queue path) or
+`mfa_email_login_send_failed` (sync path) row with
+`error_class=OSError`. Journal traceback ends in:
+
+```
+File "/usr/lib/python3.13/socket.py", line 849, in create_connection
+    sock.connect(sa)
+OSError: [Errno 101] Network is unreachable
+```
+
+Surfaced 2026-06-23 on a Debian 13 host configured for IPv4 only
+(no global IPv6 address, no IPv6 default route, DHCP only assigns
+IPv4) while configured to send via `smtp.office365.com`. Office
+365 publishes AAAA records; glibc's `getaddrinfo` returned them;
+Python's `smtplib` tried IPv6 first; kernel returned ENETUNREACH;
+the smtplib path raised before falling back cleanly to IPv4.
+
+### Diagnose
+
+```bash
+ip -6 addr show                # global IPv6 assigned? (look past loopback + fe80)
+ip -6 route show default       # IPv6 default route present?
+getent ahosts <smtp-host>      # AAAA records returned by glibc?
+nc -zvw 5 <smtp-host> 587      # raw TCP reachable?
+nc -4 -zvw 5 <smtp-host> 587   # IPv4 specifically?
+```
+
+If `ip -6 addr` shows only `::1` + `fe80::*` and `ip -6 route show
+default` is empty, the host is IPv4-only; `getent ahosts` returning
+AAAA records means glibc is misleading smtplib.
+
+### Fix (IPv4-only host)
+
+Two layers, both reversible:
+
+```bash
+# A) Prefer IPv4 over IPv6 at getaddrinfo level (gai.conf)
+cp /etc/gai.conf /etc/gai.conf.bak
+cat >> /etc/gai.conf <<'GAI'
+# IPv4 precedence bump — IPv6 stack inerte en este host
+precedence ::1/128       50
+precedence ::/0          40
+precedence 2002::/16     30
+precedence ::/96         20
+precedence ::ffff:0:0/96 100
+GAI
+
+# B) Disable IPv6 entirely (kernel-level, persistent)
+cat > /etc/sysctl.d/99-disable-ipv6.conf <<'EOF'
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+sysctl -p /etc/sysctl.d/99-disable-ipv6.conf
+
+# Verify
+ip -6 addr show              # empty
+getent ahosts <smtp-host>    # only IPv4 entries
+
+systemctl restart <instance>-api.service
+```
+
+Smoke test:
+
+```bash
+cd /opt/<instance>
+.venv/bin/python manage.py shell <<'PY'
+from django.core.mail import EmailMessage
+from django.conf import settings
+msg = EmailMessage("[smoke] template", "ok",
+                   from_email=settings.DEFAULT_FROM_EMAIL,
+                   to=["YOU@example.com"])
+msg.send(fail_silently=False)
+print("send OK")
+PY
+```
+
+### Rollback (if IPv6 routing is restored on the network later)
+
+```bash
+rm /etc/sysctl.d/99-disable-ipv6.conf
+mv /etc/gai.conf.bak /etc/gai.conf
+reboot  # cleanest; or sysctl --system + interface reload
+```
+
+The template code is unchanged — this is a host-level operational
+fix only. The MFA UI's "try TOTP instead / Reenviar codigo"
+fallback that surfaced this issue is the intended behaviour
+(better than 500-ing the request) and stays as-is.
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles

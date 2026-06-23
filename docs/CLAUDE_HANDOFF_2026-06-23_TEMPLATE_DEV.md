@@ -75,7 +75,98 @@ Items abiertos como candidatos:
 
 ## §3. Trabajo realizado
 
-(Pendiente al cierre del dia.)
+| Commit | Tema | Tests |
+|---|---|---|
+| `fbfe3af` | Open 2026-06-23 handoff | doc only |
+| `<this>` | Documentar troubleshooting SMTP "Network is unreachable" + cierre del wire test | doc only |
+
+### Limpieza residual del wire test 22-jun
+
+Operador removio `AMELI_APP_DB_CONN_MAX_AGE_SECONDS=0` del app.env
+para volver al default 60s del #11 (pool tuning). Verificado via
+`manage.py shell`:
+```
+CONN_MAX_AGE: 60
+```
+Pool tuning #11 vuelve a estar activo en `ha-report2`.
+
+### Wire test 2026-06-23 — fix SMTP "Network is unreachable"
+
+Operador reportó que el flow MFA email mostraba el banner rojo
+"No pudimos enviar el codigo por email ahora mismo" — no es bug
+nuevo, es el primer login del dia. El template captura la
+excepcion correctamente y permite fallback a TOTP / reenviar.
+
+Diagnostico:
+- Journal: `OSError [Errno 101] Network is unreachable` en
+  `socket.create_connection` para `smtp.office365.com:587`.
+- Audit chain: `mfa_email_login_send_failed` con `error_class=OSError`
+  ya el 22-jun a las 12:45 + hoy 23-jun a las 09:15. Persistente.
+- `nc -zvw 5 smtp.gmail.com 587` conecta OK. `nc` a Office 365
+  tambien conecta via IPv4 directo (`52.97.x.x`).
+- Pero `getent ahosts smtp.office365.com` devuelve AAAA records
+  (`2603:1056::*`) ademas de IPv4. Y `getaddrinfo` los puede
+  devolver primero a smtplib.
+- `ip -6 addr show`: solo `::1` + link-local `fe80::*`. **NO hay
+  global IPv6** asignada.
+- `ip -6 route show default`: vacio. **NO hay route IPv6 default**.
+- `/etc/network/interfaces`: `iface ens18 inet dhcp` (solo IPv4).
+- `accept_ra=0` en `ens18` y `ens19` (no escucha Router
+  Advertisements IPv6).
+
+Conclusion: **el host es IPv4-only por diseño**. La red corporativa
+(`10.100.100.0/24`) no anuncia IPv6. Pero glibc devuelve AAAA
+records sin filtrar; Python smtplib intenta IPv6 primero a veces
+y choca con ENETUNREACH; el path de fallback a IPv4 no siempre
+recupera limpiamente.
+
+Mi primer intento de fix fue malo: uncommentee SOLO
+`precedence ::ffff:0:0/96 100` en `/etc/gai.conf`. glibc trata el
+primer `precedence` no comentado como la tabla COMPLETA,
+descartando los defaults — quedo con una sola regla y el comportamiento
+se volvio peor (`nc -zvw 5` empezo a probar SOLO IPv6 despues del
+cambio). Operador me cazo (output de `nc` post-cambio mostro 4
+fallos IPv6 sin retry IPv4).
+
+Fix correcto shippeado en el host (operador, NO en el template):
+
+1. `/etc/gai.conf` con la tabla **completa** de precedencias +
+   regla extra para IPv4-mapped (precedence 100):
+   ```
+   precedence ::1/128       50
+   precedence ::/0          40
+   precedence 2002::/16     30
+   precedence ::/96         20
+   precedence ::ffff:0:0/96 100
+   ```
+2. `/etc/sysctl.d/99-disable-ipv6.conf` con:
+   ```
+   net.ipv6.conf.all.disable_ipv6 = 1
+   net.ipv6.conf.default.disable_ipv6 = 1
+   net.ipv6.conf.lo.disable_ipv6 = 1
+   ```
+   `sysctl -p` aplico → `ip -6 addr show` queda vacio,
+   `getent ahosts smtp.office365.com` devuelve SOLO IPv4.
+
+Smoke send post-fix:
+```python
+EmailMessage("[smoke] AMELI post-IPv6-disable", "...",
+             from_email=settings.DEFAULT_FROM_EMAIL,
+             to=["hardgameinc@gmail.com"]).send(fail_silently=False)
+# send OK
+```
+Email llego al inbox del operador. Browser MFA post-restart muestra
+la pantalla normal de codigo email (sin banner rojo de error).
+
+**El template NO se modifico** — la fix es 100% server-side
+(networking). El template captura el OSError correctamente y ofrece
+fallback a TOTP (comportamiento intencional, sale del audit con
+`error_class` capturado).
+
+Documentado en `docs/OPERATIONS.md` § "Troubleshooting: SMTP
+'Network is unreachable' (Errno 101)" con diagnose + fix + rollback
+para que el proximo operador que choque con esto encuentre el
+camino sin re-diagnosticar.
 
 ## §4. Decisiones tomadas
 
