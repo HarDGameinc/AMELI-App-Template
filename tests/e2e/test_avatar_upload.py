@@ -11,11 +11,9 @@ the initials placeholder.
 from __future__ import annotations
 
 import re
-from io import BytesIO
 from pathlib import Path
 
 import pytest
-
 
 pytestmark = pytest.mark.django_db
 

@@ -207,10 +207,12 @@ jobs:
       - name: Apply migrations (clean DB for live_server)
         env:
           AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+          DJANGO_SETTINGS_MODULE: ameli_web.settings
         run: python -m django migrate --noinput
 
       - name: Pytest (e2e suite only)
         env:
           AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+          DJANGO_SETTINGS_MODULE: ameli_web.settings
         run: |
           python -m pytest tests/e2e/ -v --tb=short

@@ -25,9 +25,8 @@ from django.utils.translation import gettext as _
 
 from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
-from ameli_web.utils import format_timestamp_ui
-
 from ameli_web.telemetry import get_tracer
+from ameli_web.utils import format_timestamp_ui
 
 from . import mfa
 from .circuit_breaker import CircuitBreaker, get_smtp_breaker

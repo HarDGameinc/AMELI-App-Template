@@ -20,7 +20,6 @@ import pytest
 from ameli_web.accounts import av, validators
 from ameli_web.accounts.circuit_breaker import CircuitBreaker
 
-
 # ---------------------------------------------------------------------------
 # Core state machine
 # ---------------------------------------------------------------------------
@@ -209,9 +208,10 @@ def test_email_queue_skips_batch_when_breaker_open(monkeypatch):
     """When the SMTP breaker is open at tick time, process_email_queue
     must NOT touch any pending row — burning max_attempts during a
     known outage would silently fail legitimate emails."""
+    from django.utils import timezone
+
     from ameli_web.accounts import services
     from ameli_web.accounts.models import OutboundEmail
-    from django.utils import timezone
 
     cb = CircuitBreaker(name="smtp-test", failure_threshold=1, cooldown_seconds=60.0)
     cb.record_failure()  # opens immediately (threshold=1)

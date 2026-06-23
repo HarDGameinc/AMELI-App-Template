@@ -15,10 +15,7 @@ e2e wires them together.
 """
 from __future__ import annotations
 
-import re
-
 import pytest
-
 
 pytestmark = pytest.mark.django_db
 
