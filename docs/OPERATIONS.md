@@ -1079,6 +1079,31 @@ fix only. The MFA UI's "try TOTP instead / Reenviar codigo"
 fallback that surfaced this issue is the intended behaviour
 (better than 500-ing the request) and stays as-is.
 
+### Post-apply: transient EADDRNOTAVAIL window
+
+Immediately after `sysctl -p` and the api restart, there is a brief
+window (<60 s) where in-flight requests may still trip on
+`OSError [Errno 99] Cannot assign requested address`. Cause:
+glibc's getaddrinfo retains an internal cache that may still
+return AAAA records for a few seconds after the kernel disables
+IPv6; when Python opens the corresponding ``AF_INET6`` socket the
+kernel rejects with EADDRNOTAVAIL. The error is **not** the same
+``Errno 101`` you were chasing — it confirms the disable took
+effect. Subsequent requests (after the cache expires) only see
+IPv4 records and work normally.
+
+If you want to avoid even that brief window, restart the api
+service a second time ~60 s after the first restart:
+
+```bash
+sleep 60
+systemctl restart <instance>-api.service
+```
+
+Or just accept the transient — the surfaced UI message offers
+the user a TOTP / "Reenviar codigo" fallback that resolves
+within the window.
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles
