@@ -208,11 +208,17 @@ jobs:
         env:
           AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
           DJANGO_SETTINGS_MODULE: ameli_web.settings
+          # Force SQLite at a writable, predictable path. The runner
+          # has no Postgres; pytest-django builds its own ``test_*`` DB
+          # in the same dir at suite startup.
+          AMELI_APP_SQLITE_PATH: /tmp/ameli-e2e.sqlite3
+        working-directory: src
         run: python -m django migrate --noinput
 
       - name: Pytest (e2e suite only)
         env:
           AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
           DJANGO_SETTINGS_MODULE: ameli_web.settings
+          AMELI_APP_SQLITE_PATH: /tmp/ameli-e2e.sqlite3
         run: |
           python -m pytest tests/e2e/ -v --tb=short
