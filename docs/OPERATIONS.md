@@ -1104,6 +1104,79 @@ Or just accept the transient — the surfaced UI message offers
 the user a TOTP / "Reenviar codigo" fallback that resolves
 within the window.
 
+## End-to-end tests (Playwright)
+
+Mini-roadmap #12 (2026-06-23) ships a small Playwright suite at
+``tests/e2e/`` that drives a headless Chromium against the live
+Django app to cover the auth + avatar + password-change happy
+paths. Pure Python — ``pytest-playwright`` integrates with the
+existing pytest pipeline.
+
+### Running locally
+
+```bash
+# Install browser (one-time per machine; ~140 MB chromium binary)
+python -m playwright install chromium --with-deps
+
+# Run only the e2e suite
+python -m pytest tests/e2e/
+
+# Or every test including e2e
+python -m pytest --run-e2e
+```
+
+The default ``python -m pytest`` invocation **skips** e2e to keep
+the unit suite fast (~100s). The skip is driven by a hook in
+``tests/conftest.py`` + ``tests/e2e/conftest.py`` that detects
+either the path or the ``--run-e2e`` flag as the explicit opt-in.
+
+### Covered flows
+
+- **Login + MFA email + dashboard** — exercise the full auth
+  pipeline, captures the MFA code from the in-memory mail
+  outbox, verifies redirect to the dashboard.
+- **Wrong-password rejection** — ensures the login view re-renders
+  with the generic error (no user-existence oracle).
+- **Avatar upload** — uploads a tiny PNG, verifies the hero on
+  both ``/profile/`` and ``/`` swaps to ``<img>``, plus the
+  top-right menu chip.
+- **Password change + re-login** — full rotation: change via the
+  security tab, old password fails, new password works.
+
+### Test isolation
+
+- Each test gets a fresh Django user via the ``e2e_admin`` fixture.
+- ``pytest-playwright`` opens a clean browser context per test
+  (no cookie / localStorage leak).
+- Email backend is switched to ``locmem`` per test via
+  ``captured_emails`` fixture; no real SMTP traffic.
+- ``pytest-django`` rolls back the DB after each test.
+
+### CI
+
+The ``e2e`` job in ``.github/workflows/ci.yml`` runs on every push
+and PR. It downloads chromium (~30 s on GitHub runners), runs
+migrations, then invokes ``pytest tests/e2e/ -v``. Independent
+from the unit-test matrix job so unit failures don't gate the e2e
+signal (and vice versa).
+
+### Extending
+
+Add a new test file under ``tests/e2e/``. The conftest provides
+``page`` (function-scoped Playwright Page), ``live_url`` (str),
+``e2e_admin`` (User), ``captured_emails`` (list[EmailMessage]).
+Mark with ``pytestmark = pytest.mark.django_db`` if the test
+touches the ORM.
+
+Avoid:
+- Screenshot diff tests without baseline management — the value
+  is real but the operational cost (baselines per platform /
+  browser, churn on every CSS tweak) is high. Document a
+  rationale before adding.
+- Cross-browser sweeps in CI — chromium-only keeps the job
+  under 2 min. Operators that need Firefox / WebKit coverage
+  add ``--browser firefox`` locally.
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles

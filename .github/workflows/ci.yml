@@ -164,3 +164,53 @@ jobs:
         run: |
           pip-audit --strict -r requirements.lock
           pip-audit --strict -r requirements-dev.lock
+
+  e2e:
+    # Mini-roadmap #12 (2026-06-23). Playwright + chromium drives a
+    # headless browser against pytest-django's live_server. Runs on
+    # push to dev/main and on PRs — separate from the matrix job so
+    # the unit suite stays under 2 min even when the e2e takes
+    # longer. The job downloads chromium on every run (no cache);
+    # the binary is ~140 MB but the install is fast on GitHub
+    # runners (~30 s).
+    name: E2E (Playwright + Chromium)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+
+      - name: Install dependencies (lockfiles, hash-verified)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+          pip install --require-hashes -r requirements-dev.lock
+          pip install -e . --no-deps
+
+      - name: Install Chromium for Playwright
+        # ``--with-deps`` pulls the OS libs chromium needs (libnss3,
+        # libxkbcommon, etc.). On GitHub's ubuntu-latest runner most
+        # of these are already present, but the flag makes the
+        # invocation idempotent across runner image refreshes.
+        run: |
+          python -m playwright install chromium --with-deps
+
+      - name: Apply migrations (clean DB for live_server)
+        env:
+          AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+        run: python -m django migrate --noinput
+
+      - name: Pytest (e2e suite only)
+        env:
+          AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+        run: |
+          python -m pytest tests/e2e/ -v --tb=short
