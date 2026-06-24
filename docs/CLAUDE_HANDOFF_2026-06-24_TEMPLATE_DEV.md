@@ -415,56 +415,89 @@ Plan propuesto (sujeto a confirmacion del operador, ver §8.2):
 
 ### 8.1. Estado snapshot al cierre
 
-- Rama: `dev @ <commit-cierre>` (este push). `main @ 4b36607`
-  intacto.
-- Unit suite: **1004 pass local**. Coverage 85%.
-- E2E suite: **4/4 PASS local Windows** (Python 3.12.10 + Django
-  5.2.15, ~13 s). CI run para `881b510` en marcha al momento del
-  cierre — se espera verde porque local replica el stack canonico.
-- Server `ha-report2`: NO se ha hecho deploy hoy. Sigue en
-  `36c4329` del 22-jun. Los cambios de hoy son tests + cosmetico,
-  no requieren deploy.
+- Rama: `dev @ f92593d` (HEAD al cierre). `main @ 4b36607`
+  intacto, 21 commits atras.
+- Unit suite: **1027 pass local** (1004 base + 13 cookie-thief
+  A1-A4 + 10 phase-b B1-B7). Coverage >=85%.
+- E2E suite: **4/4 PASS** local Windows (Python 3.12.10 +
+  Django 5.2.15, ~13 s) + verde en CI.
+- Server `ha-report2`: sigue en `36c4329` del 22-jun. Los
+  cambios de hoy son test-code, doc-drift fixes, y hardening
+  de seguridad en services/views/middleware/templates — el
+  proximo deploy si los incluira (NO hubo deploy hoy).
 - ruff/mypy/bandit: clean local.
 
 ### 8.2. Pendientes ordenados por prioridad
 
-**Bloque 1 — cierre del 24-jun** (housekeeping):
-1. Verificar CI verde para `881b510` / `76fdc3d` cuando termine.
-   Si CI falla pero local pasa, el delta es browser/OS — leer
-   log con `mcp__github__get_job_logs`.
-2. Followups opcionales del §7 (test TOTP, doc de selectors).
+**Done en este dia** (no requieren accion):
+- Mini-roadmap 12/12 wire-validated (e2e 4/4).
+- Fase A audit (`PHASE_A_PREPROD_AUDIT_2026-06-24.md`).
+- Fase B item #1 sweep focal (`PHASE_B_SECURITY_REVIEW_2026-06-24.md`).
+- Fase B Bloque A (4 HIGHs cerrados, commit `a1e2626`).
+- Fase B Bloque B (7 MEDs cerrados, commit `4a131d3`).
+- Fase B item #3 doc-drift compliance.
 
-**Bloque 2 — pivot pre-produccion** (foco del 25-jun en adelante):
-3. **Fase A** del §7.1 — audit del estado actual: leer
-   `COMPLIANCE_ASVS_L2_2026-06-16.md`, `THREAT_MODEL.md`,
-   `SECURITY.md`, ultimos 5 handoffs; producir matriz "ya
-   revisado / pendiente / blind spots".
-4. **Fase B** — `security-review` sobre `main..dev` diff +
-   sweep dirigido a `accounts/middleware.py` + `accounts/views.py`
-   + `accounts/services.py`.
-5. **Fase C** — `code-review` sobre el codigo runtime para
-   smells y simplificacion. Foco en `services.py` (2956 lineas).
-6. **Fase D** — revisar docs operacionales + simular onboarding
-   de una app nueva sobre el template (smoke "puedo arrancar en
-   1 hora").
-7. **Promover `dev → main`** como milestone "v1.0 production-ready"
-   solo cuando las Fases A-D esten cerradas con visto bueno del
-   operador.
+**Bloque proximo — Fase B-D restantes** (foco del 25-jun en
+adelante):
+1. **Fase B item #2 — threat model gap analysis** (~20 min).
+   Confirmar que `THREAT_MODEL.md` §3 T2 cubre MFA stacked
+   (TOTP+email), OTel exporter trust, django-silk activation
+   accidental, circuit-breaker forced-open DoS. Si no estan,
+   anadirlos como S-11..S-14 con first/second-line defence.
+2. **Fase C — code review estructural** (~30 min). `code-review`
+   sobre `services.py` (3793 lineas). Foco: dead code, complejidad,
+   duplicacion del patron throttle/audit/retry.
+3. **Fase D — `BUILDING_NEW_APP.md`** (~30 min). Onboarding
+   doc para "motor-as-template": que renombrar (`ameli_app`
+   slug, `ameli_web` package), que mantener (auth/MFA/audit/
+   middleware/permissions stack), que extender, smoke "puedo
+   arrancar en 1 hora".
+4. **(opcional) Fase D — backup destructive restore wire test**
+   (~15 min). En CI nightly o test integration que corra
+   `restore.sh restore --yes` contra DB efimero.
+5. **(opcional) Bloque C** del Phase B security review — LOWs
+   y polish UX (input inline para password MFA en vez de
+   `window.prompt()`). ~45 min.
+6. **(opcional) Followups Phase A e2e** — test MFA TOTP path
+   simetrico al email, doc de convencion de selectors.
+7. **Promover `dev → main`** como milestone "v1.0
+   production-ready" cuando los items 1-3 esten cerrados con
+   visto bueno del operador.
 
 ### 8.3. Que NO hacer
 
 - No promover `dev → main` sin instruccion explicita del operador.
-- No revertir el `transactional_db` switch. Es defensivo aunque
-  no haya sido la causa original.
-- No revertir el `wait_for_url("/profile/")` switch. Es la URL
-  correcta a la que Django redirige por design.
+- No revertir el `transactional_db` switch en e2e. Es defensivo
+  aunque no haya sido la causa original del symptom de Bug A.
+- No revertir el `wait_for_url("/profile/")` switch en e2e. Es la
+  URL correcta a la que Django redirige por design.
 - No tocar el server `ha-report2` por el job e2e — el e2e corre
   solo en CI runner, el deploy de produccion NO lo necesita.
 - No instalar Playwright / chromium en `ha-report2`. El job e2e
   vive 100% en CI por diseno.
+- No revertir los `current_password` requirements en
+  `start_mfa_*`, `regenerate_recovery_codes`,
+  `change_email_for_self` — cierran cookie-thief threat
+  (PHASE_B Bloque A/B). Si rompe UX en algun lado, el fix es
+  cablear el password prompt en la UI, no remover el gate.
+- No revertir el `MustChangePassword` middleware narrowing
+  (`/profile/` ya NO esta en `_ALLOWED_EXACT`). El standalone
+  `/profile/password/` es el destino correcto cuando
+  `must_change_password=True`.
+- No relajar el `OperationalError` → fail-CLOSED del
+  `MaintenanceModeMiddleware` (B6). Atacante puede inducir
+  errores transitorios — el fail-open era explotable.
 
-### 8.4. Lectura sugerida antes de tocar e2e de nuevo
+### 8.4. Lectura sugerida antes de tocar la rama dev
 
+**Para continuar Fase B-D**:
+- `docs/PHASE_A_PREPROD_AUDIT_2026-06-24.md` (que ya esta
+  revisado / pendiente / blind spots).
+- `docs/PHASE_B_SECURITY_REVIEW_2026-06-24.md` (Bloques A+B
+  cerrados, lista de findings detallada por agente).
+- `docs/THREAT_MODEL.md` (input para item #2).
+
+**Para tocar e2e nuevamente**:
 - `src/ameli_web/accounts/views.py` lineas 100-180 (LoginView +
   form_valid + logout_view).
 - `src/ameli_web/accounts/models.py` (definicion de
@@ -473,3 +506,11 @@ Plan propuesto (sujeto a confirmacion del operador, ver §8.2):
   o helper equivalente para no reinventar la enrolment logic).
 - `src/ameli_web/settings.py:534` (LOGIN_REDIRECT_URL).
 - §6.3 de este handoff (la leccion sobre la heuristica falsa).
+
+**Para tocar auth / MFA**:
+- `tests/test_cookie_thief_hardening.py` — pinea invariante
+  cookie-thief A1-A4. Cualquier nuevo endpoint MFA mutating
+  debe agregarse aqui.
+- `tests/test_phase_b_hardening.py` — pinea invariantes B1-B7
+  (sudo throttle, hmac.compare_digest en email-change tokens,
+  maintenance fail-closed, etc.).
