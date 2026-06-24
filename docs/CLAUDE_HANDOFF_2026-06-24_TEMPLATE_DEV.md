@@ -335,7 +335,36 @@ comportamiento del login.
     esta verde, pero si en el futuro queda inestable, marcar el
     job como non-blocking para no bloquear PRs.
 
-## §8. Continuidad — para el proximo agente
+### 7.1. Pivot — revision final de seguridad y codigo (post-cierre)
+
+Al cierre del dia el operador marco la transicion: **mini-roadmap
+ya no es el norte**. El template entra en fase de **revision
+final pre-produccion** con dos objetivos paralelos:
+
+1. **Production-readiness audit**: confirmar que el template, tal
+   como esta, es seguro y mantenible para llegar a un deploy
+   estable de "v1.0".
+2. **Template-as-engine readiness**: validar que sirve como base
+   reproducible para nuevas apps que se construiran o migraran
+   sobre el (form de "motor" que el operador quiere replicar).
+
+Plan propuesto (sujeto a confirmacion del operador, ver §8.2):
+
+- **Fase A — Audit del estado actual** (~30 min): inventario de
+  que ya se reviso (ASVS L2 mapping, supply-chain, etc.) vs que
+  queda. Identifica gaps especificos antes de gastar tokens en
+  pasadas amplias.
+- **Fase B — Security review focal**: usar el skill
+  `security-review` sobre la diff `main..dev` para captura
+  rapida, y un sweep complementario sobre los modulos de auth /
+  middleware (cambian poco, son criticos).
+- **Fase C — Code review estructural**: usar `code-review` para
+  smells, dead code, complejidad. Foco en services.py (2956
+  lineas, el modulo mas pesado) y middleware.
+- **Fase D — Operational + onboarding readiness**: revisar
+  `OPERATIONS.md`, `THREAT_MODEL.md`, backup/restore scripts;
+  validar que un dev nuevo pueda arrancar una app sobre el
+  template en una hora.
 
 ### 8.1. Estado snapshot al cierre
 
@@ -352,15 +381,28 @@ comportamiento del login.
 
 ### 8.2. Pendientes ordenados por prioridad
 
-1. **(opcional)** Verificar CI verde para `881b510` cuando termine.
-   Si por algun motivo CI falla pero local pasa, el delta es el
-   browser/OS (CI ubuntu vs Windows). Action: leer log con
-   `mcp__github__get_job_logs`.
-2. **(opcional)** Considerar promover `dev → main` como milestone
-   "mini-roadmap 12/12 wire-validated". Requiere instruccion
-   explicita del operador.
-3. **(opcional)** Followups del §7 (test TOTP, doc de selectors,
-   continue-on-error si fuera necesario).
+**Bloque 1 — cierre del 24-jun** (housekeeping):
+1. Verificar CI verde para `881b510` / `76fdc3d` cuando termine.
+   Si CI falla pero local pasa, el delta es browser/OS — leer
+   log con `mcp__github__get_job_logs`.
+2. Followups opcionales del §7 (test TOTP, doc de selectors).
+
+**Bloque 2 — pivot pre-produccion** (foco del 25-jun en adelante):
+3. **Fase A** del §7.1 — audit del estado actual: leer
+   `COMPLIANCE_ASVS_L2_2026-06-16.md`, `THREAT_MODEL.md`,
+   `SECURITY.md`, ultimos 5 handoffs; producir matriz "ya
+   revisado / pendiente / blind spots".
+4. **Fase B** — `security-review` sobre `main..dev` diff +
+   sweep dirigido a `accounts/middleware.py` + `accounts/views.py`
+   + `accounts/services.py`.
+5. **Fase C** — `code-review` sobre el codigo runtime para
+   smells y simplificacion. Foco en `services.py` (2956 lineas).
+6. **Fase D** — revisar docs operacionales + simular onboarding
+   de una app nueva sobre el template (smoke "puedo arrancar en
+   1 hora").
+7. **Promover `dev → main`** como milestone "v1.0 production-ready"
+   solo cuando las Fases A-D esten cerradas con visto bueno del
+   operador.
 
 ### 8.3. Que NO hacer
 
