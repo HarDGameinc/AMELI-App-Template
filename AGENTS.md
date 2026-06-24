@@ -11,9 +11,10 @@
 4. [`docs/SECURITY.md`](docs/SECURITY.md) +
    [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — security
    posture and STRIDE-style trust boundaries.
-5. [`docs/COMPLIANCE_ASVS_L2_2026-06-15.md`](docs/COMPLIANCE_ASVS_L2_2026-06-15.md)
-   — current ASVS L2 gap analysis; gaps drive the roadmap numbered
-   list every handoff inherits.
+5. [`docs/COMPLIANCE_ASVS_L2_2026-06-16.md`](docs/COMPLIANCE_ASVS_L2_2026-06-16.md)
+   — current ASVS L2 mapping (151 PASS, 0 strict GAP, supersedes
+   the [`2026-06-15`](docs/COMPLIANCE_ASVS_L2_2026-06-15.md)
+   snapshot which the early handoffs reference).
 
 When the new session is by an LLM agent, also read `CLAUDE.md` for
 the per-project instruction overrides.

@@ -6,8 +6,8 @@ revise on any change that touches a trust boundary (new auth path,
 new external integration, new persistence layer, new exec surface).
 
 Pair with [`SECURITY.md`](SECURITY.md) (operational policy) and
-[`COMPLIANCE_ASVS_L2_2026-06-15.md`](COMPLIANCE_ASVS_L2_2026-06-15.md)
-(control mapping).
+[`COMPLIANCE_ASVS_L2_2026-06-16.md`](COMPLIANCE_ASVS_L2_2026-06-16.md)
+(control mapping, supersedes the 2026-06-15 snapshot).
 
 ## 1. Assets
 

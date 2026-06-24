@@ -71,7 +71,10 @@ Cosmetico opcional al cierre:
 | 4 | `f64c7db` | cosmetico breaker `%.0f` → `%.1f` + cierre intermedio handoff §3-§8 |
 | 5 | `3226857` | fix e2e CI (6/N): Bug D `mfa_enabled` flag + Bug E logout via POST |
 | 6 | `881b510` | fix e2e CI (7/N): Bug F password-form selectors por ID (no por name) |
-| 7 | (este) | cierre final §3-§8 con e2e 4/4 verde |
+| 7 | `76fdc3d` | cierre intermedio §3-§8 con e2e 4/4 verde |
+| 8 | `38c6160` | pivot pre-prod review §7.1 + §8.2 (plan A-D) |
+| 9 | `5fdc77b` | Fase A: doc `PHASE_A_PREPROD_AUDIT_2026-06-24.md` |
+| 10 | (este) | Fase B item #3: reconciliar doc-drift compliance + line counts |
 
 ### 3.1. Bug A — `transactional_db` switch (`5930ee8`)
 
@@ -187,7 +190,7 @@ Fix: switchear a selectores por ID canonicos del template
 (`#profile-cp-current`, `#profile-cp-new`, `#profile-cp-confirm`,
 `#profile-password-submit`).
 
-### 3.8. Resultado final
+### 3.8. Resultado e2e wire-validated
 
 E2E **4/4 PASS** local en Windows (Python 3.12.10 + Django
 5.2.15) en ~13 segundos:
@@ -199,9 +202,49 @@ tests/e2e/test_login_flow.py::test_login_with_wrong_password_stays_on_login[chro
 tests/e2e/test_password_change.py::test_change_password_then_login_with_new_password[chromium] PASSED
 ```
 
-**Mini-roadmap 12/12 wire-validated end-to-end.** El operador
-confirmo el match local en Windows y el CI run del `881b510`
-quedo encolado al cierre del handoff.
+**Mini-roadmap 12/12 wire-validated end-to-end.**
+
+### 3.9. Fase A — audit pre-prod (`5fdc77b`)
+
+Subagente `general-purpose` lanzado al cierre del e2e wire-test,
+leyo los artefactos de compliance/threat-model/handoffs + escaneo
+de masa de codigo. Output completo en
+[`docs/PHASE_A_PREPROD_AUDIT_2026-06-24.md`](PHASE_A_PREPROD_AUDIT_2026-06-24.md).
+Hallazgos clave que enfocan Fases B-D:
+
+- ASVS L2 confirmado: **151 PASS / 0 strict GAP** (no los
+  63/24/5/10 del 06-15 que aun sobreviven en `SECURITY.md`).
+- 3 modulos auth-criticos **sin sweep estructural module-wide**:
+  `services.py` (3793 lineas), `views.py` (1185), `middleware.py`
+  (411) — 5389 lineas combinadas que solo pasaron por
+  ruff/bandit + tests por endpoint.
+- Threat model **gap post 22-jun**: no cubre stacked MFA
+  (TOTP+email), OTel exporter trust, django-silk activation
+  accidental, ni circuit breaker forced-open DoS — todo
+  shipped despues del mapping del 06-16.
+- **No existe `BUILDING_NEW_APP.md`** — gap puro para el
+  claim "template-as-engine".
+- Server `ha-report2` corre `36c4329` del 22-jun — **17
+  commits atras** de `dev` al momento de la auditoria. El
+  claim "production-ready v1.0" tiene que reconciliar esto.
+
+### 3.10. Fase B item #3 — doc-drift compliance (este commit)
+
+Aplicado el quick-win identificado en §4 del audit:
+
+- `docs/SECURITY.md:172`: posture row pasa de
+  `63 PASS / 24 GAP / 5 N\A / 10 DEFERRED → 06-15` a
+  `151 PASS / 0 strict GAP / 9 N\A / 9 DEFERRED → 06-16`
+  (con link al previo como historico).
+- `docs/THREAT_MODEL.md:9`: referencia cruzada actualizada
+  al `2026-06-16` (supersedes 06-15).
+- `AGENTS.md:14`: `Documentation baseline` apunta al 06-16
+  con marker "supersedes 06-15".
+- Handoff 24-jun §7.1: `services.py (2956 lineas)` →
+  `(3793 lineas)`.
+
+Historical handoffs (06-15, 06-16) NO se tocan — son snapshots
+fieles de su momento, perderian valor forense si se reescriben.
 
 ## §4. Decisiones tomadas
 
@@ -359,7 +402,7 @@ Plan propuesto (sujeto a confirmacion del operador, ver §8.2):
   rapida, y un sweep complementario sobre los modulos de auth /
   middleware (cambian poco, son criticos).
 - **Fase C — Code review estructural**: usar `code-review` para
-  smells, dead code, complejidad. Foco en services.py (2956
+  smells, dead code, complejidad. Foco en services.py (3793
   lineas, el modulo mas pesado) y middleware.
 - **Fase D — Operational + onboarding readiness**: revisar
   `OPERATIONS.md`, `THREAT_MODEL.md`, backup/restore scripts;

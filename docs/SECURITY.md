@@ -169,7 +169,7 @@ Before promoting a deploy from `dev` to `staging` / `prod`:
 
 | Standard | Status | Reference |
 | --- | --- | --- |
-| OWASP ASVS 4.0.3 Level 2 | 63 PASS / 24 GAP / 5 N\A / 10 DEFERRED | [`COMPLIANCE_ASVS_L2_2026-06-15.md`](COMPLIANCE_ASVS_L2_2026-06-15.md) |
+| OWASP ASVS 4.0.3 Level 2 | 151 PASS / 0 strict GAP / 9 N\A / 9 DEFERRED (135/149 active = 90.6%) | [`COMPLIANCE_ASVS_L2_2026-06-16.md`](COMPLIANCE_ASVS_L2_2026-06-16.md) (prev: [`2026-06-15`](COMPLIANCE_ASVS_L2_2026-06-15.md)) |
 
 The template targets ASVS L2 as the working bar. The gap analysis above
 maps each unmet control to a roadmap item.
