@@ -465,6 +465,52 @@ end-to-end. Si algun test falla con un selector / expectation
 mal armada, el fix es ajustar el codigo del test — el workflow
 ya está completo.
 
+**Wire test del e2e al cierre — 4 fallas reales identificadas
+(run `28056559098`)**:
+
+Los 3 layers de CI quedaron resueltos: los 4 tests llegaron a
+correr de verdad contra chromium real. Las fallas son del
+*codigo de los tests*, no del workflow. Dos bugs distintos
+para el proximo agente:
+
+**Bug A — Cross-thread DB invisibility** (afecta 3 tests con
+`playwright._impl._errors.TimeoutError: Timeout 30000ms exceeded`
+en `page.wait_for_url(f"{live_url}/")`):
+- Fixture `e2e_admin(db, django_user_model)` en
+  `tests/e2e/conftest.py` usa `db` (savepoint mode —
+  transaccion NO committed).
+- `live_server` (de pytest-django) corre en otro thread con su
+  propia DB connection y NO ve el user creado en el test
+  thread.
+- El form de login devuelve la error generica de Django
+  ("por favor, introduzca un nombre de usuario y clave
+  correctos" — Django default Spanish), no redirect.
+- `wait_for_url("/")` timeout porque nunca llega al dashboard.
+- **Fix**: cambiar fixture a `e2e_admin(transactional_db, ...)`.
+  `live_server` ya usa `transactional_db` como dep — hay que
+  alinear ambas fixtures para que la data sea visible
+  cross-thread.
+
+**Bug B — Assert message mismatch** (afecta solo
+`test_login_with_wrong_password_stays_on_login`):
+- Mi assert busca substrings "credenciales", "incorrect",
+  "invalid", "no podemos", "no pudimos".
+- Django renderiza el mensaje real:
+  **"por favor, introduzca un nombre de usuario y clave
+  correctos. observe que ambos campos pueden ser sensibles a
+  mayusculas."**
+- **Fix**: cambiar assert a `"introduzca un nombre" in body`
+  o similar substring que matchee la copy real de Django.
+
+Path completo del fix (estimado 15-20 min en sesion nueva):
+1. `tests/e2e/conftest.py:e2e_admin` → cambiar `db` por
+   `transactional_db`. Resolveria Bug A para 3 tests.
+2. `tests/e2e/test_login_flow.py:test_login_with_wrong_password_*`
+   → ajustar assert para que matchee "introduzca un nombre".
+   Resolveria Bug B.
+3. Pushear, esperar CI verde, mini-roadmap wire-validated
+   end-to-end.
+
 **El siguiente agente NO debe**:
 - Promote `dev → main` automaticamente. Esperar instruccion
   explicita "milestone" del operador.
