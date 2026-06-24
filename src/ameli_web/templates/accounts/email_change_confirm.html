@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Confirmar cambio de email - {{ app_name }}{% endblock %}
+{% block header_title %}Confirma el cambio de email{% endblock %}
+{% block header_subtitle %}Toca el boton para aplicar el cambio{% endblock %}
+
+{% block content %}
+{% comment %}
+Intersticial POST page (PHASE_B_SECURITY_REVIEW B5). Mail-scanners
+(Microsoft Safe Links, Proofpoint URL Defense, Outlook preview) hacen
+GET automatico a cualquier URL del email — si confirmamos cambios en
+el GET, el scanner gasta el token de single-use ANTES de que el
+usuario llegue. Esta pagina es estatica (GET) y el cambio solo se
+aplica al POST (CSRF-protegido por Django).
+{% endcomment %}
+<section class="panel">
+  <div class="form-card-head">
+    <div class="metric-label">Confirmacion requerida</div>
+    <p class="panel-copy">
+      Para completar el cambio de email a tu nueva direccion, toca
+      el boton siguiente. El enlace caduca tras un uso.
+    </p>
+  </div>
+  <form method="post" class="modal-actions-row">
+    {% csrf_token %}
+    <button class="primary" type="submit">Confirmar cambio de email</button>
+    <a class="icon-action" href="/profile/">Cancelar</a>
+  </form>
+</section>
+{% endblock %}

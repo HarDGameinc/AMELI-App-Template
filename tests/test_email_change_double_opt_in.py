@@ -326,6 +326,13 @@ def test_email_change_confirm_via_get_renders_outcome(client, tester):
     match = re.search(r"/confirm/(\d+)/([^/\s]+)/", confirm_msg.body)
     request_id, token = match.group(1), match.group(2)
 
+    # PHASE_B_SECURITY_REVIEW B5: confirm endpoint is now two-step.
+    # GET renders the intersticial; POST applies the change. Mail
+    # scanners that prefetch only the GET no longer burn the token.
     response = client.get(f"/profile/email-change/confirm/{request_id}/{token}/")
+    assert response.status_code == 200
+    assert b"Confirma el cambio de email" in response.content
+    # The single-use token must STILL be valid — GET did not consume it.
+    response = client.post(f"/profile/email-change/confirm/{request_id}/{token}/")
     assert response.status_code == 200
     assert b"Email actualizado" in response.content

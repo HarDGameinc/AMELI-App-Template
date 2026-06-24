@@ -305,7 +305,11 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
             payload = _json_body(request)
         except ValueError as exc:
             return _json_error(str(exc))
-        request.user.display_name = str(payload.get("display_name") or "").strip()
+        # Length cap mirrors the ``CharField(max_length=80)`` on the User
+        # model. Without it the JSON branch bypassed the form layer's
+        # validation and let arbitrarily large strings hit the ORM —
+        # Postgres rejects with 500, SQLite truncates silently.
+        request.user.display_name = str(payload.get("display_name") or "").strip()[:80]
         theme_preference = str(payload.get("theme_preference") or request.user.theme_preference).strip()
         if theme_preference in {"auto", "light", "dark"}:
             request.user.theme_preference = theme_preference
@@ -1185,12 +1189,32 @@ def email_change_cancel_self_view(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"ok": True, "status": "cancelled"})
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def email_change_confirm_view(request: HttpRequest, request_id: int, token: str) -> HttpResponse:
-    """Public endpoint reached from the new-address email. Confirms the
-    change and renders a friendly outcome page."""
+    """Public endpoint reached from the new-address email.
+
+    Two-step to defeat mail-scanner auto-click (Microsoft Safe Links,
+    Proofpoint URL Defense, Outlook link preview) that would otherwise
+    burn the single-use token before the user clicks: GET renders an
+    intersticial page with a confirm button; POST (CSRF-protected by
+    Django middleware) applies the change. The token + request_id flow
+    through both methods as URL params so the page is self-contained
+    even when reloaded.
+
+    PHASE_B_SECURITY_REVIEW B5.
+    """
     from .services import confirm_email_change
 
+    if request.method == "GET":
+        return render(
+            request,
+            "accounts/email_change_confirm.html",
+            {
+                "request_id": int(request_id),
+                "token": token,
+                "version": __version__,
+            },
+        )
     try:
         result = confirm_email_change(request_id=int(request_id), token_plaintext=token)
     except ValueError as exc:

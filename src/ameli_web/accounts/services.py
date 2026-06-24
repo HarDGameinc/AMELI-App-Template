@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import tempfile
@@ -1719,7 +1720,7 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
     return {"ok": True, "status": "disabled"}
 
 
-def change_email_for_self(actor_username: str, new_email: str) -> dict[str, Any]:
+def change_email_for_self(actor_username: str, new_email: str, *, current_password: str) -> dict[str, Any]:
     """Update the calling user's email.
 
     If the user had email-based MFA enabled, the new address would not be
@@ -1727,10 +1728,20 @@ def change_email_for_self(actor_username: str, new_email: str) -> dict[str, Any]
     old user record but addressed to the new mailbox) so we proactively
     disable the email factor and delete pending challenges. The user keeps
     TOTP and recovery codes if they had any.
+
+    Requires ``current_password`` re-confirmation: a cookie alone must
+    NOT be able to swap the account's email out from under the
+    legitimate user (which would also disable the email MFA factor as
+    a side-effect). The runtime callers go through
+    ``request_email_change`` (double-opt-in flow); this entry point is
+    kept for tests / future admin / CLI surfaces and the password gate
+    is the safety net.
     """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
     normalized = (new_email or "").strip().lower()
     if normalized == (user.email or "").strip().lower():
         return {"ok": True, "status": "unchanged", "email": user.email, "mfa_email_disabled": False}
@@ -3514,7 +3525,12 @@ def _find_email_change_request(*, request_id: int, token_plaintext: str):
     record = EmailChangeRequest.objects.select_related("user").filter(id=request_id).first()
     if record is None:
         return None
-    if record.token_hash != _hash_email_change_token(token_plaintext or ""):
+    # ASVS V2.10 / constant-time hash compare. ``!=`` on Python str is
+    # short-circuit and leaks early-mismatch timing; ``hmac.compare_digest``
+    # is the constant-time primitive used elsewhere in this module
+    # (recovery / email codes) and is the right call here too.
+    expected = _hash_email_change_token(token_plaintext or "")
+    if not hmac.compare_digest(record.token_hash, expected):
         return None
     return record
 
@@ -3665,6 +3681,45 @@ def session_in_sudo(session) -> bool:
     return expires_at > timezone.now()
 
 
+# Sudo brute-force gate: dedicated counter so the sudo failures don't
+# share the login-fail bucket (a noisy login would otherwise lock
+# legit sudo flows). 5 fails / 60s window is conservative — sudo is a
+# re-auth for someone already inside, the keyspace is small (6-digit
+# MFA + password).
+_SUDO_FAIL_SCOPE = "sudo_fail_user"
+_SUDO_FAIL_WINDOW_SECONDS = 60
+_SUDO_FAIL_THRESHOLD = 5
+
+
+def _sudo_throttle_key(user) -> str:
+    return (getattr(user, "username", "") or "").lower()
+
+
+def _check_sudo_throttle(user) -> None:
+    """Raise if the user has burnt through the sudo-fail budget in the
+    current window. Read-only; counter increments happen in
+    ``_record_sudo_failure``."""
+    key = _sudo_throttle_key(user)
+    if not key:
+        return
+    count = _read_throttle_counter(
+        scope=_SUDO_FAIL_SCOPE, key=key, window_seconds=_SUDO_FAIL_WINDOW_SECONDS
+    )
+    if count >= _SUDO_FAIL_THRESHOLD:
+        raise ValueError(
+            "demasiados intentos de sudo. Esperá un minuto y volvé a intentar.",
+        )
+
+
+def _record_sudo_failure(user) -> int:
+    key = _sudo_throttle_key(user)
+    if not key:
+        return 0
+    return _bump_throttle_counter(
+        scope=_SUDO_FAIL_SCOPE, key=key, window_seconds=_SUDO_FAIL_WINDOW_SECONDS
+    )
+
+
 def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
     """Confirm the operator owns the session by re-checking their password
     and (when applicable) a fresh MFA code.
@@ -3680,23 +3735,35 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
 
     Raises :class:`ValueError` with a user-facing message if anything is
     missing or wrong. Returns silently on success.
+
+    PHASE_B_SECURITY_REVIEW B1: a per-user sudo-fail counter
+    (``_SUDO_FAIL_SCOPE``) gates this entry point so an attacker
+    holding a sudo'd cookie cannot enumerate the 6-digit MFA space.
+    Fails inside the window raise a distinct user-facing message and
+    revoke any in-flight sudo grant — the operator has to wait the
+    cooldown.
     """
     if not user or not user.is_authenticated:
         raise ValueError("autenticacion requerida")
-    if not user.check_password(password or ""):
-        raise ValueError("contrasena invalida")
-    if not user.mfa_enabled:
-        return
-    code = (mfa_code or "").strip()
-    if not code:
-        raise ValueError("codigo 2fa requerido")
-    if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
-        return
-    if user.mfa_email_enabled and consume_email_mfa_code(user, code):
-        return
-    if consume_recovery_code(user, code):
-        return
-    raise ValueError("codigo 2fa invalido o expirado")
+    _check_sudo_throttle(user)
+    try:
+        if not user.check_password(password or ""):
+            raise ValueError("contrasena invalida")
+        if not user.mfa_enabled:
+            return
+        code = (mfa_code or "").strip()
+        if not code:
+            raise ValueError("codigo 2fa requerido")
+        if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
+            return
+        if user.mfa_email_enabled and consume_email_mfa_code(user, code):
+            return
+        if consume_recovery_code(user, code):
+            return
+        raise ValueError("codigo 2fa invalido o expirado")
+    except ValueError:
+        _record_sudo_failure(user)
+        raise
 
 
 def send_sudo_email_code(user) -> dict[str, Any]:

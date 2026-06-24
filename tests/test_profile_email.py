@@ -61,7 +61,7 @@ def _extract_code() -> str:
 
 @pytest.mark.django_db
 def test_change_email_persists_normalized_value(public_user):
-    result = change_email_for_self("viewer", "  NEW@Domain.COM  ")
+    result = change_email_for_self("viewer", current_password=USER_PASSWORD, new_email="  NEW@Domain.COM  ")
 
     assert result["ok"] is True
     assert result["status"] == "updated"
@@ -72,7 +72,7 @@ def test_change_email_persists_normalized_value(public_user):
 
 @pytest.mark.django_db
 def test_change_email_to_same_value_is_noop(public_user):
-    result = change_email_for_self("viewer", "viewer@example.com")
+    result = change_email_for_self("viewer", current_password=USER_PASSWORD, new_email="viewer@example.com")
 
     assert result["status"] == "unchanged"
     assert result["mfa_email_disabled"] is False
@@ -86,7 +86,7 @@ def test_change_email_disables_email_mfa_when_active(public_user):
     public_user.refresh_from_db()
     assert public_user.mfa_email_enabled is True
 
-    result = change_email_for_self("viewer", "elsewhere@example.com")
+    result = change_email_for_self("viewer", current_password=USER_PASSWORD, new_email="elsewhere@example.com")
 
     assert result["mfa_email_disabled"] is True
     public_user.refresh_from_db()
@@ -106,7 +106,7 @@ def test_change_email_keeps_totp_active(public_user):
     public_user.refresh_from_db()
     recovery_before = MFARecoveryCode.objects.filter(user=public_user).count()
 
-    result = change_email_for_self("viewer", "elsewhere@example.com")
+    result = change_email_for_self("viewer", current_password=USER_PASSWORD, new_email="elsewhere@example.com")
 
     assert result["mfa_email_disabled"] is True
     public_user.refresh_from_db()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 
 from django.contrib import messages
@@ -8,6 +9,8 @@ from django.shortcuts import redirect
 
 from .permissions import can_access_admin_panel, is_authenticated, is_superadmin
 from .services import record_audit, sync_request_session
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_csp_nonce() -> str:
@@ -321,12 +324,17 @@ class DjangoAdminSudoGateMiddleware:
         if not request.path.startswith(self._PREFIX):
             return self.get_response(request)
         user = getattr(request, "user", None)
-        if not is_superadmin(user):
+        # PHASE_B_SECURITY_REVIEW B7: gate by ``is_staff`` instead of
+        # ``is_superadmin``. The model's ``User.save`` enforces the
+        # lockstep (is_staff is mirrored from role==SUPERADMIN), but a
+        # bypass via ``.update()`` / bulk_create / shell / data
+        # migration could leave a non-superadmin with is_staff=True;
+        # that user would then reach Django's native admin (which gates
+        # by is_staff) without our sudo grant. Use the same predicate
+        # the framework uses so the defenses cannot drift apart.
+        if not getattr(user, "is_authenticated", False) or not getattr(user, "is_staff", False):
             return self.get_response(request)
-        # ``is_superadmin`` returned True ⇒ user is a real authenticated
-        # User row (not None, not AnonymousUser). mypy doesn't see this
-        # narrowing because is_superadmin returns bool, not TypeGuard.
-        assert user is not None  # noqa: S101 - type narrowing after is_superadmin gate
+        assert user is not None  # noqa: S101 - narrowed by is_authenticated above
         from .services import session_in_sudo
 
         if session_in_sudo(request.session):
@@ -375,16 +383,30 @@ class MaintenanceModeMiddleware:
         self.get_response = get_response
 
     def _state(self):
-        # Lazy import + swallow errors so a broken DB / unmigrated
-        # install never bricks the request pipeline. Without this
-        # guard the very first migrate would fail because the
-        # middleware tries to read a table that doesn't exist yet.
+        # Lazy import + narrow exception swallow so an unmigrated install
+        # (first migrate, fresh checkout) doesn't brick the pipeline.
+        # PHASE_B_SECURITY_REVIEW B6: was ``except Exception`` which
+        # fail-opens the read-only gate on ANY transient error (pool
+        # exhaustion, query timeout) — an attacker could induce that
+        # mid-window to bypass the freeze. Now only the schema-not-yet-
+        # there cases swallow silently; any other failure is logged AND
+        # the safe default is to ASSUME maintenance is ACTIVE+read_only,
+        # so a hung DB does not silently open writes.
+        from django.db.utils import OperationalError, ProgrammingError
+
         try:
             from .services import get_maintenance_state
 
             return get_maintenance_state()
-        except Exception:  # noqa: BLE001
+        except ProgrammingError:
+            # Table doesn't exist yet — first migrate or fresh DB.
             return {"active": False, "read_only": True, "message": ""}
+        except OperationalError as exc:
+            # Connection / pool / timeout. Fail closed: presume the
+            # operator intended writes to be paused if the DB cannot
+            # confirm otherwise. Logs surface for ops triage.
+            logger.error("maintenance state query failed (OperationalError): %s", exc)
+            return {"active": True, "read_only": True, "message": "Servicio en mantenimiento."}
 
     def __call__(self, request):
         state = self._state()
