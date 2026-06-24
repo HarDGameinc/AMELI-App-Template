@@ -238,8 +238,6 @@ class MustChangePasswordMiddleware:
     # contains the password change form. Other POSTs (preferences, avatar,
     # MFA, sessions) live under distinct paths and stay closed.
     _ALLOWED_EXACT = {
-        "/profile/",
-        "/profile",
         "/profile/password/",
         "/profile/password",
         "/profile/change-password",
@@ -265,11 +263,13 @@ class MustChangePasswordMiddleware:
                 request,
                 "Debes cambiar tu contrasena antes de continuar usando la aplicacion.",
             )
-            # ``/profile/password/`` is the POST-only submit endpoint; the
-            # form itself lives inside the Security tab of ``/profile/``,
-            # so we send the user there and use the URL fragment to focus
-            # the right tab on arrival.
-            return redirect("/profile/#profile-tab-security")
+            # ``/profile/password/`` renders a standalone password-change
+            # form when ``must_change_password=True`` so the user does
+            # NOT see the rest of the profile (MFA enrolment, sessions,
+            # audit log) until the temp password is rotated. Previously
+            # ``/profile/`` itself was on the allow-list, leaking that
+            # data to anyone holding the temp credentials.
+            return redirect("/profile/password/")
         return self.get_response(request)
 
     @classmethod

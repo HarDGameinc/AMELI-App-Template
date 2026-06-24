@@ -102,13 +102,13 @@ class TemplateLoginView(LoginView):
 
     def get_success_url(self):
         # When the user must change their password (admin-forced reset,
-        # superadmin bootstrap), drop them straight onto the Security tab
-        # of the profile page. The middleware will block any other URL
-        # anyway, but doing the redirect here gives a smoother UX than
-        # making the user land on the General tab and discover the banner.
+        # superadmin bootstrap), drop them on the standalone
+        # ``/profile/password/`` page so the rest of the profile (MFA
+        # enrolment, sessions, audit log) stays hidden until the temp
+        # credential is rotated.
         user = getattr(self.request, "user", None)
         if user is not None and user.is_authenticated and getattr(user, "must_change_password", False):
-            return "/profile/#profile-tab-security"
+            return "/profile/password/"
         return self.get_redirect_url() or "/profile/"
 
     def post(self, request, *args, **kwargs):
@@ -454,12 +454,25 @@ def delete_avatar_view(request: HttpRequest) -> HttpResponse:
 @require_http_methods(["GET", "POST"])
 def change_password_view(request: HttpRequest) -> HttpResponse:
     # ``/profile/password/`` is the submit target of the change form, but
-    # any flow that lands here with a GET (a stale bookmark, a ``?next=``
-    # bounce after login, the must-change-password middleware) deserves
-    # to see the form rather than a bare 405. Send GETs to the profile
-    # page with the Security tab focused so the user can complete the
-    # change.
+    # any flow that lands here with a GET deserves to see the form.
+    # When ``must_change_password=True`` we render a STANDALONE form
+    # template (no other profile data) — the legacy redirect to
+    # ``/profile/#profile-tab-security`` leaked MFA enrolment, session
+    # list, and audit log to anyone holding a temp password from an
+    # admin reset. Users not in the must-change state get the normal
+    # tabbed profile view.
     if request.method == "GET":
+        if getattr(request.user, "must_change_password", False):
+            return render(
+                request,
+                "accounts/force_password_change.html",
+                {
+                    "current_user": serialize_user(request.user),
+                    "password_form": ProfilePasswordForm(request.user),
+                    "csrf_token": get_token(request),
+                    "version": __version__,
+                },
+            )
         return redirect("/profile/#profile-tab-security")
     if _expects_json(request):
         try:
@@ -610,7 +623,12 @@ def admin_session_json(request: HttpRequest) -> JsonResponse:
 @require_POST
 def mfa_start_view(request: HttpRequest) -> JsonResponse:
     try:
-        result = start_mfa_enrollment(request.user.username)
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = start_mfa_enrollment(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
     # Expose the freshly generated QR svg and provisioning URI to the
@@ -696,7 +714,12 @@ def mfa_email_disable_view(request: HttpRequest) -> JsonResponse:
 @require_POST
 def mfa_regenerate_view(request: HttpRequest) -> JsonResponse:
     try:
-        result = regenerate_recovery_codes(request.user.username)
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = regenerate_recovery_codes(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
     request.session.cycle_key()
@@ -707,7 +730,12 @@ def mfa_regenerate_view(request: HttpRequest) -> JsonResponse:
 @require_POST
 def mfa_email_start_view(request: HttpRequest) -> JsonResponse:
     try:
-        result = start_mfa_email_enrollment(request.user.username)
+        payload = _json_body(request)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    current_password = str(payload.get("current_password") or "").strip()
+    try:
+        result = start_mfa_email_enrollment(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
     except Exception as exc:
@@ -876,6 +904,35 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
                     )
         return render(request, "accounts/verify_mfa.html", context)
 
+    # Throttle the MFA verification: an attacker with a leaked password
+    # holds the pending-MFA session and could otherwise brute-force the
+    # 6-digit space (TOTP ~3·10^5 effective with valid_window=1) without
+    # any fail-counter consequence. Same sliding-window infra the
+    # password step uses — failures on either step share the counter.
+    from .services import (
+        AccountLocked,
+        LoginThrottled,
+        check_login_throttle,
+        client_ip,
+        record_login_failure,
+    )
+
+    ip = client_ip(request)
+    try:
+        check_login_throttle(username=user.username, ip=ip)
+    except (LoginThrottled, AccountLocked) as exc:
+        from .services import maybe_permanently_lock
+
+        record_audit(
+            "login_mfa_throttled" if isinstance(exc, LoginThrottled) else "login_mfa_locked_out",
+            target_username=user.username,
+            payload={"ip": ip, "retry_after": exc.retry_after, "method": method},
+        )
+        if isinstance(exc, AccountLocked):
+            maybe_permanently_lock(user.username)
+        context["form_error"] = str(exc)
+        return render(request, "accounts/verify_mfa.html", context, status=429)
+
     candidate = str(request.POST.get("code") or "").strip()
     if not candidate:
         context["form_error"] = "Tipea el codigo o un codigo de recuperacion."
@@ -896,6 +953,7 @@ def verify_mfa_view(request: HttpRequest) -> HttpResponse:
             auth_mode = "recovery"
 
     if not success:
+        record_login_failure(username=user.username, ip=ip)
         record_audit(
             "login_mfa_failed",
             actor=user,

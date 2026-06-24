@@ -224,7 +224,7 @@ def test_enrollment_write_stores_ciphertext_when_key_is_set(settings, fresh_key)
         role=User.ROLE_PUBLIC,
         email="enroll@example.com",
     )
-    result = start_mfa_enrollment(actor_username="enroll-user")
+    result = start_mfa_enrollment(actor_username="enroll-user", current_password="UserPass!12?")
     plaintext = result["secret"]
     user.refresh_from_db()
     # DB column carries ciphertext, NOT plaintext.

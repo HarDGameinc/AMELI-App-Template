@@ -81,7 +81,7 @@ def test_change_email_to_same_value_is_noop(public_user):
 @pytest.mark.django_db
 def test_change_email_disables_email_mfa_when_active(public_user):
     mail.outbox.clear()
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     confirm_mfa_email_enrollment("viewer", _extract_code())
     public_user.refresh_from_db()
     assert public_user.mfa_email_enabled is True
@@ -98,10 +98,10 @@ def test_change_email_disables_email_mfa_when_active(public_user):
 
 @pytest.mark.django_db
 def test_change_email_keeps_totp_active(public_user):
-    start = start_mfa_enrollment("viewer")
+    start = start_mfa_enrollment("viewer", current_password=USER_PASSWORD)
     confirm_mfa_enrollment("viewer", pyotp.TOTP(start["secret"]).now())
     mail.outbox.clear()
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     confirm_mfa_email_enrollment("viewer", _extract_code())
     public_user.refresh_from_db()
     recovery_before = MFARecoveryCode.objects.filter(user=public_user).count()

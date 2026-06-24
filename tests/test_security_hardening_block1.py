@@ -82,11 +82,11 @@ def test_user_with_must_change_password_redirected_from_admin(client, admin_user
     client.force_login(admin_user)
     response = client.get("/admin/")
     assert response.status_code in {301, 302}
-    # We redirect to the profile page (which hosts the change form inside
-    # the Security tab) and not to ``/profile/password/`` — that endpoint
-    # is POST-only and a GET there returns 405.
-    assert response["Location"].startswith("/profile/")
-    assert "/profile/password" not in response["Location"]
+    # Post-hardening (PHASE_B_SECURITY_REVIEW item A4): the redirect lands
+    # on the STANDALONE ``/profile/password/`` page instead of ``/profile/``
+    # so the rest of the profile (MFA enrolment, session list, audit log)
+    # stays hidden until the temp credential is rotated.
+    assert response["Location"] == "/profile/password/"
 
 
 @pytest.mark.django_db
@@ -102,10 +102,12 @@ def test_change_password_get_redirects_to_security_tab(client, tester):
 
 
 @pytest.mark.django_db
-def test_login_with_must_change_password_redirects_to_security_tab(client, tester):
-    """Quick-fix companion to the modal: signing in with the flag set
-    must drop the user directly on the Security tab so the form is
-    visible without an extra click on the tab nav."""
+def test_login_with_must_change_password_redirects_to_standalone_form(client, tester):
+    """Post-hardening (A4): signing in with the flag set drops the user
+    on the STANDALONE ``/profile/password/`` page. The previous flow
+    landed on ``/profile/#profile-tab-security`` which leaked the rest
+    of the profile (MFA enrolment, sessions, audit log) to anyone
+    holding a temp credential issued by an admin reset."""
     tester.must_change_password = True
     tester.save(update_fields=["must_change_password"])
     response = client.post(
@@ -114,7 +116,7 @@ def test_login_with_must_change_password_redirects_to_security_tab(client, teste
         follow=False,
     )
     assert response.status_code in {301, 302}
-    assert response["Location"].endswith("/profile/#profile-tab-security")
+    assert response["Location"].endswith("/profile/password/")
 
 
 @pytest.mark.django_db
@@ -123,8 +125,13 @@ def test_profile_with_must_change_password_renders_blocking_modal(client, tester
     tester.save(update_fields=["must_change_password"])
     client.force_login(tester)
 
-    response = client.get("/profile/")
+    # Post-hardening (A4): GET /profile/ is no longer in the middleware
+    # allow-list while must_change_password is on, so the user is bounced
+    # to /profile/password/. Follow the redirect and assert against the
+    # standalone form body (was previously inline in /profile/'s template).
+    response = client.get("/profile/", follow=True)
     assert response.status_code == 200
+    assert response.redirect_chain[-1][0] == "/profile/password/"
     body = response.content.decode("utf-8")
     # Modal markers must be present, normal profile layout must be gone.
     assert "force-pw-screen" in body
@@ -135,8 +142,7 @@ def test_profile_with_must_change_password_renders_blocking_modal(client, tester
     assert 'method="post"' in body
     assert 'form="force-pw-logout-form"' in body
     # ``profile-tab-general`` is the General tab id used by the regular
-    # profile layout; the force-password branch does NOT render the tab
-    # nav so this id should not appear.
+    # profile layout; the standalone page does NOT render any tab nav.
     assert 'id="profile-tab-general"' not in body
     # The change-password form is still present so the user can act.
     assert 'id="profile-password-form"' in body
@@ -164,10 +170,12 @@ def test_user_with_must_change_password_can_reach_profile_form(client, tester):
     tester.save(update_fields=["must_change_password"])
 
     client.force_login(tester)
-    # ``/profile/`` hosts the change form (Security tab). The middleware
-    # must NOT redirect this path to itself or we get a redirect loop.
-    response = client.get("/profile/")
+    # Post-hardening (A4): GET /profile/ now bounces to /profile/password/
+    # (the standalone form). The user MUST still be able to reach the
+    # form without an infinite redirect loop.
+    response = client.get("/profile/password/")
     assert response.status_code == 200
+    assert 'id="profile-password-form"' in response.content.decode("utf-8")
 
 
 @pytest.mark.django_db
@@ -177,11 +185,11 @@ def test_user_with_must_change_password_is_blocked_from_preferences(client, test
 
     client.force_login(tester)
     # A sensitive POST (preferences edit) must still be intercepted and
-    # sent back to the change-password form.
+    # sent back to the change-password form. Post-hardening (A4) the
+    # destination is the standalone ``/profile/password/`` page.
     response = client.post("/profile/preferences/", data={"display_name": "x"})
     assert response.status_code in {301, 302}
-    assert response["Location"].startswith("/profile/")
-    assert "profile-tab-security" in response["Location"]
+    assert response["Location"] == "/profile/password/"
 
 
 @pytest.mark.django_db

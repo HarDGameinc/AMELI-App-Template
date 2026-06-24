@@ -67,16 +67,16 @@ def _age_last_challenge(user, *, minutes: int = 2) -> None:
     challenge.save(update_fields=["created_at"])
 
 
-def _enroll_totp(username: str) -> str:
-    start = start_mfa_enrollment(username)
+def _enroll_totp(username: str, password: str = USER_PASSWORD) -> str:
+    start = start_mfa_enrollment(username, current_password=password)
     code = pyotp.TOTP(start["secret"]).now()
     confirm_mfa_enrollment(username, code)
     return start["secret"]
 
 
-def _enroll_email(user) -> None:
+def _enroll_email(user, password: str = USER_PASSWORD) -> None:
     mail.outbox.clear()
-    start_mfa_email_enrollment(user.username)
+    start_mfa_email_enrollment(user.username, current_password=password)
     code = _extract_code_from_outbox()
     confirm_mfa_email_enrollment(user.username, code)
     _age_last_challenge(user)

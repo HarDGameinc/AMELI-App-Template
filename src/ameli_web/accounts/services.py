@@ -1566,16 +1566,23 @@ def serialize_mfa_status(user) -> dict[str, Any]:
     }
 
 
-def start_mfa_enrollment(actor_username: str) -> dict[str, Any]:
+def start_mfa_enrollment(actor_username: str, *, current_password: str) -> dict[str, Any]:
     """Generate a fresh TOTP secret for the user and return enrollment data.
 
     Any existing pending TOTP enrollment is overwritten. Existing email
     enrollment is preserved (stacked methods may coexist). Re-enrolling
     a method that is already enabled requires disabling it first.
+
+    Requires the caller to re-confirm ``current_password``: a stolen
+    session cookie alone must not be able to provision a fresh TOTP
+    secret on the victim's account (and effectively become their
+    second factor). Same pattern as ``disable_mfa_for_self``.
     """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
     if user.mfa_totp_enabled:
         raise ValueError("totp mfa is already enabled; disable it before re-enrolling")
     secret = mfa.generate_secret()
@@ -2176,16 +2183,22 @@ def consume_email_mfa_code(user, candidate: str) -> bool:
     return True
 
 
-def start_mfa_email_enrollment(actor_username: str) -> dict[str, Any]:
+def start_mfa_email_enrollment(actor_username: str, *, current_password: str) -> dict[str, Any]:
     """Begin the email-based MFA enrollment for the calling user.
 
     Coexists with TOTP — the user's mfa_secret is left untouched so a
     user may stack both methods. Already-enrolled email users have to
     disable email first to re-enroll.
+
+    Requires the caller to re-confirm ``current_password``: a stolen
+    session cookie alone must not be able to start email MFA enrollment
+    on the victim's account. Same pattern as ``disable_mfa_for_self``.
     """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
     if user.mfa_email_enabled:
         raise ValueError("email mfa is already enabled; disable it before re-enrolling")
     if not user.email:
@@ -2254,16 +2267,23 @@ def send_mfa_email_login_code(user) -> dict[str, Any]:
     return result
 
 
-def regenerate_recovery_codes(actor_username: str) -> dict[str, Any]:
+def regenerate_recovery_codes(actor_username: str, *, current_password: str) -> dict[str, Any]:
     """Invalidate every existing recovery code and emit 10 fresh ones.
 
     The plaintext codes are returned once for the user to copy down; only
     the hashes are persisted. Requires MFA to be already enabled — there
     is no point regenerating codes that protect nothing.
+
+    Requires the caller to re-confirm ``current_password``: a stolen
+    session cookie alone must not be able to mint a fresh set of
+    recovery codes (which would become a permanent MFA backdoor — the
+    codes do not expire). Same pattern as ``disable_mfa_for_self``.
     """
     user = User.objects.filter(username__iexact=actor_username).first()
     if user is None:
         raise ValueError("user not found")
+    if not current_password or not user.check_password(current_password):
+        raise ValueError("current password is invalid")
     if not user.mfa_enabled:
         raise ValueError("mfa is not enabled; activate 2fa before regenerating recovery codes")
     MFARecoveryCode.objects.filter(user=user).delete()

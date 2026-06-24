@@ -37,7 +37,7 @@ def admin_and_tester(db):
 
 @pytest.fixture()
 def tester_with_mfa(admin_and_tester):
-    start = start_mfa_enrollment("tester")
+    start = start_mfa_enrollment("tester", current_password=TESTER_PASSWORD)
     code = pyotp.TOTP(start["secret"]).now()
     confirm_mfa_enrollment("tester", code)
     return User.objects.get(username="tester")

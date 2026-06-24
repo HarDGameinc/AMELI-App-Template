@@ -690,10 +690,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const emailVerifyFeedback = document.getElementById("profile-mfa-email-verify-feedback");
 
   activateBtn?.addEventListener("click", async () => {
+    // Cookie-thief hardening (PHASE_B Bloque A1): the backend now
+    // requires the current password to provision a fresh TOTP secret
+    // so a stolen session alone cannot enroll the attacker's
+    // authenticator on the victim's account.
+    const currentPassword = window.prompt("Confirma tu contrasena actual para activar 2FA:");
+    if (currentPassword === null || currentPassword === "") return;
     activateBtn.disabled = true;
     if (activateFeedback) activateFeedback.textContent = "Generando codigo QR...";
     try {
-      const data = await postJson("{% url 'accounts:profile-mfa-start' %}");
+      const data = await postJson(
+        "{% url 'accounts:profile-mfa-start' %}",
+        { current_password: currentPassword },
+      );
       if (qrSlot) qrSlot.innerHTML = window.ameliTrusted.createHTML(data.qr_svg || "");
       if (secretText) secretText.textContent = data.secret || "-";
       if (codeInput) codeInput.value = "";
@@ -848,10 +857,16 @@ document.addEventListener("DOMContentLoaded", () => {
     "{% url 'accounts:profile-mfa-email-disable' %}", "Email");
 
   emailActivateBtn?.addEventListener("click", async () => {
+    // Cookie-thief hardening (PHASE_B Bloque A2): re-auth required.
+    const currentPassword = window.prompt("Confirma tu contrasena actual para activar MFA por email:");
+    if (currentPassword === null || currentPassword === "") return;
     emailActivateBtn.disabled = true;
     if (activateFeedback) activateFeedback.textContent = "Enviando codigo...";
     try {
-      await postJson("{% url 'accounts:profile-mfa-email-start' %}");
+      await postJson(
+        "{% url 'accounts:profile-mfa-email-start' %}",
+        { current_password: currentPassword },
+      );
       if (emailCodeInput) emailCodeInput.value = "";
       if (emailVerifyFeedback) emailVerifyFeedback.textContent = "";
       if (activateFeedback) activateFeedback.textContent = "";
@@ -890,9 +905,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirm("Confirmas regenerar tus codigos de recuperacion? Todos los codigos actuales dejaran de funcionar.")) {
       return;
     }
+    // Cookie-thief hardening (PHASE_B Bloque A1): re-auth required so
+    // a stolen session alone cannot mint a fresh set of recovery
+    // codes — which would be a permanent MFA backdoor since the codes
+    // don't expire.
+    const currentPassword = window.prompt("Confirma tu contrasena actual para regenerar los codigos:");
+    if (currentPassword === null || currentPassword === "") return;
     regenerateBtn.disabled = true;
     try {
-      const data = await postJson("{% url 'accounts:profile-mfa-regenerate' %}");
+      const data = await postJson(
+        "{% url 'accounts:profile-mfa-regenerate' %}",
+        { current_password: currentPassword },
+      );
       if (recoveryList && Array.isArray(data.recovery_codes)) {
         recoveryList.replaceChildren();
         data.recovery_codes.forEach((codeValue) => {
