@@ -38,16 +38,24 @@ user" no leakea data de user — degrade a MED.
 
 ## Triage de fixes pre-v1.0
 
-### Bloque A — HIGH confirmados (must fix antes de prod)
+### Bloque A — HIGH confirmados (CERRADO en `a1e2626`)
 
-| ID | Modulo:linea | Patron | Fix | Costo |
+| ID | Modulo:linea | Patron | Fix aplicado | Status |
 |---|---|---|---|---|
-| **A1** | `views.py:697` `mfa_regenerate_view` | `@login_required + @require_POST` solo | Aceptar payload `current_password` + `user.check_password` antes de `regenerate_recovery_codes` (mismo patron que `mfa_disable_view:649-660`) | 5 min |
-| **A2** | `views.py:611` `mfa_start_view` + `views.py:708` `mfa_email_start_view` | Idem | Idem | 10 min |
-| **A3** | `views.py:879-906` `verify_mfa_view` POST handler | sin throttle / sin counter | Llamar a `check_login_throttle(username=user.username, ip=ip)` antes y `record_login_failure(username=user.username, ip=ip)` al fallar. Reusa la infraestructura existente | 15 min |
-| **A4** | `middleware.py:240-251` `MustChangePassword._ALLOWED_EXACT` | `/profile/` exempto entero | Restringir a `/profile/password/` + crear pagina standalone para el form mientras `must_change_password=True`. O al minimo: render condicional de tabs en `profile.html` que esconda MFA / sessions / audit cuando flag activo | 30 min |
+| **A1** | `services.py:2270` `regenerate_recovery_codes` + `views.py:705` | kwarg `current_password` requerido + view parsea JSON body | Hecho | ✓ |
+| **A2** | `services.py:1569` `start_mfa_enrollment` + `services.py:2186` `start_mfa_email_enrollment` | Idem A1 | Hecho | ✓ |
+| **A3** | `views.py:894-927` `verify_mfa_view` POST handler | `check_login_throttle` + `record_login_failure` con sliding-window de login | Hecho | ✓ |
+| **A4** | `middleware.py:240-251` `MustChangePassword._ALLOWED_EXACT` | `/profile/` removido del allow-list, redirige a `/profile/password/` standalone (nuevo template `accounts/force_password_change.html` + GET branch en `change_password_view`) | Hecho | ✓ |
 
-**Subtotal Bloque A**: ~60 min.
+**Resultado**: 1017 tests pass (1004 anteriores + 13 nuevos de
+regresion en `tests/test_cookie_thief_hardening.py`). Ruff clean.
+Sin migracion. Sin schema change. Frontend actualizado:
+`profile.html` ahora hace `window.prompt()` del password antes
+de los 3 endpoints MFA mutating.
+
+Cambios en JS UX: usa `window.prompt()` como MVP — un input
+inline tipo `mfa_disable` quedaria mas profesional. Followup
+opcional (no bloquea).
 
 ### Bloque B — MED relevantes (mismo sweep si presupuesto alcanza)
 
