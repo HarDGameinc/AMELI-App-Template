@@ -71,11 +71,14 @@ def test_login_with_email_mfa_reaches_dashboard(
     page.fill('input[name="code"]', code)
     page.click('button[type="submit"]')
 
-    # Step 6 — should be on the dashboard now
-    page.wait_for_url(f"{live_url}/")
+    # Step 6 — should land on the post-login page. Django's
+    # LOGIN_REDIRECT_URL = "/profile/" (settings.py) sends every
+    # successful login to the profile page; the dashboard at "/"
+    # is reachable but not the redirect target.
+    page.wait_for_url(re.compile(rf"{re.escape(live_url)}/profile/.*"))
     body = page.locator("body").inner_text()
-    # Dashboard shows "Hola, <user>" in the hero
-    assert "e2e-admin" in body.lower() or "hola" in body.lower()
+    # Profile page always renders the username in the page header.
+    assert "e2e-admin" in body.lower()
 
 
 def test_login_with_wrong_password_stays_on_login(page, live_url, e2e_admin):

@@ -21,12 +21,13 @@ pytestmark = pytest.mark.django_db
 def _login_no_mfa(page, live_url, user):
     """Tests in this file don't care about MFA; jump straight to
     the authenticated state by logging in as a user without MFA
-    enrolled."""
+    enrolled. Django's LOGIN_REDIRECT_URL = "/profile/" so the
+    post-login URL is the profile page, not the dashboard root."""
     page.goto(f"{live_url}/login/")
     page.fill('input[name="username"]', user.username)
     page.fill('input[name="password"]', "E2eAdminPass!12?Stable")
     page.click('button[type="submit"]')
-    page.wait_for_url(f"{live_url}/")
+    page.wait_for_url(re.compile(rf"{re.escape(live_url)}/profile/.*"))
 
 
 def _make_test_png(tmp_path: Path) -> Path:

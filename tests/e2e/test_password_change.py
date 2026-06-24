@@ -15,17 +15,21 @@ e2e wires them together.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 pytestmark = pytest.mark.django_db
 
 
 def _login_no_mfa(page, live_url, username, password):
+    # LOGIN_REDIRECT_URL = "/profile/" — post-login lands on
+    # the profile page, not the dashboard root.
     page.goto(f"{live_url}/login/")
     page.fill('input[name="username"]', username)
     page.fill('input[name="password"]', password)
     page.click('button[type="submit"]')
-    page.wait_for_url(f"{live_url}/")
+    page.wait_for_url(re.compile(rf"{re.escape(live_url)}/profile/.*"))
 
 
 def test_change_password_then_login_with_new_password(
@@ -68,8 +72,7 @@ def test_change_password_then_login_with_new_password(
     page.fill('input[name="password"]', new_password)
     page.click('button[type="submit"]')
     page.wait_for_load_state("networkidle")
-    # Lands either on dashboard (no MFA enrolled) or on verify-mfa
-    # (if the test setup gave the user MFA). e2e_admin has no MFA
-    # so dashboard is expected.
-    assert page.url.rstrip("/") in (live_url.rstrip("/"), f"{live_url}/"), \
-        f"expected dashboard, landed at {page.url}"
+    # Lands on /profile/ (LOGIN_REDIRECT_URL) since e2e_admin has
+    # no MFA enrolled. If MFA were on, it would be /login/verify-mfa/.
+    assert "/profile" in page.url, \
+        f"expected /profile/ post-login, landed at {page.url}"
