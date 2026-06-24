@@ -44,13 +44,16 @@ def test_change_password_then_login_with_new_password(
     page.goto(f"{live_url}/profile/#profile-tab-security")
     page.wait_for_load_state("networkidle")
 
-    # Change-password form is inside the security tab
-    page.fill('input[name="current_password"]', old_password)
-    page.fill('input[name="new_password1"]', new_password)
-    page.fill('input[name="new_password2"]', new_password)
-    page.locator(
-        'form[action*="password"] button[type="submit"]'
-    ).first.click()
+    # Change-password form is inside the security tab. The form
+    # is hijacked by inline JS (profile.html ~line 588) that reads
+    # the inputs by ID and POSTs JSON via fetch, so name= selectors
+    # would miss the ID-keyed read. ``current_password`` as a name
+    # collides with an unrelated input in the email-change form
+    # (profile.html:503) — use IDs to disambiguate.
+    page.fill('input#profile-cp-current', old_password)
+    page.fill('input#profile-cp-new', new_password)
+    page.fill('input#profile-cp-confirm', new_password)
+    page.locator('button#profile-password-submit').click()
     page.wait_for_load_state("networkidle")
 
     # Django auth flow may force a re-login after password change;
