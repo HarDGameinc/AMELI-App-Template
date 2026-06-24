@@ -57,19 +57,27 @@ Cambios en JS UX: usa `window.prompt()` como MVP — un input
 inline tipo `mfa_disable` quedaria mas profesional. Followup
 opcional (no bloquea).
 
-### Bloque B — MED relevantes (mismo sweep si presupuesto alcanza)
+### Bloque B — MED-priority (CERRADO en `4a131d3`)
 
-| ID | Modulo:linea | Patron | Fix | Costo |
-|---|---|---|---|---|
-| **B1** | `services.py:3666-3679` `verify_sudo_credentials` | sin throttle en sudo | Counter dedicado (`scope="sudo_fail_user"`, cap 5/60s) que revoca sudo + force re-login | 15 min |
-| **B2** | `services.py:3493-3499` `_find_email_change_request` | `!=` en lugar de `compare_digest` | `hmac.compare_digest(record.token_hash, _hash_email_change_token(...))` | 2 min |
-| **B3** | `services.py:1715-1754` `change_email_for_self` | dead code sin password ni doble-opt-in | Eliminar funcion completa (grep confirma 0 callers) | 5 min |
-| **B4** | `views.py:303-319` `update_preferences` JSON branch | `display_name` sin length cap | Slice `[:80]` o `full_clean()` antes del `save` | 5 min |
-| **B5** | `views.py:1130-1154` `email_change_confirm_view` | GET-driven mutation (mail-scanner auto-click) | Convertir a interstitial: GET muestra form, POST confirma | 20 min |
-| **B6** | `middleware.py:382-387` `MaintenanceModeMiddleware._state` | `except Exception` fail-opens | Capturar solo `OperationalError`/`ProgrammingError` durante migracion; logging + audit en catch generico | 10 min |
-| **B7** | `middleware.py:320-344` `DjangoAdminSudoGate` | skip si `is_staff=True` AND `role != SUPERADMIN` | Gate por `user.is_staff` (mas seguro) o documentar+assertear el invariante de `User.save` | 10 min |
+| ID | Modulo:linea | Fix aplicado | Status |
+|---|---|---|---|
+| **B1** | `services.py:verify_sudo_credentials` | Counter dedicado `_SUDO_FAIL_SCOPE` (5/60s) via `_bump_throttle_counter` existente; try/except bumpea en cualquier ValueError | ✓ |
+| **B2** | `services.py:_find_email_change_request` | `hmac.compare_digest` swap; `import hmac` agregado | ✓ |
+| **B3** | `services.py:change_email_for_self` | `current_password` kwarg requerido (dead code en views pero tests viven; cierra riesgo de futuro cableado) | ✓ |
+| **B4** | `views.py:update_preferences` JSON branch | Slice `[:80]` mirror del CharField max_length | ✓ |
+| **B5** | `views.py:email_change_confirm_view` + nuevo template `email_change_confirm.html` | Two-step: GET renderiza interstitial con form POST + CSRF; POST aplica. Defiende contra mail-scanner auto-click | ✓ |
+| **B6** | `middleware.py:MaintenanceModeMiddleware._state` | Solo `ProgrammingError` swallow (tabla no existe); `OperationalError` ahora FAILS CLOSED con audit log | ✓ |
+| **B7** | `middleware.py:DjangoAdminSudoGate` | Gate por `is_staff` (defensa alineada al predicado de Django nativo) | ✓ |
 
-**Subtotal Bloque B**: ~70 min.
+**Resultado**: 10 regression tests nuevos en
+`tests/test_phase_b_hardening.py` + 5 tests existentes actualizados
+al flow nuevo (4 en `test_profile_email.py`, 1 en
+`test_email_change_double_opt_in.py`). 1027 tests pass + ruff
+clean. Sin migracion, sin schema change.
+
+B2 NO tiene unit test dedicado — el timing-side-channel es dificil
+de assertear deterministicamente. La proteccion se verifica por
+diff review de `services.py:_find_email_change_request`.
 
 ### Bloque C — LOW / followups (cuando se quiera)
 

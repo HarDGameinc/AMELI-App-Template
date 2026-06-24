@@ -77,6 +77,8 @@ Cosmetico opcional al cierre:
 | 10 | `0b0eb3b` | Fase B item #3: reconciliar doc-drift compliance + line counts |
 | 11 | `68e3acd` | Fase B item #1 (audit): doc `PHASE_B_SECURITY_REVIEW_2026-06-24.md` con 3 sweeps |
 | 12 | `a1e2626` | Fase B Bloque A: cookie-thief hardening (4 HIGHs cerrados) |
+| 13 | `945066e` | doc updates post-Bloque A |
+| 14 | `4a131d3` | Fase B Bloque B: MED-priority hardening (7 MEDs cerrados) |
 
 ### 3.1. Bug A — `transactional_db` switch (`5930ee8`)
 
@@ -283,7 +285,7 @@ fieles de su momento, perderian valor forense si se reescriben.
 
 | Indicador | Valor |
 |---|---|
-| Unit tests | **1017 pass** (1004 + 13 nuevos en `test_cookie_thief_hardening.py`) |
+| Unit tests | **1027 pass** (1004 + 13 cookie-thief A1-A4 + 10 phase-b B1-B7) |
 | E2E tests | **4/4 PASS** (local Windows 3.12.10 + Django 5.2.15) |
 | Coverage | 85% (floor pinned) |
 | Ruff | clean local |
