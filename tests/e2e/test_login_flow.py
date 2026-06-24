@@ -86,8 +86,14 @@ def test_login_with_wrong_password_stays_on_login(page, live_url, e2e_admin):
 
     # Should NOT redirect — the login view re-renders with an error.
     # Generic message so we don't leak whether the user exists.
+    # Django's default Spanish translation reads:
+    # "por favor, introduzca un nombre de usuario y clave correctos.
+    #  observe que ambos campos pueden ser sensibles a mayusculas."
+    # Match the unique substring "introduzca un nombre" rather than
+    # speculative custom copy (the earlier assert hardcoded our own
+    # guesses that never matched Django's stock string).
     page.wait_for_load_state("networkidle")
     assert "/login" in page.url
     body = page.locator("body").inner_text().lower()
-    assert "credenciales" in body or "incorrect" in body or "invalid" in body \
-        or "no podemos" in body or "no pudimos" in body
+    assert "introduzca un nombre" in body or "introduzca un usuario" in body, \
+        f"expected Django auth-error copy in body, got: {body[:200]!r}"

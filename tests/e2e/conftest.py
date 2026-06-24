@@ -67,12 +67,22 @@ def live_url(live_server) -> str:
 
 
 @pytest.fixture()
-def e2e_admin(db, django_user_model):
+def e2e_admin(transactional_db, django_user_model):
     """Fresh superadmin user with a known password and no MFA.
 
     Each test gets its own user row, isolated from siblings. The
     password is long enough to satisfy the ASVS policy and stable
     enough that the test can re-type it on a re-auth screen.
+
+    Uses ``transactional_db`` (not ``db``) because ``live_server``
+    runs the Django app in a SEPARATE THREAD with its own connection.
+    The savepoint-mode ``db`` fixture wraps the test in an uncommitted
+    transaction → the user row is invisible to that thread → the
+    login form rejects every credential → tests time out waiting for
+    a dashboard navigation that never happens. ``transactional_db``
+    truncates instead of rolling back, so committed rows are visible
+    cross-thread. Surfaced 2026-06-23 e2e wire test (run
+    ``28056559098``).
     """
     user = django_user_model.objects.create_user(
         username="e2e-admin",
