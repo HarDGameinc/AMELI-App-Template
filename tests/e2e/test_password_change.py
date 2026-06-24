@@ -55,8 +55,12 @@ def test_change_password_then_login_with_new_password(
 
     # Django auth flow may force a re-login after password change;
     # either way the OLD password should no longer work.
-    # Navigate to logout to ensure a clean slate.
-    page.goto(f"{live_url}/logout/")
+    # Logout to ensure a clean slate. ``logout_view`` is
+    # ``@require_POST`` (accounts/views.py:175) — a GET returns 405
+    # and leaves the session intact, so we submit the canonical
+    # logout form (base.html: ``form.menu-logout-form``) via JS to
+    # POST with the CSRF token already on the page.
+    page.evaluate("document.querySelector('form.menu-logout-form').submit()")
     page.wait_for_load_state("networkidle")
 
     # Attempt login with the OLD password — should fail

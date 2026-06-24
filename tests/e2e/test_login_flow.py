@@ -26,12 +26,20 @@ pytestmark = pytest.mark.django_db
 
 
 def _enrol_email_mfa(user):
-    """Enable email MFA on the user the cheapest way — set the flag
+    """Enable email MFA on the user the cheapest way — set the flags
     directly. Avoids running the full /profile/mfa-email-start →
     confirm round-trip which has its own dedicated unit tests.
+
+    Mirrors ``confirm_mfa_email_enrollment`` in
+    ``accounts/services.py`` (lines ~2213-2216): the master
+    ``mfa_enabled`` flag is what ``LoginView.form_valid`` checks
+    (views.py:159) to gate the MFA verify step. Setting only
+    ``mfa_email_enabled`` leaves ``mfa_enabled=False`` and the login
+    flow bypasses MFA entirely.
     """
     user.mfa_email_enabled = True
-    user.save(update_fields=["mfa_email_enabled"])
+    user.mfa_enabled = True
+    user.save(update_fields=["mfa_email_enabled", "mfa_enabled"])
 
 
 def _extract_code_from_email(email_message) -> str:
