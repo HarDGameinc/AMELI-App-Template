@@ -1,134 +1,225 @@
-# AMELI App Template: canonical handoff
+# AMELI App Template — canonical handoff
 
-## Reading order for any new session
+## Reading order (LLM sessions)
 
-1. This file (`AGENTS.md`) — purpose, architecture, policies.
-2. [`docs/HANDOFF_TEMPLATE.md`](docs/HANDOFF_TEMPLATE.md) — the
-   canonical structure every session handoff follows + the skills
-   playbook (S-01 to S-08) for reusable plays.
-3. The most recent `docs/CLAUDE_HANDOFF_YYYY-MM-DD_*.md` — the
-   session-specific context the next session continues from.
-4. [`docs/SECURITY.md`](docs/SECURITY.md) +
-   [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — security
-   posture and STRIDE-style trust boundaries.
-5. [`docs/COMPLIANCE_ASVS_L2_2026-06-16.md`](docs/COMPLIANCE_ASVS_L2_2026-06-16.md)
-   — current ASVS L2 mapping (151 PASS, 0 strict GAP, supersedes
-   the [`2026-06-15`](docs/COMPLIANCE_ASVS_L2_2026-06-15.md)
-   snapshot which the early handoffs reference).
-
-When the new session is by an LLM agent, also read `CLAUDE.md` for
-the per-project instruction overrides.
+1. **`AGENTS.md`** — this file: purpose, architecture, policies.
+2. **`docs/HANDOFF_TEMPLATE.md`** — handoff structure + skills playbook (S-01 to S-08).
+3. **Most recent `docs/CLAUDE_HANDOFF_YYYY-MM-DD_*.md`** — session context to continue from.
+4. **`docs/SECURITY.md`** + **`docs/THREAT_MODEL.md`** — security posture and STRIDE trust boundaries.
+5. **`docs/COMPLIANCE_ASVS_L2_2026-06-16.md`** — current ASVS L2 mapping (151 PASS, 0 strict GAP).
+6. **`CLAUDE.md`** — per-project instruction overrides for LLM agents.
 
 ## Purpose
 
-This repository is the canonical Django-first template for AMELI applications
-that will be exposed to real users on the internet or on internal operational
-networks.
+Official **Django-first template** for AMELI applications exposed to real users (internet or internal operational networks). Provides auth, MFA, profile, admin panel, audit log, and deployment tooling out of the box.
 
-## Database policy
+## Architecture
 
-- Official database standard: `PostgreSQL`
-- Local convenience fallback only: `SQLite`
-- Any real deployment, staging or QA environment should be planned around
-  `DATABASE_URL` and PostgreSQL from the beginning.
+```
+src/ameli_app/          # Runtime, CLI, workers, static assets, config helpers
+  config.py             # YAML-based app config loader
+  cli.py                # ameli-app CLI entry point
+  api.py                # Django ASGI launcher (Uvicorn)
+  web.py                # Alternate web launcher
+  database.py           # DB helpers
+  password_policy.py    # Server-side policy validation
+  workers/              # Background workers (capture, notify, maintenance)
+  static/               # CSS (app.css), JS (app.js)
 
-## Official architecture
+src/ameli_web/          # Django web layer
+  settings.py           # Django settings (746 lines — target for splitting)
+  urls.py               # URL configuration
+  asgi.py / wsgi.py     # ASGI/WSGI entry points
+  accounts/             # Auth, MFA, profile, sessions, password reset
+    models.py           # User, UserSession, MFARecoveryCode, MFAEmailChallenge,
+                        # EmailChangeRequest, ThrottleCounter, OutboundEmail,
+                        # MaintenanceMode
+    services.py         # Business logic (3793 lines — target for splitting)
+    views.py            # View functions (1267 lines — target for splitting)
+    mfa.py              # MFA secret encryption/decryption, QR code render
+    forms.py            # Django forms
+    validators.py       # Password policy validators
+    middleware.py        # Auth middleware (433 lines)
+    context_processors.py
+    templatetags/sri.py # Subresource Integrity tag
+  audit/                # Hash-chained audit log
+    models.py           # AuditEvent with prev_hmac/hmac chain
+  dashboard/            # Home, health, docs, redoc views
+  admin_views.py        # Admin panel views
+  error_views.py        # 400/403/404/500 handlers
 
-- `src/ameli_app/`
-  - config
-  - database helpers
-  - CLI
-  - workers
-  - version helpers
-  - static assets reusable across new apps
-- `src/ameli_web/`
-  - Django settings, urls and ASGI
-  - auth, sessions, profile, admin and audit
-  - dashboard shell
-  - `/docs`, `/redoc`, `/openapi.json`
-- `manage.py`
-  - Django management entrypoint
+manage.py               # Django management entrypoint (autodiscover config)
+```
 
-## Official runtime
+## Runtime
 
-- Official web runtime: Django ASGI via `python -m ameli_app.api`
-- Alternate launcher: `python -m ameli_app.web`
-- The template no longer depends on a FastAPI runtime layer.
+- **Web:** Django ASGI via `python -m ameli_app.api` (Uvicorn)
+- **Alternate:** `python -m ameli_app.web`
+- **Database:** PostgreSQL (production) / SQLite (local dev)
+- **No FastAPI dependency.**
 
-## Minimum public routes
+## Public routes
 
-- `/`
-- `/login`
-- `/logout`
-- `/profile`
-- `/admin`
-- `/health`
-- `/api/health`
-- `/docs`
-- `/redoc`
-- `/openapi.json`
+| Route | Description | Auth |
+|-------|-------------|------|
+| `/` | Dashboard home | Optional |
+| `/login` | Login | None |
+| `/logout` | Logout | Session |
+| `/profile` | User profile (tabs: general, security, sessions) | Required |
+| `/profile/email-change/*` | Double-opt-in email change flow | Required |
+| `/admin` | Admin console (users, audit, sessions, maintenance) | Superadmin |
+| `/health` | Health endpoint (JSON) | None |
+| `/api/health` | API health (JSON) | None |
+| `/docs` | Swagger UI | Configurable |
+| `/redoc` | ReDoc | Configurable |
+| `/openapi.json` | OpenAPI schema | None |
 
-## User model and security baseline
+## Security model
 
-- Roles:
-  - `superadmin`
-  - `public`
-- Sessions are persisted in DB.
-- Audit events are stored in DB.
-- Password policy:
-  - minimum 12 characters
-  - at least 1 uppercase
-  - at least 1 lowercase
-  - at least 1 number
-  - at least 1 allowed symbol from `! @ # $ % ^ & * ( ) - _ = + ?`
-- Superadmin bootstrap supports forced password change at first login.
+### Authentication
+- **Password policy:** 12+ chars, ≥1 upper, ≥1 lower, ≥1 digit, ≥1 symbol from `!@#$%^&*()-_=+?`
+- **MFA:** TOTP (app) + email (simultaneous enrollment supported)
+- **Recovery codes:** Generated on MFA enrollment, one-time use
+- **Throttling:** Atomic `ThrottleCounter` with `select_for_update()` — prevents TOCTOU
+- **Hard lock:** After repeated lockout windows (no time-based unlock)
+- **Session management:** DB-persisted, revocable, absolute ceiling timeout
+- **Cookie-thief hardening:** Password required for MFA enrollment/disabling/regeneration
 
-## CLI baseline
+### Authorization
+- Roles: `superadmin` (full access) / `public` (self-service only)
+- Admin requires sudo prompt for sensitive actions (with MFA support)
 
-- `ameli-app version`
-- `ameli-app config-check`
-- `ameli-app db-status`
-- `ameli-app bootstrap-admin`
-- `ameli-app create-user`
-- `ameli-app list-users`
-- `ameli-app worker-once`
-- `ameli-app notify-once`
-- `ameli-app maintenance`
+### Frontend security
+- **CSP:** Per-request nonces on all inline `<script>` tags
+- **Trusted Types:** `ameli-template` policy enforced via CSP header
+- **SRI:** `{% sri_for %}` computes SHA-384 hashes for own static assets
+- **Honeypot:** Hidden field in login form traps bots
+- **CSRF:** `x-csrf-token` header on all state-changing requests
+- **AV scan:** Avatar uploads scanned before storage
 
-## Install/update expectations
+### Audit
+- `AuditEvent` table with hash chain (`prev_hmac` / `hmac`) for tamper detection
+- Auth failure alerts with configurable cooldown
+- Email change alerts sent to old address
 
-- `scripts/install.sh`
-  - creates venv
-  - installs deps
-  - runs `manage.py migrate`
-  - runs `manage.py check`
-  - optionally bootstraps superadmin
-- `scripts/update.sh`
-  - refreshes code
-  - reinstalls deps
-  - reruns migrations/checks
-- `scripts/validate_installation.sh`
-  - validates CLI and Django health basics
-  - assumes a real install should have PostgreSQL configured
+## CLI commands
 
-## Source-of-truth files to keep aligned
+| Command | Description |
+|---------|-------------|
+| `ameli-app version` | Print version |
+| `ameli-app config-check` | Validate config |
+| `ameli-app db-status` | Database connectivity check |
+| `ameli-app bootstrap-admin` | Create initial superadmin |
+| `ameli-app create-user` | Create user from CLI |
+| `ameli-app list-users` | List all users |
+| `ameli-app worker-once` | Run worker once |
+| `ameli-app notify-once` | Process email queue once |
+| `ameli-app maintenance` | Toggle maintenance mode from CLI |
 
-- `VERSION`
-- `pyproject.toml`
-- `README.md`
-- `AGENTS.md`
+## Install / Update
 
-## What not to port into this template
+- **Install:** `scripts/install.sh` — venv, deps, migrate, check, optional superadmin bootstrap, systemd units
+- **Update:** `scripts/update.sh` — pull code, reinstall deps, re-run migrations/checks
+- **Validate:** `scripts/validate_installation.sh` — CLI + Django health + PostgreSQL check
+- **Lockfile:** `requirements.lock` with `--require-hashes` (ASVS V14.2.3)
+- **Systemd:** 16 unit files in `deploy/systemd/`, configurable via `APP_SYSTEMD_PROFILE`
 
-- Metro-specific capture logic
-- Metro-specific incidents or snapshots
-- Metro-specific data sources
-- Metro-specific text or branding
+## Testing
 
-## Documentation baseline
+- **Framework:** pytest + pytest-django
+- **Coverage:** ≥85% (enforced in `pyproject.toml`)
+- **Static analysis:** ruff (enforces S security band), mypy (0 errors in 51 source files)
+- **E2E:** Playwright (`tests/e2e/`, opt-in via `--run-e2e`)
+- **Test count:** 91 unit files + 4 e2e files (as of 2026-06-24)
 
-- Main onboarding: `README.md`
-- Canonical runtime and continuity reference: `AGENTS.md`
-- First install guide: `docs/FIRST_INSTALL_DJANGO.md`
-- Technical structure: `docs/ARCHITECTURE.md`
-- Operations: `docs/OPERATIONS.md`
+### Test categories
+- Account guards, login, MFA (TOTP, email, stacked, recovery UX, secret encryption)
+- Admin CRUD (users, audit, sessions), pagination, partial swap guards
+- Security hardening (blocks 1-4, phase B, cookie thief, CSRF, session timeout)
+- Email (retry, double-opt-in change, password reset, auth failures alert)
+- Avatar (validation, AV scan, upload UI)
+- CLI, health, metrics, telemetry
+- Installation scripts, backups, Docker stack, systemd units
+
+## State of the project (v0.4.0-django, 2026-06-25)
+
+### Known architectural debt (prioritized)
+1. **`accounts/services.py` (3793 lines)** — god object, needs domain splitting
+2. **`accounts/views.py` (1267 lines)** — needs splitting and consistent view pattern
+3. **`settings.py` (746 lines)** — candidate for settings package
+4. **`admin_views.py` (~1400+ lines)** — contains inline HTML generation
+5. **Inline JS in templates** — `admin/panel.html` (~650 lines), `profile.html` (~470 lines)
+
+### Frontend design gaps
+- No signature visual element (generic admin panel look)
+- System-default typography (no typeface pairing)
+- Palette is the AI-generic blue-on-white default
+- No visual hierarchy beyond identical grey panels
+- Inline styles in templates instead of utility classes
+
+### Testing gaps
+- No JavaScript unit tests (password generator, strength evaluator, debounce)
+- No accessibility tests (axe-core, pa11y)
+- No migration tests (alembic upgrade/downgrade)
+- No visual regression tests
+
+## Source-of-truth files
+
+- `VERSION` — current version string
+- `pyproject.toml` — dependencies, tool config, metadata
+- `README.md` — user-facing onboarding
+- `AGENTS.md` — canonical handoff reference
+- `requirements.lock` — pinned hashed dependencies
+
+## Documentation index
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Main onboarding |
+| `docs/ARCHITECTURE.md` | Technical structure |
+| `docs/FIRST_INSTALL_DJANGO.md` | First install guide |
+| `docs/OPERATIONS.md` | Operational procedures |
+| `docs/SECURITY.md` | Security posture |
+| `docs/THREAT_MODEL.md` | STRIDE threat model |
+| `docs/COMPLIANCE_ASVS_L2_*.md` | ASVS L2 compliance snapshots |
+| `docs/HANDOFF_TEMPLATE.md` | Session handoff structure |
+| `docs/FRONTEND_DESIGN_REVIEW.md` | Frontend design audit |
+| `docs/SKILLS_REVIEW.md` | Multi-skill code review |
+| `docs/PHASE_A_PREPROD_AUDIT_*.md` | Pre-production audit report |
+| `docs/PHASE_B_SECURITY_REVIEW_*.md` | Security review report |
+| `docs/TLS_WITH_CADDY.md` | TLS/Caddy configuration |
+| `docs/I18N.md` | Internationalization notes |
+| `docs/THIRD_PARTY_LICENSES.md` | Third-party license attributions |
+
+## Available skills
+
+| Skill | Location | Triggers |
+|-------|----------|----------|
+| accessibility | `.agents/skills/accessibility/` | a11y, WCAG, screen reader, keyboard nav |
+| bash-defensive-patterns | `.agents/skills/bash-defensive-patterns/` | shell scripts, CI/CD, production scripts |
+| django-expert | `.agents/skills/django-expert/` | Django models, views, ORM, migrations, DRF |
+| django-patterns | `.agents/skills/django-patterns/` | Django architecture, REST API, ORM, caching |
+| django-security | `.agents/skills/django-security/` | Auth, CSRF, XSS, SQL injection, secure deploy |
+| frontend-design | `.agents/skills/frontend-design/` | Visual design, typography, palette, layout |
+| find-skills | `.agents/skills/find-skills/` | Discovering new skills |
+| python-executor | `.agents/skills/python-executor/` | Sandboxed Python execution |
+| python-testing-patterns | `.agents/skills/python-testing-patterns/` | pytest, fixtures, mocking, TDD |
+| seo | `.agents/skills/seo/` | Meta tags, structured data, sitemaps |
+| sqlalchemy-alembic-expert | `.agents/skills/sqlalchemy-alembic-expert-best-practices-code-review/` | SQLAlchemy ORM, Alembic migrations |
+| sqlalchemy-orm | `.agents/skills/sqlalchemy/` | SQLAlchemy toolkit and ORM |
+| customize-opencode | `<built-in>` | opencode.json, agents, subagents, MCP |
+
+## What not to port into new apps
+
+- Metro-specific capture logic, incidents, snapshots, data sources, text, or branding
+- FastAPI runtime layer (template is Django-only)
+- SQLAlchemy/Alembic setup if unused (currently configured but no active models)
+
+## Out-of-scope (not yet addressed)
+
+- `BUILDING_NEW_APP.md` onboarding document (Phase D)
+- `sqlalchemy-alembic-expert-best-practices-code-review` is a skill name
+- Threat model gap analysis (Phase B item #2)
+- Structural code review for `services.py` (Phase C)
+- Backup destructive restore wire test
+- MFA TOTP e2e path
