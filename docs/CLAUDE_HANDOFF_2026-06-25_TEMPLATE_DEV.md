@@ -98,11 +98,55 @@ no requieren decisiones del operador.
 
 ## §3. Trabajo realizado
 
-(Pendiente al cierre del dia.)
+### 3.1. Vestigial cleanup — barrido + decisiones
+
+Barrido dirigido para identificar codigo / archivos / deps que nunca
+se usaron. Hallazgos:
+
+| Item | Diagnostico | Decision |
+|---|---|---|
+| `migrations/env.py` + `script.py.mako` + `alembic.ini` + dep `alembic>=1.13,<3` | 0 migrations generadas en toda la historia (`migrations/versions/` no existe). 1 commit `fc1611d` que solo cuela el env. 0 imports de `alembic` en src/. | **Remover** (commit #2) |
+| `src/ameli_app/templates/dashboard.html` + `admin.html` | 0 referencias en src/ tests/ docs/. Solo aparecen en egg-info autogenerado. Pre-Django legacy. | **Remover** (este commit) |
+| `src/ameli_app/database.py` + dep `SQLAlchemy>=2.0,<3` | Hace solo un `SELECT 1` (7 lineas utiles). 2 callers: `cli.py:db-status` + `dashboard/views.py:health`. Django ORM puede hacer lo mismo. | **Refactor a Django ORM** (commit #3) |
+| `src/ameli_app/web.py` | 14 lineas, alternate uvicorn launcher (vs `api.py`). Apuntado por `systemd/ameli-app-web.service`. | **Mantener** + docstring que aclare es alias (este commit) |
+| `src/ameli_app/workers/capture.py` | 17 lineas, placeholder que solo retorna `{"message": "Capture worker placeholder executed."}`. Apuntado por `systemd/ameli-app-capture@.service` (template con sufijo @). | **Mantener** + docstring que aclare es extension point para apps hijas (este commit) |
+| `services.py:change_email_for_self` (B3 del 24-jun) | 0 callers en views. 4 tests en `test_profile_email.py` lo ejercitan como service unit. Ya tiene `current_password` gate (defensa-en-profundidad). | **Mantener as-is** — gate cierra el riesgo, tests pinean contrato. |
 
 ## §4. Decisiones tomadas
 
-(Pendiente al cierre del dia.)
+1. **SQLite: Opcion A — mantener como esta**.
+
+   - Runtime: `settings.py:_database_settings()` sigue con fallback a
+     SQLite si `DATABASE_URL` esta vacio.
+   - CI: sigue corriendo 100% SQLite (`Lint+Test` + `E2E` jobs).
+   - Backup/restore scripts: mantienen las 2 ramas (Postgres + SQLite).
+   - Tests `test_backup_restore.py` mantiene el round-trip SQLite.
+   - Docs `OPERATIONS.md` + `FIRST_INSTALL_DJANGO.md` ya lo documentan
+     como "fallback local de conveniencia" — Postgres es official.
+
+   **Riesgo aceptado**: hay drift semantico SQLite vs Postgres que el
+   test suite no detecta (`select_for_update()` no-op en SQLite,
+   JSON ops distintas, etc). CI verde con SQLite ≠ correcto en
+   Postgres prod. Mitigacion: el deploy real corre Postgres y las
+   features sensibles a engine (throttle counters, audit chain) son
+   covered por integration tests con `transactional_db`.
+
+   **Opciones rechazadas hoy**:
+   - Opcion B (CI a Postgres con service container, SQLite queda
+     local) — 45 min de trabajo, posible camino futuro.
+   - Opcion C (Postgres only) — rompe onboarding cero-deps y demos
+     rapidas. Solo si v1.0 explicito requiere "production engine en
+     tests".
+
+2. **Vestigial cleanup**: ver §3.1 — remover Alembic (sin uso real)
+   + legacy templates (dead). Refactor SQLAlchemy → Django ORM en
+   `database.py`. Mantener `web.py` + `capture.py` como extension
+   points documentados.
+
+3. **`change_email_for_self`**: confirmado el design del 24-jun B3
+   — la funcion no tiene callers en views pero queda como service
+   unit ejercitado por 4 tests + protected por `current_password`
+   gate. No es dead code, es scaffolding seguro para futuro cableado.
 
 ## §5. Metricas al cierre
 
