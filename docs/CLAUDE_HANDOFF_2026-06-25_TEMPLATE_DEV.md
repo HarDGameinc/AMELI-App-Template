@@ -270,6 +270,11 @@ Cambios en `THREAT_MODEL.md`:
    en un navegador legacy ve un error en lugar de una clave debil.
    Preferimos error visible a credencial silenciosamente predecible.
 
+5. **Env var prefix `AMELI_APP_*` deferido al child app**: el
+   `BUILDING_NEW_APP.md` §2 documenta que el prefix puede quedarse
+   como esta o rebrandear (~1h). Default recomendado: mantener; el
+   rebrand es polish post-MVP.
+
 ## §5. Metricas al cierre
 
 | Indicador | Valor |
@@ -280,11 +285,14 @@ Cambios en `THREAT_MODEL.md`:
 | Ruff | clean local |
 | Mypy | 0 errores en 51 archivos src |
 | Bandit | Medium: 0 |
-| Commits del dia | 7 (`0c7ca9b`, `6522daa`, `1793564`, `a9271f3`, `406b413`, `07a7ca2`, + este cierre) |
-| Lineas runtime tocadas | `database.py` rewrite + `app.js` generator + `base.html` meta tag |
+| Commits del dia | **10** (`0c7ca9b`, `6522daa`, `1793564`, `a9271f3`, `406b413`, `07a7ca2`, `cc73cc0`, `3841554`, `b003b05` + este cierre) |
+| Docs nuevos del dia | `BUILDING_NEW_APP.md` (357 lineas), `SKILLS_REVIEW.md` + `FRONTEND_DESIGN_REVIEW.md` (commit `3fef62b` del operador) |
+| Docs actualizados | `THREAT_MODEL.md` (+8 STRIDE rows + S-11..S-17 scenarios + §7 change log), `AGENTS.md` (reading order +1), `OPERATIONS.md` + `FIRST_INSTALL_DJANGO.md` (SQLite decision contexto), `THIRD_PARTY_LICENSES.md` (alembic + SQLAlchemy removidos) |
+| Lineas runtime tocadas | `database.py` rewrite + `app.js` generator + `base.html` meta tag + `circuit_breaker.py` (sin cambio hoy, citado en threat model) |
 | Lineas eliminadas | 367 (Alembic + legacy templates + SQLAlchemy en runtime lock) |
 | Deps runtime removidas | 2 top-level (`alembic`, `SQLAlchemy`) + transitives (`Mako`, `MarkupSafe`, `greenlet`) |
 | ASVS L2 | 151 PASS + V12.4.1 + V10.3.x + V14 (sin cambio) |
+| Threat model scenarios | **S-01..S-17** (era S-01..S-10) |
 | CI Lint+Test | ✓ esperado |
 | CI Supply-chain | ✓ esperado (lockfile regenerada con `--generate-hashes`) |
 | CI E2E | ✓ esperado |
@@ -349,12 +357,15 @@ binaria. Los items se separan en 3 categorias:
 - **Phase B item #3 doc-drift** — closed el 24-jun (`0b0eb3b`).
 - **Phase QW** (vestigial cleanup + quick wins) — closed hoy
   (7 commits del 25-jun). Pinned por `test_phase_qw_hardening.py`.
+- **PB-2** (threat model gap analysis post-22-jun) — closed hoy
+  en `3841554`. `THREAT_MODEL.md` cubre +8 STRIDE rows + S-11..S-17.
+- **PD-1** (`BUILDING_NEW_APP.md`) — closed hoy en `b003b05`.
+  `AGENTS.md` reading order item 6.
 
 ### Pendientes ordenados
 
 | # | Item | Origen | Costo |
 |---|---|---|---|
-| PB-2 | Phase B item #2: threat model gap analysis post-22-jun (MFA stacked, OTel, silk, breakers no estan en `THREAT_MODEL.md` §3 T2) | Plan 24-jun §7.1 | ~20 min |
 | PC-1 | Phase C — split `services.py` por dominio. **3880 lineas + 121 def/class** (subio de 3793 ayer por sudo throttle B1). | SKILLS_REVIEW §3 HIGH + plan 24-jun | 3-4h |
 | PC-2 | Phase C — split `views.py` por dominio. **1267 lineas + 36 def/class**. | SKILLS_REVIEW §3 HIGH | 2-3h |
 | PC-3 | Phase C — split `admin_views.py` por dominio. 745 lineas. | SKILLS_REVIEW §3 MEDIUM | 1-2h |
@@ -370,38 +381,49 @@ binaria. Los items se separan en 3 categorias:
 ### 8.1. Estado snapshot al cierre
 
 - Rama: `dev @ <commit-cierre>` (este push). `main @ 4b36607`
-  intacto, 29 commits atras.
-- Unit suite: **1033 pass local** (1027 base + 6 QW).
+  intacto, 32 commits atras.
+- Unit suite: **1033 pass local** (1027 base + 6 QW del 25-jun).
 - E2E suite: 4/4 pass (sin tocar hoy).
-- Server `ha-report2`: `36c4329` del 22-jun, 29 commits atras de
+- Server `ha-report2`: `36c4329` del 22-jun, 32 commits atras de
   `dev`. Cambios runtime hoy: `database.py` (refactor SQLAlchemy),
   `app.js` (password generator hardening), `base.html` (robots meta).
   Cambios deploy hoy: `requirements.lock` regenerada (sin alembic
   / SQLAlchemy). El proximo deploy DEBE incluir estos cambios para
   alinear el ASVS argument.
+- Docs nuevos hoy: `BUILDING_NEW_APP.md` (onboarding child apps),
+  `SKILLS_REVIEW.md` + `FRONTEND_DESIGN_REVIEW.md` (input del operador).
+  `THREAT_MODEL.md` extendido con S-11..S-17.
 - ruff/mypy/bandit: clean local.
 
 ### 8.2. Pendientes ordenados por prioridad
 
-**Bloque proximo — Phase B-D restantes** (foco del 26-jun en
-adelante):
+**Phase B+D del 24-jun: 100% cerrados.** Continuidad para el
+proximo dia:
 
-1. **PB-2 threat model gap analysis** (~20 min). Confirmar
-   `THREAT_MODEL.md` §3 T2 cubre MFA stacked (TOTP+email),
-   OTel exporter trust, django-silk activation accidental,
-   circuit-breaker forced-open DoS. Si no estan, anadir
-   S-11..S-14.
-2. **PC-1 split `services.py`** (~3-4h). 3880 lineas, 121
+1. **PC-1 split `services.py`** (~3-4h). 3880 lineas, 121
    def/class. Foco: dividir por dominio (`services/user.py`,
    `services/mfa.py`, `services/email.py`, `services/audit.py`,
    `services/throttle.py`, `services/breaker.py`). Mantener
    API publica via `services/__init__.py` re-exports.
-3. **PC-2 split `views.py`** (~2-3h). 1267 lineas. Mismo
-   patron de dominio.
-4. **PD-1 `BUILDING_NEW_APP.md`** (~30 min). Onboarding doc
-   para apps hijas. Que renombrar / que mantener / que extender.
-5. **D-2 UX MFA prompts** (~45 min) — opcional pero valioso si
-   el operador planea demo del template proximamente.
+2. **PC-2 split `views.py`** (~2-3h). 1267 lineas, 36 def/class.
+   Mismo patron de dominio.
+3. **PC-3 split `admin_views.py`** (~1-2h). 745 lineas. SKILLS
+   MEDIUM.
+4. **PC-4 split `settings.py`** en package (~1h). 746 lineas.
+5. **D-2 UX MFA prompts** (~45 min) — `window.prompt()` →
+   input inline tipo `mfa_disable`. Cierra agravamiento del JS
+   inline en `profile.html` que metieron A1/A2 del 24-jun.
+6. **D-1 identidad visual del template** (~6-8h) — solo si el
+   operador decide que el template debe tener identidad propia
+   (vs ser neutro para que apps hijas pongan su brand).
+   `FRONTEND_DESIGN_REVIEW.md` §9 tiene propuesta concreta.
+7. **D-4 JS test framework** (~2h) — Jest/Vitest para validar
+   `ameliGeneratePassword` runtime. Hoy esta cubierto solo por
+   static-analysis (`test_phase_qw_hardening.py`).
+
+**Promote `dev → main` como milestone "v1.0 production-ready"
+queda condicionado a PC-1 (split `services.py`) cerrado +
+instruccion explicita del operador.**
 
 ### 8.3. Que NO hacer
 
