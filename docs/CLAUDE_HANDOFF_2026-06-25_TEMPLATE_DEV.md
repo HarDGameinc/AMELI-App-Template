@@ -165,6 +165,29 @@ se usaron. Hallazgos:
 | 2 | `<meta name="robots" content="noindex,nofollow">` en `base.html`. Defense-in-depth para deploys accidentalmente expuestos a internet. | SKILLS_REVIEW §7 SEO |
 | 4 | 6 regression tests en `test_phase_qw_hardening.py` (3 sobre `app.js` via static-analysis, 3 sobre robots meta via Django client). | follow-up |
 
+### 3.5. PB-2 — Threat model gap analysis post-22-jun
+
+Confirmacion del gap llamado en el plan del 24-jun §7.1: cuatro
+features shippeados el 22-jun + el cookie-thief hardening del
+24-jun NO tenian cobertura en `THREAT_MODEL.md` §3 T2 ni en los
+scenarios.
+
+Cambios en `THREAT_MODEL.md`:
+
+- §3 T2 (STRIDE per Django boundary): 8 filas nuevas que cubren
+  MFA method downgrade, must-change-password GET leak,
+  OTel exporter trust, django-silk prod activation, JSON branch
+  over-posting, breaker forced-open, maintenance gate forced-open.
+  Cada fila cita el commit que cierra la mitigacion (`a1e2626`
+  cookie-thief, `4a131d3` MEDs).
+- §4 scenarios: 7 entradas nuevas S-11 a S-17 con first-line +
+  second-line defence.
+- §6 Review cadence: 2 triggers nuevos — "New telemetry / profiling
+  pipeline" y "New circuit breaker" — para que reviews futuras
+  recuerden el patron de "documentar fail-mode + STRIDE el egress".
+- §7 Change log: nueva seccion al pie del doc para registrar
+  decisiones futuras (la primera entrada es esta PB-2).
+
 ### 3.4. Quick win extension docs (commit `6522daa`)
 
 - `src/ameli_app/web.py` docstring aclara que es alias de
