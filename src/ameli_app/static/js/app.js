@@ -51,12 +51,21 @@ setupUserMenu();
 const AMELI_PASSWORD_SYMBOLS = "!@#$%^&*()-_=+?";
 
 function ameliRandomIndex(max) {
-  if (window.crypto?.getRandomValues) {
-    const values = new Uint32Array(1);
-    window.crypto.getRandomValues(values);
-    return values[0] % max;
+  // Cryptographic randomness is REQUIRED. ``Math.random`` is a PRNG
+  // (seeded once per browsing context, no entropy injection) so the
+  // output is predictable to anyone who can observe the sequence.
+  // Falling back silently would let a TLS-stripping intermediary or
+  // a forensic adversary regenerate the password offline. Refuse
+  // instead of producing a weak credential.
+  // (SKILLS_REVIEW §4 Security MEDIUM, 2026-06-25.)
+  if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+    throw new Error(
+      "window.crypto.getRandomValues is unavailable; refusing to generate a password with non-cryptographic randomness."
+    );
   }
-  return Math.floor(Math.random() * max);
+  const values = new Uint32Array(1);
+  window.crypto.getRandomValues(values);
+  return values[0] % max;
 }
 
 function ameliGeneratePassword(length = 18) {
@@ -64,20 +73,27 @@ function ameliGeneratePassword(length = 18) {
   const lower = "abcdefghijkmnopqrstuvwxyz";
   const digits = "23456789";
   const all = upper + lower + digits + AMELI_PASSWORD_SYMBOLS;
-  const chars = [
-    upper[ameliRandomIndex(upper.length)],
-    lower[ameliRandomIndex(lower.length)],
-    digits[ameliRandomIndex(digits.length)],
-    AMELI_PASSWORD_SYMBOLS[ameliRandomIndex(AMELI_PASSWORD_SYMBOLS.length)],
-  ];
-  while (chars.length < length) {
-    chars.push(all[ameliRandomIndex(all.length)]);
+  try {
+    const chars = [
+      upper[ameliRandomIndex(upper.length)],
+      lower[ameliRandomIndex(lower.length)],
+      digits[ameliRandomIndex(digits.length)],
+      AMELI_PASSWORD_SYMBOLS[ameliRandomIndex(AMELI_PASSWORD_SYMBOLS.length)],
+    ];
+    while (chars.length < length) {
+      chars.push(all[ameliRandomIndex(all.length)]);
+    }
+    for (let index = chars.length - 1; index > 0; index -= 1) {
+      const swapIndex = ameliRandomIndex(index + 1);
+      [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
+    }
+    return chars.join("");
+  } catch (error) {
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("Password generator unavailable:", error);
+    }
+    return "";
   }
-  for (let index = chars.length - 1; index > 0; index -= 1) {
-    const swapIndex = ameliRandomIndex(index + 1);
-    [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
-  }
-  return chars.join("");
 }
 
 function ameliEvaluatePasswordStrength(value) {
@@ -198,6 +214,15 @@ function setupPasswordForm(container, options = {}) {
 
   generateButton?.addEventListener("click", () => {
     const value = ameliGeneratePassword();
+    if (!value) {
+      // ``ameliGeneratePassword`` returns "" when crypto.getRandomValues
+      // is unavailable. Surface the error and DO NOT touch the inputs
+      // so the user is not silently handed a weak / blank credential.
+      if (feedback instanceof HTMLElement) {
+        feedback.textContent = "No pudimos generar la clave: tu navegador no expone una fuente segura de aleatoriedad.";
+      }
+      return;
+    }
     newInput.value = value;
     reveal(newInput);
     if (confirmInput instanceof HTMLInputElement) {

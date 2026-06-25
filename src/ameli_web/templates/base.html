@@ -11,6 +11,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# The template targets internal operational tooling; any deployment #}
+    {# exposed to the public internet should still be uncrawlable by default. #}
+    {# Defence-in-depth on top of robots.txt / proxy ACLs. SKILLS_REVIEW §7. #}
+    <meta name="robots" content="noindex,nofollow">
     {# ``color-scheme`` meta hints native form controls + scrollbar to #}
     {# match the active palette so a dark page does not get a white #}
     {# scrollbar / native button. #}
