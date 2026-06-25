@@ -40,7 +40,6 @@ pyotp>=2.9,<3
 python-dateutil>=2.9,<3
 PyYAML>=6.0,<7
 qrcode>=7.4,<9
-SQLAlchemy>=2.0,<3
 uvicorn[standard]>=0.30,<2
 
 # OpenTelemetry — mini-roadmap #7 (2026-06-22). Opt-in tracing

@@ -13,7 +13,7 @@ pip install pip-licenses
 pip-licenses --from=mixed --order=license \
     --format=markdown \
     --packages argon2-cffi Django Pillow psycopg pyotp \
-               python-dateutil PyYAML qrcode SQLAlchemy uvicorn \
+               python-dateutil PyYAML qrcode uvicorn \
     > docs/THIRD_PARTY_LICENSES.generated.md
 ```
 
@@ -33,7 +33,6 @@ notes (e.g. LGPL implications for psycopg).
 | python-dateutil | ~=2.9 | Apache-2.0 / BSD-3 dual | Used by Django; we link the Apache-2.0 NOTICE here. |
 | PyYAML | ~=6.0 | MIT | Config + handoff parser. |
 | qrcode | ~=7.4 | BSD-3-Clause | TOTP enrollment QR. |
-| SQLAlchemy | ~=2.0 | MIT | Optional async/raw SQL surface. |
 | uvicorn[standard] | ~=0.30 | BSD-3-Clause | ASGI server. |
 
 ## Development / test dependencies
