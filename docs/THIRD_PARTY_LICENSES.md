@@ -12,7 +12,7 @@ Regenerate after a dependency bump:
 pip install pip-licenses
 pip-licenses --from=mixed --order=license \
     --format=markdown \
-    --packages alembic argon2-cffi Django Pillow psycopg pyotp \
+    --packages argon2-cffi Django Pillow psycopg pyotp \
                python-dateutil PyYAML qrcode SQLAlchemy uvicorn \
     > docs/THIRD_PARTY_LICENSES.generated.md
 ```
@@ -25,7 +25,6 @@ notes (e.g. LGPL implications for psycopg).
 
 | Package | Version pin | License | Notes |
 | --- | --- | --- | --- |
-| alembic | ~=1.13 | MIT | Migration tooling; only used by the optional SQLAlchemy path. |
 | argon2-cffi | ~=23.1 | MIT | Argon2id password hashing backend. |
 | Django | ~=5.2 | BSD-3-Clause | Web framework. Copyright (c) Django Software Foundation. |
 | Pillow | ~=11.0 | MIT-CMU (HPND) | Avatar pipeline (decode + Lanczos resize + re-encode). |

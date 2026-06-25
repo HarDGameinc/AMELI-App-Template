@@ -11,7 +11,6 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "HarDGame inc." }]
 dependencies = [
-  "alembic>=1.13.0",
   "argon2-cffi>=23.1.0",
   "Django>=5.2.0",
   "Pillow>=11.0.0",
