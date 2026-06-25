@@ -7,7 +7,8 @@
 3. **Most recent `docs/CLAUDE_HANDOFF_YYYY-MM-DD_*.md`** — session context to continue from.
 4. **`docs/SECURITY.md`** + **`docs/THREAT_MODEL.md`** — security posture and STRIDE trust boundaries.
 5. **`docs/COMPLIANCE_ASVS_L2_2026-06-16.md`** — current ASVS L2 mapping (151 PASS, 0 strict GAP).
-6. **`CLAUDE.md`** — per-project instruction overrides for LLM agents.
+6. **`docs/BUILDING_NEW_APP.md`** — onboarding for forks: what you inherit, what to rename, what NOT to touch.
+7. **`CLAUDE.md`** — per-project instruction overrides for LLM agents.
 
 ## Purpose
 

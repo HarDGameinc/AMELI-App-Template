@@ -165,6 +165,36 @@ se usaron. Hallazgos:
 | 2 | `<meta name="robots" content="noindex,nofollow">` en `base.html`. Defense-in-depth para deploys accidentalmente expuestos a internet. | SKILLS_REVIEW §7 SEO |
 | 4 | 6 regression tests en `test_phase_qw_hardening.py` (3 sobre `app.js` via static-analysis, 3 sobre robots meta via Django client). | follow-up |
 
+### 3.6. PD-1 — `BUILDING_NEW_APP.md` onboarding doc
+
+Cierra el gap mas grande detectado en el Phase A audit
+(`PHASE_A_PREPROD_AUDIT_2026-06-24.md` §2): NO existia un doc
+canonico para apps hijas que heredan del template. Nuevo doc
+`docs/BUILDING_NEW_APP.md` con 7 secciones:
+
+1. **What you inherit** — auth/MFA/audit/admin/ops/frontend
+   baseline list.
+2. **What to rename** — Python packages (`ameli_app`,
+   `ameli_web`) + slug + `pyproject.toml` entries + env-var-driven
+   deploy rename. Decision documented: env-var prefix
+   `AMELI_APP_*` can stay or be rebranded (1h cost).
+3. **What to extend** — capture worker, custom Django apps,
+   custom views patterns, template inheritance from `base.html`,
+   settings overrides.
+4. **What you MUST NOT touch** — invariants table mapping each
+   security guarantee to the regression test that pins it
+   (`test_cookie_thief_hardening`, `test_phase_b_hardening`,
+   `test_phase_qw_hardening`, etc.).
+5. **First-hour smoke checklist** — 8 commands from clone to
+   running app with browser smoke.
+6. **Where to read next** — table mapping doc → when-to-read.
+7. **Open questions for your fork** — 6 decisions deferred to
+   child apps (visual identity, DB engine, capture worker,
+   native Django admin, telemetry, public API).
+
+`AGENTS.md` reading order actualizado: nuevo item 6 apunta a
+`BUILDING_NEW_APP.md`, `CLAUDE.md` movido a item 7.
+
 ### 3.5. PB-2 — Threat model gap analysis post-22-jun
 
 Confirmacion del gap llamado en el plan del 24-jun §7.1: cuatro
