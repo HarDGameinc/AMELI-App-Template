@@ -2785,157 +2785,23 @@ def pending_email_change_for(user) -> dict[str, Any] | None:
     }
 
 
-# ============================ Sudo-mode for admin actions ============================
-#
-# An admin who is already logged in with MFA can still be impersonated if
-# their session cookie leaks (XSS, shared workstation, network attack).
-# A leaked superadmin cookie lets the attacker create another superadmin,
-# clear someone's MFA, reset a password and so on — without re-asserting
-# control of the password or the second factor.
-#
-# Sudo-mode raises the bar: every sensitive admin action requires the
-# operator to confirm with their password (and MFA code if enrolled) in
-# the last few minutes. We keep the grant in the session under
-# ``sudo_until`` so the operator does not have to re-enter their
-# credentials for every click during a maintenance window.
+# Sudo grants for sensitive admin actions
+# moved to services/sudo.py (PC-1 step 4, 2026-06-27).
+# Re-exported here so external callers keep working without
+# touching their imports.
+from .sudo import (
+    SUDO_GRACE_SECONDS_DEFAULT,
+    SudoRequired,
+    _check_sudo_throttle,
+    _record_sudo_failure,
+    _sudo_throttle_key,
+    grant_sudo,
+    revoke_sudo,
+    send_sudo_email_code,
+    session_in_sudo,
+    verify_sudo_credentials,
+)
 
-SUDO_GRACE_SECONDS_DEFAULT = 300  # 5 minutes
-
-
-class SudoRequired(Exception):
-    """Raised when an admin action runs without a fresh sudo grant."""
-
-
-def grant_sudo(session, *, seconds: int | None = None) -> int:
-    """Stamp ``sudo_until`` on the session and return the grace window."""
-    from django.conf import settings as django_settings
-
-    grace = int(
-        seconds
-        if seconds is not None
-        else getattr(django_settings, "SUDO_GRACE_SECONDS", SUDO_GRACE_SECONDS_DEFAULT)
-    )
-    grace = max(30, grace)  # don't let an operator footgun themselves with 0
-    expires_at = timezone.now() + timedelta(seconds=grace)
-    session["sudo_until"] = expires_at.isoformat()
-    session.modified = True
-    return grace
-
-
-def revoke_sudo(session) -> None:
-    """Drop any active sudo grant (used on logout and on password change)."""
-    if "sudo_until" in session:
-        del session["sudo_until"]
-        session.modified = True
-
-
-def session_in_sudo(session) -> bool:
-    """Return True when the session still has a valid sudo grant."""
-    raw = session.get("sudo_until")
-    if not raw:
-        return False
-    try:
-        expires_at = datetime.fromisoformat(str(raw))
-    except (ValueError, TypeError):
-        return False
-    return expires_at > timezone.now()
-
-
-# Sudo brute-force gate: dedicated counter so the sudo failures don't
-# share the login-fail bucket (a noisy login would otherwise lock
-# legit sudo flows). 5 fails / 60s window is conservative — sudo is a
-# re-auth for someone already inside, the keyspace is small (6-digit
-# MFA + password).
-_SUDO_FAIL_SCOPE = "sudo_fail_user"
-_SUDO_FAIL_WINDOW_SECONDS = 60
-_SUDO_FAIL_THRESHOLD = 5
-
-
-def _sudo_throttle_key(user) -> str:
-    return (getattr(user, "username", "") or "").lower()
-
-
-def _check_sudo_throttle(user) -> None:
-    """Raise if the user has burnt through the sudo-fail budget in the
-    current window. Read-only; counter increments happen in
-    ``_record_sudo_failure``."""
-    key = _sudo_throttle_key(user)
-    if not key:
-        return
-    count = _read_throttle_counter(
-        scope=_SUDO_FAIL_SCOPE, key=key, window_seconds=_SUDO_FAIL_WINDOW_SECONDS
-    )
-    if count >= _SUDO_FAIL_THRESHOLD:
-        raise ValueError(
-            "demasiados intentos de sudo. Esperá un minuto y volvé a intentar.",
-        )
-
-
-def _record_sudo_failure(user) -> int:
-    key = _sudo_throttle_key(user)
-    if not key:
-        return 0
-    return _bump_throttle_counter(
-        scope=_SUDO_FAIL_SCOPE, key=key, window_seconds=_SUDO_FAIL_WINDOW_SECONDS
-    )
-
-
-def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
-    """Confirm the operator owns the session by re-checking their password
-    and (when applicable) a fresh MFA code.
-
-    Accepts any of the enrolled methods so the operator can use whatever
-    is closest at hand:
-
-    * TOTP code from the authenticator app (when ``mfa_totp_enabled``)
-    * Single-use code emailed via :func:`send_sudo_email_code` (when
-      ``mfa_email_enabled``)
-    * Recovery code (always, so an operator who lost both devices can
-      still sudo)
-
-    Raises :class:`ValueError` with a user-facing message if anything is
-    missing or wrong. Returns silently on success.
-
-    PHASE_B_SECURITY_REVIEW B1: a per-user sudo-fail counter
-    (``_SUDO_FAIL_SCOPE``) gates this entry point so an attacker
-    holding a sudo'd cookie cannot enumerate the 6-digit MFA space.
-    Fails inside the window raise a distinct user-facing message and
-    revoke any in-flight sudo grant — the operator has to wait the
-    cooldown.
-    """
-    if not user or not user.is_authenticated:
-        raise ValueError("autenticacion requerida")
-    _check_sudo_throttle(user)
-    try:
-        if not user.check_password(password or ""):
-            raise ValueError("contrasena invalida")
-        if not user.mfa_enabled:
-            return
-        code = (mfa_code or "").strip()
-        if not code:
-            raise ValueError("codigo 2fa requerido")
-        if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
-            return
-        if user.mfa_email_enabled and consume_email_mfa_code(user, code):
-            return
-        if consume_recovery_code(user, code):
-            return
-        raise ValueError("codigo 2fa invalido o expirado")
-    except ValueError:
-        _record_sudo_failure(user)
-        raise
-
-
-def send_sudo_email_code(user) -> dict[str, Any]:
-    """Send a single-use email code so the operator can sudo without the
-    TOTP app. Reuses the login-time email MFA pipeline (with the same
-    per-user rate-limit) so this path stays consistent.
-    """
-    if not (user and user.is_authenticated):
-        raise ValueError("autenticacion requerida")
-    if not user.mfa_email_enabled:
-        raise ValueError("email 2fa no esta activado para esta cuenta")
-    return send_mfa_email_login_code(user)
 
 
 # ============================ PII lifecycle ============================
