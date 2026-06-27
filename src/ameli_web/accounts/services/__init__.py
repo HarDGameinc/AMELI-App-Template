@@ -29,9 +29,9 @@ from ameli_web.audit.models import AuditEvent
 from ameli_web.telemetry import get_tracer
 from ameli_web.utils import format_timestamp_ui
 
-from . import mfa
-from .circuit_breaker import CircuitBreaker, get_smtp_breaker
-from .models import (
+from .. import mfa
+from ..circuit_breaker import CircuitBreaker, get_smtp_breaker
+from ..models import (
     EmailChangeRequest,
     MaintenanceMode,
     MFAEmailChallenge,
@@ -1476,7 +1476,7 @@ def update_user_account(actor_username: str, username: str, *, password: str | N
 
 
 def delete_user_account(actor_username: str, username: str) -> dict[str, Any]:
-    from .permissions import is_protected_account
+    from ..permissions import is_protected_account
 
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
@@ -2915,7 +2915,7 @@ def _bump_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
     from django.db import transaction
     from django.db.models import F
 
-    from .models import ThrottleCounter
+    from ..models import ThrottleCounter
 
     window_start = _window_start_for(window_seconds)
     with transaction.atomic():
@@ -2930,7 +2930,7 @@ def _bump_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
 def _read_throttle_counter(*, scope: str, key: str, window_seconds: int) -> int:
     """Snapshot read of the current window's counter; returns 0 when no
     row exists yet."""
-    from .models import ThrottleCounter
+    from ..models import ThrottleCounter
 
     window_start = _window_start_for(window_seconds)
     row = ThrottleCounter.objects.filter(
@@ -2957,7 +2957,7 @@ def _read_throttle_counter_sliding(*, scope: str, key: str, window_seconds: int)
     """
     from datetime import datetime
 
-    from .models import ThrottleCounter
+    from ..models import ThrottleCounter
 
     now = timezone.now()
     epoch = int(now.timestamp())
@@ -3856,7 +3856,7 @@ def delete_my_account(*, user, password: str) -> dict[str, Any]:
     superadmin first and then run the CLI prune. This avoids the
     lockout where the only operator deletes themselves.
     """
-    from .permissions import can_self_delete, is_authenticated
+    from ..permissions import can_self_delete, is_authenticated
 
     if not is_authenticated(user):
         raise ValueError("autenticacion requerida")
