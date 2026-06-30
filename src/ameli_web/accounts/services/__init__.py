@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import hmac
 import logging
-import os
-import tempfile
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,7 +20,6 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.utils.translation import gettext as _
 
 from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
@@ -91,15 +88,15 @@ def sync_user_groups(user) -> None:
 # Audit chain — moved to services/audit.py (PC-1 step 2, 2026-06-27).
 # Re-exported here so external callers (views, admin_views, tests)
 # keep working without touching their imports.
-from .audit import (
-    _audit_canonical,
+from .audit import (  # noqa: E402, I001
+    _audit_canonical as _audit_canonical,
     _audit_hmac,
     _audit_hmac_key,
-    _normalise_audit_payload,
-    apply_audit_key_to_env_file,
+    _normalise_audit_payload as _normalise_audit_payload,
+    apply_audit_key_to_env_file as apply_audit_key_to_env_file,
     record_audit,
-    rotate_audit_key,
-    verify_audit_chain,
+    rotate_audit_key as rotate_audit_key,
+    verify_audit_chain as verify_audit_chain,
 )
 
 
@@ -2470,32 +2467,32 @@ def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[
 # moved to services/throttle.py (PC-1 step 3, 2026-06-27).
 # Re-exported here so external callers keep working without
 # touching their imports.
-from .throttle import (
-    AccountLocked,
-    FORGOT_PASSWORD_IP_MAX_DEFAULT,
-    FORGOT_PASSWORD_IP_WINDOW_DEFAULT,
-    LOCKOUT_PERMANENT_CONSECUTIVE_DEFAULT,
-    LOGIN_LOCKOUT_USER_MAX_DEFAULT,
-    LOGIN_LOCKOUT_USER_WINDOW_DEFAULT,
-    LOGIN_THROTTLE_IP_MAX_DEFAULT,
-    LOGIN_THROTTLE_IP_WINDOW_DEFAULT,
-    LoginThrottled,
-    MFA_RESEND_IP_MAX_DEFAULT,
-    MFA_RESEND_IP_WINDOW_DEFAULT,
-    _bump_throttle_counter,
-    _consecutive_lockouts_for,
-    _count_recent_audit_by_action,
-    _count_recent_login_failures,
-    _read_throttle_counter,
-    _read_throttle_counter_sliding,
+from .throttle import (  # noqa: E402, I001
+    AccountLocked as AccountLocked,
+    FORGOT_PASSWORD_IP_MAX_DEFAULT as FORGOT_PASSWORD_IP_MAX_DEFAULT,
+    FORGOT_PASSWORD_IP_WINDOW_DEFAULT as FORGOT_PASSWORD_IP_WINDOW_DEFAULT,
+    LOCKOUT_PERMANENT_CONSECUTIVE_DEFAULT as LOCKOUT_PERMANENT_CONSECUTIVE_DEFAULT,
+    LOGIN_LOCKOUT_USER_MAX_DEFAULT as LOGIN_LOCKOUT_USER_MAX_DEFAULT,
+    LOGIN_LOCKOUT_USER_WINDOW_DEFAULT as LOGIN_LOCKOUT_USER_WINDOW_DEFAULT,
+    LOGIN_THROTTLE_IP_MAX_DEFAULT as LOGIN_THROTTLE_IP_MAX_DEFAULT,
+    LOGIN_THROTTLE_IP_WINDOW_DEFAULT as LOGIN_THROTTLE_IP_WINDOW_DEFAULT,
+    LoginThrottled as LoginThrottled,
+    MFA_RESEND_IP_MAX_DEFAULT as MFA_RESEND_IP_MAX_DEFAULT,
+    MFA_RESEND_IP_WINDOW_DEFAULT as MFA_RESEND_IP_WINDOW_DEFAULT,
+    _bump_throttle_counter as _bump_throttle_counter,
+    _consecutive_lockouts_for as _consecutive_lockouts_for,
+    _count_recent_audit_by_action as _count_recent_audit_by_action,
+    _count_recent_login_failures as _count_recent_login_failures,
+    _read_throttle_counter as _read_throttle_counter,
+    _read_throttle_counter_sliding as _read_throttle_counter_sliding,
     _throttle_settings,
-    _window_start_for,
-    admin_unlock_user,
-    check_forgot_password_throttle,
-    check_login_throttle,
-    check_mfa_resend_throttle,
-    maybe_permanently_lock,
-    record_login_failure,
+    _window_start_for as _window_start_for,
+    admin_unlock_user as admin_unlock_user,
+    check_forgot_password_throttle as check_forgot_password_throttle,
+    check_login_throttle as check_login_throttle,
+    check_mfa_resend_throttle as check_mfa_resend_throttle,
+    maybe_permanently_lock as maybe_permanently_lock,
+    record_login_failure as record_login_failure,
 )
 
 
@@ -2789,17 +2786,17 @@ def pending_email_change_for(user) -> dict[str, Any] | None:
 # moved to services/sudo.py (PC-1 step 4, 2026-06-27).
 # Re-exported here so external callers keep working without
 # touching their imports.
-from .sudo import (
-    SUDO_GRACE_SECONDS_DEFAULT,
-    SudoRequired,
-    _check_sudo_throttle,
-    _record_sudo_failure,
-    _sudo_throttle_key,
-    grant_sudo,
-    revoke_sudo,
-    send_sudo_email_code,
-    session_in_sudo,
-    verify_sudo_credentials,
+from .sudo import (  # noqa: E402, I001
+    SUDO_GRACE_SECONDS_DEFAULT as SUDO_GRACE_SECONDS_DEFAULT,
+    SudoRequired as SudoRequired,
+    _check_sudo_throttle as _check_sudo_throttle,
+    _record_sudo_failure as _record_sudo_failure,
+    _sudo_throttle_key as _sudo_throttle_key,
+    grant_sudo as grant_sudo,
+    revoke_sudo as revoke_sudo,
+    send_sudo_email_code as send_sudo_email_code,
+    session_in_sudo as session_in_sudo,
+    verify_sudo_credentials as verify_sudo_credentials,
 )
 
 
