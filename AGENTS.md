@@ -35,16 +35,17 @@ src/ameli_web/          # Django web layer
     models.py           # User, UserSession, MFARecoveryCode, MFAEmailChallenge,
                         # EmailChangeRequest, ThrottleCounter, OutboundEmail,
                         # MaintenanceMode
-    services/           # Business logic — split in progress (PC-1)
-      __init__.py       #   Re-exports + user/email-change/reporting (~1596 lines)
+    services/           # Business logic — domain-split package (PC-1)
+      __init__.py       #   Re-exports + retention/reporting/auth-alerts/email-change (~1104 lines)
       audit.py          #   Hash-chained audit log, HMAC key rotation (462 lines)
       throttle.py       #   Atomic counters, lockout, rate limits (495 lines)
-      sudo.py           #   Sudo grants, brute-force gate (214 lines)
+      sudo.py           #   Sudo grants, brute-force gate (211 lines)
       email_queue.py    #   SMTP circuit breaker, outbox pattern (426 lines)
       mfa.py            #   TOTP, email MFA, recovery codes (545 lines)
       session.py        #   Session sync/revoke, listing/pagination (234 lines)
       maintenance.py    #   Maintenance mode get/enable/disable (83 lines)
-      password_reset.py #   Password reset request/verify/complete (187 lines)
+      password_reset.py #   Password reset request/verify/complete (178 lines)
+      user.py           #   User CRUD, serialize, avatars, password/email/account (543 lines)
     views.py            # View functions (1267 lines — target for splitting)
     mfa.py              # MFA secret encryption/decryption, QR code render
     forms.py            # Django forms

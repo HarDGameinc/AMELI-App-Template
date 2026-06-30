@@ -21,6 +21,7 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from .audit import record_audit
 from .email_queue import _PasswordResetEmail, send_with_retry
 from .session import revoke_other_sessions
+from .user import _validate_password_value, serialize_user, sync_user_groups
 
 User = get_user_model()
 
@@ -153,16 +154,6 @@ def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[
     Once the password is changed, the token is implicitly invalidated
     because PasswordResetTokenGenerator signs over the password hash.
     """
-    # Lazy import: ``_validate_password_value``, ``sync_user_groups`` and
-    # ``serialize_user`` still live in services/__init__.py (not yet
-    # extracted to a user.py module) — importing them at module level
-    # here would create __init__ <-> password_reset import cycle.
-    from ameli_web.accounts.services import (
-        _validate_password_value,
-        serialize_user,
-        sync_user_groups,
-    )
-
     user = get_user_for_reset_token(uidb64, token)
     if user is None:
         record_audit(
