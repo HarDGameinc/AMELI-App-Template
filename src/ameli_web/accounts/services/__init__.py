@@ -6,19 +6,14 @@ from typing import Any
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
-from django.contrib.auth.tokens import default_token_generator
-from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.core.mail import EmailMessage
 from django.db.models import Count
 from django.template.loader import render_to_string
 from django.utils import timezone
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from ameli_app.password_policy import generate_compliant_password
 from ameli_web.audit.models import AuditEvent
@@ -26,7 +21,6 @@ from ameli_web.utils import format_timestamp_ui
 
 from ..models import (
     EmailChangeRequest,
-    MaintenanceMode,
     MFAEmailChallenge,
     MFARecoveryCode,
     OutboundEmail,
@@ -109,89 +103,45 @@ from .mfa import (  # noqa: E402, I001
     start_mfa_enrollment as start_mfa_enrollment,
 )
 
+# Session domain (UserSession sync/revoke/listing) — moved to
+# services/session.py (PC-1 step 7, 2026-06-30). Re-exported here so
+# external callers (middleware, views, admin_views, tests) keep working
+# without touching their imports.
+from .session import (  # noqa: E402, I001
+    _admin_sessions_queryset_for_filters as _admin_sessions_queryset_for_filters,
+    _trusted_proxies as _trusted_proxies,
+    client_ip as client_ip,
+    list_recent_sessions as list_recent_sessions,
+    list_user_sessions as list_user_sessions,
+    paginate_admin_sessions as paginate_admin_sessions,
+    paginate_user_sessions as paginate_user_sessions,
+    revoke_other_sessions,
+    revoke_session_record,
+    serialize_session as serialize_session,
+    sync_request_session as sync_request_session,
+)
 
-def _trusted_proxies() -> set[str]:
-    """List of REMOTE_ADDR values whose ``X-Forwarded-For`` we trust.
+# Maintenance mode — moved to services/maintenance.py (PC-1 step 7,
+# 2026-06-30). Re-exported here so external callers (middleware, admin
+# views, tests) keep working without touching their imports.
+from .maintenance import (  # noqa: E402, I001
+    disable_maintenance as disable_maintenance,
+    enable_maintenance as enable_maintenance,
+    get_maintenance_state as get_maintenance_state,
+)
 
-    Without a whitelist a malicious client can put any value in
-    ``X-Forwarded-For`` and bypass rate limiting, poison audit IPs, and
-    confuse account lockout. We only look at the header when the immediate
-    peer (``REMOTE_ADDR``) is on this list — typically the loopback
-    address of the local Caddy/nginx reverse proxy.
-    """
-    from django.conf import settings as django_settings
-
-    raw = getattr(django_settings, "TRUSTED_PROXIES", None)
-    if raw is None:
-        return {"127.0.0.1", "::1"}  # the local reverse proxy is the only safe default
-    return {str(item).strip() for item in raw if str(item).strip()}
-
-
-def client_ip(request) -> str:
-    """Return the originating client IP, only honoring proxy headers from
-    trusted intermediaries."""
-    remote = str(request.META.get("REMOTE_ADDR") or "")
-    if remote in _trusted_proxies():
-        forwarded = request.headers.get("X-Forwarded-For", "").strip()
-        if forwarded:
-            # ``X-Forwarded-For`` is ``client, proxy1, proxy2``; the leftmost
-            # is the original client (as injected by the trusted proxy).
-            return forwarded.split(",", 1)[0].strip()
-    return remote
-
-
-def sync_request_session(request) -> UserSession | None:
-    user = request.user
-    if not getattr(user, "is_authenticated", False):
-        return None
-    if not request.session.session_key:
-        request.session.save()
-    session_key = str(request.session.session_key or "")
-    if not session_key:
-        return None
-    session_record, created = UserSession.objects.get_or_create(
-        session_key=session_key,
-        defaults={
-            "user": user,
-            "user_agent": request.META.get("HTTP_USER_AGENT", "")[:512],
-            "ip_address": client_ip(request)[:128],
-        },
-    )
-    if session_record.user_id != user.id:
-        session_record.user = user
-        session_record.revoked_at = None
-    if session_record.revoked_at:
-        Session.objects.filter(session_key=session_key).delete()
-        auth_logout(request)
-        return session_record
-    session_record.user_agent = request.META.get("HTTP_USER_AGENT", "")[:512]
-    session_record.ip_address = client_ip(request)[:128]
-    session_record.last_seen_at = timezone.now()
-    if created:
-        session_record.created_at = session_record.last_seen_at
-    session_record.save(update_fields=["user", "user_agent", "ip_address", "last_seen_at", "revoked_at"])
-    return session_record
-
-
-def revoke_session_record(session_record: UserSession, *, actor=None, reason: str = "manual-revoke") -> None:
-    if session_record.revoked_at is None:
-        session_record.revoked_at = timezone.now()
-        session_record.save(update_fields=["revoked_at"])
-    Session.objects.filter(session_key=session_record.session_key).delete()
-    record_audit(
-        "revoke_session",
-        actor=actor,
-        target_username=session_record.user.username,
-        payload={"session_key": session_record.session_key, "reason": reason},
-    )
-
-
-def revoke_other_sessions(user, *, current_session_key: str) -> int:
-    queryset = UserSession.objects.filter(user=user, revoked_at__isnull=True).exclude(session_key=current_session_key)
-    count = queryset.count()
-    for item in queryset:
-        revoke_session_record(item, actor=user, reason="revoke-others")
-    return count
+# Password reset by email — moved to services/password_reset.py (PC-1
+# step 7, 2026-06-30). Re-exported here so external callers (views,
+# tests) keep working without touching their imports.
+from .password_reset import (  # noqa: E402, I001
+    _build_reset_url as _build_reset_url,
+    _decode_uid as _decode_uid,
+    _find_user_for_reset as _find_user_for_reset,
+    _send_password_reset_email as _send_password_reset_email,
+    complete_password_reset as complete_password_reset,
+    get_user_for_reset_token as get_user_for_reset_token,
+    request_password_reset as request_password_reset,
+)
 
 
 def serialize_user(user) -> dict[str, Any]:
@@ -229,203 +179,6 @@ def serialize_user(user) -> dict[str, Any]:
         "display_locked_at": format_timestamp_ui(getattr(user, "locked_at", None)),
         "locked_reason": getattr(user, "locked_reason", "") or "",
     }
-
-
-def serialize_session(session: UserSession, *, current_session_key: str | None = None) -> dict[str, Any]:
-    # ASVS V3.3.3 — surface the absolute ceiling timestamp so the user
-    # can see when re-auth will be forced. Computed from ``created_at +
-    # SESSION_ABSOLUTE_MAX_AGE_SECONDS``; ``None`` when the ceiling is
-    # disabled (setting == 0).
-    from datetime import timedelta
-
-    from django.conf import settings as django_settings
-
-    max_age = int(getattr(django_settings, "SESSION_ABSOLUTE_MAX_AGE_SECONDS", 0) or 0)
-    if max_age > 0:
-        absolute_expires_at = session.created_at + timedelta(seconds=max_age)
-    else:
-        absolute_expires_at = None
-    return {
-        "username": session.user.username,
-        "session_key": session.session_key,
-        "session_id": session.session_key,
-        "is_current": bool(current_session_key and current_session_key == session.session_key),
-        "created_at": format_timestamp_ui(session.created_at),
-        "display_created_at": format_timestamp_ui(session.created_at),
-        "last_seen_at": format_timestamp_ui(session.last_seen_at),
-        "display_last_seen_at": format_timestamp_ui(session.last_seen_at),
-        "revoked_at": format_timestamp_ui(session.revoked_at),
-        "display_revoked_at": format_timestamp_ui(session.revoked_at),
-        "absolute_expires_at": format_timestamp_ui(absolute_expires_at) if absolute_expires_at else "",
-        "display_absolute_expires_at": format_timestamp_ui(absolute_expires_at) if absolute_expires_at else "",
-        "user_agent": session.user_agent,
-        "display_user_agent": session.user_agent,
-        "ip_address": session.ip_address,
-        "revoked": session.revoked_at is not None,
-    }
-
-
-def list_user_sessions(user, *, current_session_key: str | None = None) -> list[dict[str, Any]]:
-    return [serialize_session(item, current_session_key=current_session_key) for item in user.web_sessions.all()]
-
-
-def paginate_user_sessions(
-    user,
-    *,
-    page: int = 1,
-    per_page: int = 20,
-    current_session_key: str | None = None,
-):
-    """Return a paginated, already-serialised slice of the user's sessions.
-
-    Order follows ``UserSession.Meta.ordering`` (``-last_seen_at``), which
-    naturally places the actively used session near the top.
-    """
-    from ameli_web.pagination import Page, paginate_queryset
-
-    body = paginate_queryset(user.web_sessions.all(), page=page, per_page=per_page)
-    items = [
-        serialize_session(item, current_session_key=current_session_key) for item in body.items
-    ]
-    return Page(
-        items=items,
-        page=body.page,
-        per_page=body.per_page,
-        total=body.total,
-        total_pages=body.total_pages,
-        has_prev=body.has_prev,
-        has_next=body.has_next,
-        start_index=body.start_index,
-        end_index=body.end_index,
-    )
-
-
-def list_recent_sessions(*, limit: int = 20, current_session_key: str | None = None) -> list[dict[str, Any]]:
-    queryset = UserSession.objects.select_related("user").order_by("-last_seen_at")[: max(1, limit)]
-    return [serialize_session(item, current_session_key=current_session_key) for item in queryset]
-
-
-def _admin_sessions_queryset_for_filters(*, search: str = "", status: str = "", ip: str = ""):
-    """Build the UserSession queryset for the admin panel filters.
-
-    ``search`` matches against ``user.username`` (icontains). ``status``
-    accepts ``active`` (revoked_at is null) or ``revoked``. ``ip`` matches
-    against ``ip_address`` (icontains, so ``192.168`` finds a whole subnet).
-    """
-    queryset = UserSession.objects.select_related("user").order_by("-last_seen_at")
-
-    term = (search or "").strip()
-    if term:
-        queryset = queryset.filter(user__username__icontains=term)
-
-    status_value = (status or "").strip().lower()
-    if status_value == "active":
-        queryset = queryset.filter(revoked_at__isnull=True)
-    elif status_value == "revoked":
-        queryset = queryset.filter(revoked_at__isnull=False)
-
-    ip_term = (ip or "").strip()
-    if ip_term:
-        queryset = queryset.filter(ip_address__icontains=ip_term)
-
-    return queryset
-
-
-def paginate_admin_sessions(
-    *,
-    page: int = 1,
-    per_page: int = 20,
-    search: str = "",
-    status: str = "",
-    ip: str = "",
-    current_session_key: str | None = None,
-):
-    """Return a paginated, filtered slice of all UserSessions for admins."""
-    from ameli_web.pagination import Page, paginate_queryset
-
-    queryset = _admin_sessions_queryset_for_filters(search=search, status=status, ip=ip)
-
-    body = paginate_queryset(queryset, page=page, per_page=per_page)
-    items = [
-        serialize_session(item, current_session_key=current_session_key) for item in body.items
-    ]
-    return Page(
-        items=items,
-        page=body.page,
-        per_page=body.per_page,
-        total=body.total,
-        total_pages=body.total_pages,
-        has_prev=body.has_prev,
-        has_next=body.has_next,
-        start_index=body.start_index,
-        end_index=body.end_index,
-    )
-
-
-def get_maintenance_state() -> dict[str, Any]:
-    """Return the current MaintenanceMode singleton as a plain dict.
-
-    Cheap enough to call on every request — the row is a single PK
-    lookup and the table has at most one row.
-    """
-    row = MaintenanceMode.objects.filter(pk=MaintenanceMode.SINGLETON_PK).first()
-    if row is None:
-        return {
-            "active": False,
-            "read_only": True,
-            "message": "",
-            "activated_at": None,
-            "activated_by": "",
-        }
-    return {
-        "active": bool(row.active),
-        "read_only": bool(row.read_only),
-        "message": row.message or "",
-        "activated_at": row.activated_at.isoformat() if row.activated_at else None,
-        "activated_by": row.activated_by_username or "",
-    }
-
-
-def enable_maintenance(
-    actor_username: str, *, message: str = "", read_only: bool = True,
-) -> dict[str, Any]:
-    """Flip the maintenance flag on; audit the change."""
-    row, _ = MaintenanceMode.objects.get_or_create(pk=MaintenanceMode.SINGLETON_PK)
-    if row.active:
-        return {"ok": True, "status": "already-active", "state": get_maintenance_state()}
-    row.active = True
-    row.read_only = bool(read_only)
-    row.message = message or ""
-    row.activated_at = timezone.now()
-    row.deactivated_at = None
-    row.activated_by_username = actor_username or ""
-    row.save()
-    actor_obj = User.objects.filter(username__iexact=actor_username).first() if actor_username else None
-    record_audit(
-        "maintenance_enabled",
-        actor=actor_obj,
-        target_username="",
-        payload={"read_only": row.read_only, "message_len": len(row.message)},
-    )
-    return {"ok": True, "status": "enabled", "state": get_maintenance_state()}
-
-
-def disable_maintenance(actor_username: str) -> dict[str, Any]:
-    """Flip the maintenance flag off; audit the change."""
-    row = MaintenanceMode.objects.filter(pk=MaintenanceMode.SINGLETON_PK).first()
-    if row is None or not row.active:
-        return {"ok": True, "status": "already-inactive", "state": get_maintenance_state()}
-    row.active = False
-    row.deactivated_at = timezone.now()
-    row.save()
-    actor_obj = User.objects.filter(username__iexact=actor_username).first() if actor_username else None
-    record_audit(
-        "maintenance_disabled",
-        actor=actor_obj,
-        target_username="",
-        payload={"was_message_len": len(row.message)},
-    )
-    return {"ok": True, "status": "disabled", "state": get_maintenance_state()}
 
 
 def run_retention_sweep(
@@ -1384,163 +1137,6 @@ def _maybe_alert_for_auth_failures_burst(*, username: str, new_count: int, ip: s
             target_username=user.username,
             payload={"ip": ip or "", "error_class": type(exc).__name__},
         )
-
-
-# ---------------------------------------------------------------------------
-# Password reset by email
-# ---------------------------------------------------------------------------
-
-
-def _find_user_for_reset(identifier: str):
-    if not identifier:
-        return None
-    clean = identifier.strip()
-    if not clean:
-        return None
-    user = User.objects.filter(username__iexact=clean).first()
-    if user is not None:
-        return user
-    if "@" in clean:
-        return User.objects.filter(email__iexact=clean, is_active=True).first()
-    return None
-
-
-def _build_reset_url(uidb64: str, token: str, base_url: str) -> str:
-    path = f"/login/reset/{uidb64}/{token}/"
-    if base_url:
-        return f"{base_url.rstrip('/')}{path}"
-    return path
-
-
-def _send_password_reset_email(user, reset_url: str) -> dict[str, Any]:
-    context = {
-        "app_name": django_settings.CFG.app_name,
-        "username": user.username,
-        "display_name": user.display_identity_name,
-        "reset_url": reset_url,
-        "timeout_seconds": django_settings.PASSWORD_RESET_TIMEOUT,
-        "timeout_minutes": django_settings.PASSWORD_RESET_TIMEOUT // 60,
-    }
-    body = render_to_string("accounts/password_reset_email.txt", context)
-    subject = f"[{django_settings.CFG.app_name}] Restablecer tu contrasena"
-    # If the body is plain ASCII (the bundled template is), use the
-    # 7bit variant so the URL stays on a single line. Fall back to a
-    # regular EmailMessage when the body contains non-ASCII text;
-    # real email clients decode the resulting quoted-printable.
-    message_class = EmailMessage
-    try:
-        body.encode("us-ascii")
-        subject.encode("us-ascii")
-        message_class = _PasswordResetEmail
-    except UnicodeEncodeError:
-        pass
-    email = message_class(
-        subject=subject,
-        body=body,
-        from_email=django_settings.DEFAULT_FROM_EMAIL,
-        to=[user.email],
-    )
-    # The reset URL is only valid for PASSWORD_RESET_TIMEOUT seconds
-    # — past that the queued copy is useless, so expire it in the
-    # queue too. send_with_retry returns soft-success on transient
-    # SMTP failure: the request handler still tells the user "we
-    # sent it" (identical-response design) and the notify worker
-    # delivers eventually.
-    expires_at = timezone.now() + timedelta(seconds=django_settings.PASSWORD_RESET_TIMEOUT)
-    return send_with_retry(
-        email,
-        audit_action="password_reset_email_delivered",
-        target_username=user.username,
-        expires_at=expires_at,
-    )
-
-
-def request_password_reset(identifier: str, *, base_url: str = "") -> dict[str, Any]:
-    """Trigger a password reset email if the identifier matches a user.
-
-    The response is intentionally identical for found and not-found cases so
-    a caller cannot enumerate registered users. Audit events distinguish the
-    two so an admin can still investigate failures.
-    """
-    user = _find_user_for_reset(identifier)
-    if user is None or not user.is_active:
-        record_audit(
-            "password_reset_requested",
-            actor=None,
-            target_username=identifier or "",
-            payload={"status": "user-not-found"},
-        )
-        return {"ok": True, "status": "requested"}
-    if not user.email:
-        record_audit(
-            "password_reset_requested",
-            actor=None,
-            target_username=user.username,
-            payload={"status": "no-email-on-file"},
-        )
-        return {"ok": True, "status": "requested"}
-    uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user)
-    reset_url = _build_reset_url(uidb64, token, base_url)
-    _send_password_reset_email(user, reset_url)
-    record_audit(
-        "password_reset_requested",
-        actor=None,
-        target_username=user.username,
-        payload={"status": "email-sent"},
-    )
-    return {"ok": True, "status": "requested"}
-
-
-def _decode_uid(uidb64: str):
-    try:
-        uid_bytes = urlsafe_base64_decode(uidb64)
-        return int(uid_bytes)
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def get_user_for_reset_token(uidb64: str, token: str):
-    """Return the user matching (uidb64, token) or None."""
-    uid = _decode_uid(uidb64)
-    if uid is None:
-        return None
-    user = User.objects.filter(pk=uid, is_active=True).first()
-    if user is None:
-        return None
-    if not default_token_generator.check_token(user, token):
-        return None
-    return user
-
-
-def complete_password_reset(uidb64: str, token: str, new_password: str) -> dict[str, Any]:
-    """Validate the token and update the user's password.
-
-    Once the password is changed, the token is implicitly invalidated
-    because PasswordResetTokenGenerator signs over the password hash.
-    """
-    user = get_user_for_reset_token(uidb64, token)
-    if user is None:
-        record_audit(
-            "password_reset_token_invalid",
-            actor=None,
-            target_username="",
-            payload={"uidb64": uidb64},
-        )
-        raise ValueError("invalid or expired reset link")
-    _validate_password_value(new_password, user=user)
-    user.set_password(new_password)
-    user.must_change_password = False
-    user.save()
-    sync_user_groups(user)
-    revoke_other_sessions(user, current_session_key="")
-    record_audit(
-        "password_reset_completed",
-        actor=user,
-        target_username=user.username,
-        payload={},
-    )
-    return {"ok": True, "status": "completed", "user": serialize_user(user)}
 
 
 # ============================ Login throttle ============================
