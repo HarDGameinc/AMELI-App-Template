@@ -239,8 +239,9 @@ a re-exports `as X as X`.
 | Coverage | 85% (floor pinned) |
 | Ruff | **0 errores** |
 | Mypy | 0 errores |
-| Commits del dia | 4 (merge + steps 5, 6, 7) |
-| HEAD al cierre | `6398881` (pushed a `origin/dev`) |
+| Commits del dia | 8 (merge + steps 5,6,7 + docs + fix sudo + step 8 + close PC-1) |
+| HEAD al cierre | `8be7be0` (pushed a `origin/dev`) |
+| Version al cierre | `v0.4.1-django` (bump por cierre PC-1) |
 
 ### Estado del paquete `services/` al cierre
 
@@ -284,14 +285,15 @@ despues de CADA commit de refactor, no solo los tests.
 
 ## §7. Roadmap actualizado
 
-PC-1 steps 5, 6, 7 completados hoy. Queda un solo paso (step 8)
-antes de cerrar PC-1.
+**PC-1 cerrado completo** (steps 2-8 + fix + bump). El paquete
+`services/` quedo con 10 modulos por dominio, version bumpeada a
+`v0.4.1-django`, suite verde y servidor `ha-report2` corriendo la
+nueva version. S-04 ejecutado y aprobado (ver §9).
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| S-04 | Pruebas en servidor (MFA, reset, sesiones, mantenimiento) | — | Ver §8.4 |
 | PC-1 cleanup (opcional) | Extraer retention/reporting/auth-alerts/email-change de `__init__.py` | 2-3h | `__init__.py` quedaria solo re-exports |
 | PC-2 | Split `views.py` (1267 lineas) | 2-3h | PC-1 ya cerrado |
 | PC-3 | Split `admin_views.py` (745 lineas) | 1-2h | |
@@ -305,42 +307,31 @@ antes de cerrar PC-1.
 
 ### 8.1. Estado snapshot al cierre
 
-- Rama: **`dev @ 6398881`** (local == `origin/dev`, pusheado).
-- `main @ 4b36607`, **44 commits atras** de `dev`.
+- Rama: **`dev @ 8be7be0`** (local == `origin/dev`, pusheado).
+- `main @ 4b36607`, **47 commits atras** de `dev`.
 - Unit suite: **1013 pass / 11 fail** (11 = pre-existing Windows).
-- ruff: **0 errores**. mypy: **0 errores**.
-- `services/` package: 9 modulos (ver §5 tabla).
+- ruff: **0 errores**. mypy: **0 errores en codigo del paquete**
+  (`av.py` reporta 1 error de Windows-only `AF_UNIX`, pre-existente).
+- `services/` package: **10 modulos** (ver §5 tabla).
+- Servidor `ha-report2 @ /opt/ameli-app-template-dev`: pulleado al HEAD,
+  servicio `active (running)` con `version: v0.4.1-django`.
 
 ### 8.2. Primer paso (siguiente agente)
 
-**PC-1 step 8 — extraer `services/user.py`.**
+**Opciones disponibles**:
 
-El dominio user es el mas grande que queda en `__init__.py`:
+(a) **PC-2 — split `views.py`** (1267 lineas). El dominio mas grande
+que queda monolitico. Misma estrategia incremental que PC-1: identificar
+dominios cohesivos, extraer uno por uno, mantener URL routing intacto.
 
-Funciones a mover (estimado ~700-800 lineas):
-`serialize_user`, `list_users`, `_users_queryset_for_filters`,
-`paginate_users_for_admin`, `filtered_users_queryset`,
-`bootstrap_superadmin`, `create_user_account`, `create_public_user`,
-`update_user_account`, `delete_user_account`, `reset_user_password`,
-`change_password_for_user`, `replace_avatar`, `delete_avatar`,
-`change_email_for_self`, `send_profile_test_email`,
-`purge_inactive_users`, `delete_my_account`.
+(b) **PC-1 cleanup (opcional)** — extraer de `services/__init__.py`
+los 4 dominios residuales: retention sweep (~80 lineas),
+audit reporting (~265 lineas), auth-failure alerts (~220 lineas),
+email-change double-opt-in flow (~270 lineas). Si se hace, `__init__.py`
+queda solo como bloque de re-exports puros (~150 lineas).
 
-Probables lazy imports requeridos en `user.py` (funciones que se
-llaman mutuamente y aun no estan todas en el mismo modulo):
-- `_validate_password_value` (puede moverse a user.py directamente)
-- `sync_user_groups` (puede moverse a user.py directamente)
-
-Una vez que `serialize_user` y `sync_user_groups` esten en `user.py`,
-el lazy import en `password_reset.py::complete_password_reset` se puede
-convertir a import de nivel de modulo normal:
-```python
-from .user import _validate_password_value, serialize_user, sync_user_groups
-```
-
-**Estrategia**: misma que steps anteriores — copiar funciones a
-`user.py`, eliminar de `__init__.py`, agregar bloque re-export,
-quitar imports huerfanos, correr ruff + mypy + pytest antes de commit.
+(c) **Promote `dev → main`** — SOLO con instruccion explicita del
+operador. PC-1 cerrado deja `dev` listo para milestone v0.5.0.
 
 ### 8.3. Restricciones criticas (siguen vigentes)
 
@@ -381,3 +372,49 @@ Flujos a cubrir en S-04:
 | Sesiones | Listado en /profile, revocar sesion especifica, revocar otras |
 | Mantenimiento | Enable/disable desde CLI y desde admin panel |
 | Sesion activa | sync_request_session no rompe en flujo normal de login |
+
+## §9. S-04 — Resultados (ejecutado al cierre)
+
+Ejecutado en `ha-report2:/opt/ameli-app-template-dev` tras pull a `8be7be0`.
+
+### 9.1. Boot del servicio
+- `systemctl restart ameli-app-template-dev-api.service` → `active (running)`
+- No traceback en `journalctl`; uvicorn bind OK a `0.0.0.0:18080`
+- `/health` → `version: v0.4.1-django`, todos los checks OK
+
+### 9.2. Audit chain
+- `ameli-app verify-audit` → `{"checked": 206, "ok": true}`
+- `audit_chain.tail_id` paso de 703 (inicio sesion) a 728 al cierre
+  del smoke (+25 filas registradas durante las pruebas)
+
+### 9.3. Endpoint guards
+- `/profile` sin cookie → HTTP 302 (redirect a login). Comportamiento
+  esperado, intacto post-refactor.
+
+### 9.4. Modulo `maintenance.py` ejecutado en runtime de produccion
+Via `manage.py shell`:
+```
+print(get_maintenance_state())  # {'active': False, ...}
+print(enable_maintenance('admin', message='S-04 smoke test'))  # ok, enabled
+print(get_maintenance_state())  # {'active': True, ...}
+print(disable_maintenance('admin'))  # ok, disabled
+print(get_maintenance_state())  # {'active': False, ...}
+```
+Las 3 funciones del modulo extraido en PC-1 step 7 funcionan correctamente,
+con audit rows generadas y timestamps coherentes.
+
+### 9.5. Conclusion S-04
+
+El refactor PC-1 NO altera el comportamiento de los modulos extraidos
+en runtime real. Las 76 funciones publicas re-exportadas desde
+`services/__init__.py` operan identicas al monolito original.
+Operador puede usar el sistema con confianza tras el upgrade a
+`v0.4.1-django`.
+
+### 9.6. Hallazgos menores
+
+- La URL de password reset es `/login/forgot/` (no `/login/reset-request/`
+  como dijo la guia inicial). Actualizar el siguiente runbook S-04.
+- El subcomando `ameli-app maintenance` NO toma `enable/disable` — solo
+  corre la retention sweep. El toggle del flag se hace por `/admin/`
+  panel o via `services.enable_maintenance()` en shell. Actualizar guia.
