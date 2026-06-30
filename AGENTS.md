@@ -35,7 +35,16 @@ src/ameli_web/          # Django web layer
     models.py           # User, UserSession, MFARecoveryCode, MFAEmailChallenge,
                         # EmailChangeRequest, ThrottleCounter, OutboundEmail,
                         # MaintenanceMode
-    services.py         # Business logic (3793 lines — target for splitting)
+    services/           # Business logic — split in progress (PC-1)
+      __init__.py       #   Re-exports + user/email-change/reporting (~1596 lines)
+      audit.py          #   Hash-chained audit log, HMAC key rotation (462 lines)
+      throttle.py       #   Atomic counters, lockout, rate limits (495 lines)
+      sudo.py           #   Sudo grants, brute-force gate (214 lines)
+      email_queue.py    #   SMTP circuit breaker, outbox pattern (426 lines)
+      mfa.py            #   TOTP, email MFA, recovery codes (545 lines)
+      session.py        #   Session sync/revoke, listing/pagination (234 lines)
+      maintenance.py    #   Maintenance mode get/enable/disable (83 lines)
+      password_reset.py #   Password reset request/verify/complete (187 lines)
     views.py            # View functions (1267 lines — target for splitting)
     mfa.py              # MFA secret encryption/decryption, QR code render
     forms.py            # Django forms
@@ -142,10 +151,10 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.0-django, 2026-06-25)
+## State of the project (v0.4.0-django, 2026-06-30)
 
 ### Known architectural debt (prioritized)
-1. **`accounts/services.py` (3793 lines)** — god object, needs domain splitting
+1. **`accounts/services/` (PC-1 in progress)** — `__init__.py` at 1596 lines; step 8 (user.py) remaining
 2. **`accounts/views.py` (1267 lines)** — needs splitting and consistent view pattern
 3. **`settings.py` (746 lines)** — candidate for settings package
 4. **`admin_views.py` (~1400+ lines)** — contains inline HTML generation
