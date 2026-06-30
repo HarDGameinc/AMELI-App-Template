@@ -180,6 +180,42 @@ pre-existentes de Windows).
 
 ---
 
+### 3.6. PC-1 step 8 — extract `services/user.py` (commit `87485f5`)
+
+**Dominio user**: CRUD, serialize, avatars, password/email change para self,
+delete account, purge inactive users.
+
+**Funciones extraidas** (543 lineas):
+`_validate_password_value`, `ensure_role_groups`, `sync_user_groups`,
+`serialize_user`, `replace_avatar`, `delete_avatar`, `list_users`,
+`_users_queryset_for_filters`, `paginate_users_for_admin`,
+`filtered_users_queryset`, `bootstrap_superadmin`, `create_user_account`,
+`create_public_user`, `update_user_account`, `delete_user_account`,
+`reset_user_password`, `change_password_for_user`, `change_email_for_self`,
+`send_profile_test_email`, `purge_inactive_users`, `delete_my_account`.
+La constante `ROLE_GROUPS` se movio junto al codigo que la usa.
+
+**Cierre del ciclo en `password_reset.py`**: el lazy import block dentro de
+`complete_password_reset` (que rompia ciclo `__init__ ↔ password_reset`)
+se reemplazo por imports top-level desde `.user`. Como user.py vive en su
+propio modulo y no depende de `__init__.py`, no hay ciclo posible.
+
+**Imports eliminados de `__init__.py`**: `Group`, `validate_password`,
+`ValidationError`, `default_storage`, `generate_compliant_password`,
+`MFARecoveryCode`, `datetime` (timedelta sigue).
+
+**Cambios menores**: `revoke_other_sessions` y `revoke_session_record` ya
+no se usan localmente en `__init__.py` (la unica caller que los necesitaba
+era `change_password_for_user` que ahora vive en user.py) → convertidos
+a re-exports `as X as X`.
+
+**`__init__.py` tras step 8**: 1596 → 1104 lineas (-492).
+
+**Tests**: 1013 pass / 11 fail (mismos failures pre-existentes de Windows
+— sin regresion).
+
+---
+
 ## §4. Decisiones tomadas
 
 1. **Alias redundante (`X as X`) sobre `__all__`**. Ruff sugiere
@@ -210,16 +246,17 @@ pre-existentes de Windows).
 
 | Archivo | Lineas | Contenido |
 |---|---|---|
-| `__init__.py` | 1596 | Re-exports + dominio user/email-change/reporting (pendiente step 8) |
+| `__init__.py` | 1104 | Re-exports + retention sweep + reporting + auth-failure alerts + email-change double-opt-in |
 | `audit.py` | 462 | Cadena de audit, rotacion de clave HMAC |
 | `throttle.py` | 495 | Contadores atomicos, lockout, rate limits |
-| `sudo.py` | 214 | Grants de sudo, brute-force gate |
+| `sudo.py` | 211 | Grants de sudo, brute-force gate |
 | `email_queue.py` | 426 | Circuit breaker SMTP, outbox pattern, retry queue |
 | `mfa.py` | 545 | TOTP, MFA email, recovery codes |
 | `session.py` | 234 | Sync/revoke sesiones, listado/paginacion |
 | `maintenance.py` | 83 | Flag de mantenimiento get/enable/disable |
-| `password_reset.py` | 187 | Request/verify/complete reset por email |
-| **Total** | **4242** | (vs 3793 original — diferencia: docstrings y cabeceras de modulo) |
+| `password_reset.py` | 178 | Request/verify/complete reset por email |
+| `user.py` | 543 | User CRUD, serialize, avatars, password/email change para self, delete account |
+| **Total** | **4281** | (vs 3793 original — diferencia: docstrings y cabeceras de modulo) |
 
 ### 11 failures pre-existentes (NO son regresiones)
 
@@ -254,9 +291,9 @@ antes de cerrar PC-1.
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| S-04 | Pruebas en servidor (MFA, reset, sesiones, mantenimiento) | — | Ver §8.4 — **puede hacerse SIN step 8** |
-| **PC-1 step 8** | Extraer `services/user.py` (~700 lineas de `__init__.py`) | 1-2h | Ultimo paso PC-1; ver §8.3 |
-| PC-2 | Split `views.py` (1267 lineas) | 2-3h | Despues de PC-1 cerrado |
+| S-04 | Pruebas en servidor (MFA, reset, sesiones, mantenimiento) | — | Ver §8.4 |
+| PC-1 cleanup (opcional) | Extraer retention/reporting/auth-alerts/email-change de `__init__.py` | 2-3h | `__init__.py` quedaria solo re-exports |
+| PC-2 | Split `views.py` (1267 lineas) | 2-3h | PC-1 ya cerrado |
 | PC-3 | Split `admin_views.py` (745 lineas) | 1-2h | |
 | PC-4 | Split `settings.py` en package | 1h | Mecanico |
 | D-2 | UX MFA prompts (`window.prompt` → input inline) | 45 min | Polish |
