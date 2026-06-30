@@ -167,13 +167,10 @@ def verify_sudo_credentials(user, *, password: str, mfa_code: str = "") -> None:
             raise ValueError("codigo 2fa requerido")
         if user.mfa_totp_enabled and user.mfa_secret and mfa.verify_totp(mfa.decrypt_secret(user.mfa_secret), code):
             return
-        # Lazy import: consume_email_mfa_code + consume_recovery_code still
-        # live in services/__init__.py. They will move out in a later
-        # iteration when we extract services/mfa.py.
-        from ameli_web.accounts.services import (
-            consume_email_mfa_code,
-            consume_recovery_code,
-        )
+        # Lazy import to keep services/__init__.py the single entry point
+        # for module load order; sudo.py is imported before mfa.py is fully
+        # initialised when this module is first hit from a request.
+        from .mfa import consume_email_mfa_code, consume_recovery_code
 
         if user.mfa_email_enabled and consume_email_mfa_code(user, code):
             return
@@ -195,7 +192,7 @@ def send_sudo_email_code(user) -> dict[str, Any]:
     if not user.mfa_email_enabled:
         raise ValueError("email 2fa no esta activado para esta cuenta")
     # Lazy import: same reason as verify_sudo_credentials above.
-    from ameli_web.accounts.services import send_mfa_email_login_code
+    from .mfa import send_mfa_email_login_code
 
     return send_mfa_email_login_code(user)
 
