@@ -212,10 +212,11 @@ def test_email_queue_skips_batch_when_breaker_open(monkeypatch):
 
     from ameli_web.accounts import services
     from ameli_web.accounts.models import OutboundEmail
+    from ameli_web.accounts.services import email_queue as eq_module
 
     cb = CircuitBreaker(name="smtp-test", failure_threshold=1, cooldown_seconds=60.0)
     cb.record_failure()  # opens immediately (threshold=1)
-    monkeypatch.setattr(services, "_smtp_breaker", cb)
+    monkeypatch.setattr(eq_module, "_smtp_breaker", cb)
 
     row = OutboundEmail.objects.create(
         target_username="probe",
