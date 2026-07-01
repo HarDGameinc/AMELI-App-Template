@@ -59,6 +59,77 @@ metro-dev.lan {
 # }
 ```
 
+## Compresion + cache de estaticos y media (optimizacion)
+
+Por defecto la app sirve `/static/` y `/media/` ella misma (via
+`django.views.static.serve` en `urls.py`). Funciona, pero cada avatar,
+CSS y JS pega en el proceso Python — desperdicia un worker en algo que
+un file server hace mucho mas rapido, sin cache headers ni compresion
+mas alla del `encode gzip` global.
+
+Cuando el deploy empieza a tener trafico real, conviene que **Caddy
+sirva estos assets directamente desde disco**, con brotli + gzip y
+`Cache-Control` de larga vida. Django deja de verlos.
+
+```caddy
+# AMELI App Template dev — variante optimizada
+metro-dev.lan {
+    tls internal
+
+    # brotli para navegadores modernos, gzip de fallback. Caddy elige
+    # el mejor que el cliente acepte via Accept-Encoding.
+    encode zstd br gzip
+
+    # --- /static/ : assets versionados de la app (CSS/JS/imgs) ---
+    # Servidos directo desde el dir de STATICFILES. Ajusta la ruta a
+    # donde corre `collectstatic` en tu deploy (o al checkout en dev).
+    handle_path /static/* {
+        root * /opt/ameli-app-template-dev/src/ameli_app/static
+        file_server
+        # Los estaticos propios no cambian entre deploys sin cambiar de
+        # nombre — cache agresiva es segura. Si versionas por hash en el
+        # nombre podes subir a `immutable`.
+        header Cache-Control "public, max-age=86400"
+    }
+
+    # --- /media/ : avatares subidos por usuarios ---
+    # Servidos directo desde MEDIA_ROOT (profile_uploads_dir del app.yaml,
+    # p.ej. /var/lib/ameli-app-template-dev/uploads).
+    handle_path /media/* {
+        root * /var/lib/ameli-app-template-dev/uploads
+        file_server
+        # Cache mas corta: un avatar se reemplaza sin cambiar de URL, asi
+        # que 1h evita que un cambio tarde un dia en propagarse. Si el
+        # pipeline de imagenes (roadmap D-5) renombra por hash al
+        # transformar, esto tambien puede subir a `immutable`.
+        header Cache-Control "public, max-age=3600"
+    }
+
+    # --- todo lo demas va a Django ---
+    reverse_proxy 127.0.0.1:18080
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+}
+```
+
+Notas:
+
+- **Permisos**: el usuario de Caddy tiene que poder leer `MEDIA_ROOT`.
+  En install.sh el dir de uploads es del app user (modo 0750); agrega
+  al usuario `caddy` al grupo del app user o afloja a 0755 el dir de
+  uploads (no los archivos con PII de otros lados).
+- **`collectstatic`**: si servis `/static/` desde Caddy fuera de dev,
+  corre `manage.py collectstatic` en cada deploy para juntar los assets
+  de Django admin + los propios en un solo dir, y apunta el `root` ahi.
+  En dev el finder de Django (que camina cada app) es mas comodo.
+- **`immutable`**: solo es seguro si el nombre del archivo cambia cuando
+  el contenido cambia (versionado por hash). Hoy los avatares mantienen
+  la URL al reemplazarse, por eso `max-age=3600` en lugar de `immutable`.
+- Esto NO reemplaza el transform server-side de imagenes (roadmap D-5):
+  cache/compresion reduce el costo de *servir* la imagen, pero un avatar
+  de 3 MB sigue siendo 3 MB en disco y en la primera descarga. Las dos
+  optimizaciones son complementarias.
+
 ## DNS interno
 
 Caddy resuelve el cert al startup. El nombre del sitio

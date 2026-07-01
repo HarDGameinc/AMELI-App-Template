@@ -172,21 +172,65 @@ detecta esto — corrio manualmente con un script Python.
 
 ## §7. Roadmap actualizado
 
-**PC-1 CERRADO 100%** (services/__init__.py = puro re-export).
-**PC-2 CERRADO** (views.py = paquete por dominios).
+**PC-1/2/3/4 CERRADOS** — los 4 splits estructurales grandes (services,
+views, admin_views, settings) son paquetes por dominio. No queda ningun
+monolito de backend. Version actual: `v0.4.4-django`.
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| S-05 | Pruebas en servidor de PC-2 (auth, profile, password, MFA, sessions, email-change, account delete) | 30-45 min | Verificar que todas las URLs siguen respondiendo tras el split |
-| Bump | `v0.4.2-django` tras S-05 OK | 5 min | Cerrar PC-1 cleanup + PC-2 con marker limpio |
-| PC-3 | Split `admin_views.py` (745 lineas + HTML inline) | 1-2h | Mismo patron; HTML inline merece su propio pass |
-| PC-4 | Split `settings.py` en package | 1h | Mecanico |
+| **D-5** | **Pipeline de transformacion de avatar** (resize + WebP + strip EXIF) | 1-1.5h | Ver §7.1 — Pillow ya esta instalado; sin deps nuevas |
 | D-2 | UX MFA prompts | 45 min | Polish |
-| D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | D-4 | JS test framework | 2h | |
+| Templates | Split inline JS de `admin/panel.html` (~650) + `profile.html` (~470) | 2-3h | Deuda frontend (no backend) |
+| D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | Promote | `dev → main` v0.5.0 | — | Requiere instruccion explicita del operador |
+
+### §7.1. D-5 — Pipeline de transformacion de avatar (diseno)
+
+**Problema**: hoy `replace_avatar` ([`services/user.py:95`](../src/ameli_web/accounts/services/user.py))
+guarda el archivo tal cual llega. La validacion (`forms.py`) solo pone
+techos (3 MB, 4096 px/lado, anti-bomb) pero NO transforma. Un avatar se
+muestra chico pero se sirve verbatim: un PNG de 3 MB / 4000px queda en
+disco y se descarga entero en cada request sin cache. Ademas el EXIF
+(GPS del celular) queda embebido = fuga de PII.
+
+**Propuesta**: nuevo `services/images.py` (mismo patron de dominios de
+PC-1..PC-4), llamado desde `replace_avatar` **despues del AV scan,
+antes del `.save()`**:
+
+1. `ImageOps.exif_transpose(img)` — corrige orientacion de fotos de celular.
+2. `img.thumbnail((MAX, MAX))` — resize preservando aspect ratio.
+3. Re-encode a WebP (quality configurable) — el re-encode **borra el
+   EXIF/GPS** naturalmente (privacidad + tamano).
+4. Guardar los bytes transformados con extension `.webp`.
+
+Resultado esperado: 3 MB PNG 4000px → ~50-150 KB WebP 512px (~95% menos
+storage + bandwidth). Transparente para templates (el `<img>` ya apunta
+a `avatar_url`).
+
+**Settings (patron template, env con defaults sanos)**:
+- `AMELI_APP_AVATAR_MAX_DIMENSION` (default 512) → iria en `settings/i18n_static.py` o un nuevo `settings/media.py`.
+- `AMELI_APP_AVATAR_FORMAT` (default `webp`, o `keep` para no re-encodear).
+- `AMELI_APP_AVATAR_WEBP_QUALITY` (default 82).
+
+**Tests a cubrir**: PNG grande → WebP chico y ≤ MAX px; EXIF-con-GPS →
+sin EXIF tras transform; orientacion EXIF aplicada; `keep` no re-encodea;
+imagen ya chica no se agranda; la extension del archivo guardado cambia
+a `.webp` y `avatar_url` sigue resolviendo.
+
+**Decisiones abiertas para cuando se implemente**:
+- Always-on vs opt-in: recomendacion always-on para avatares (son
+  display-only, lossy es apropiado), exponiendo los knobs de arriba.
+- WebP vs preservar formato original: WebP gana en tamano, soporte
+  universal en navegadores 2026. `keep` como escape hatch.
+
+**Complementario (ya documentado, NO es codigo de la app)**:
+`docs/TLS_WITH_CADDY.md` § "Compresion + cache de estaticos y media"
+cubre servir `/media` + `/static` directo desde Caddy con brotli +
+`Cache-Control`. Reduce el costo de *servir*; D-5 reduce el costo de
+*almacenar/generar*. Las dos son complementarias.
 
 ## §8. Continuidad — para el proximo agente
 
