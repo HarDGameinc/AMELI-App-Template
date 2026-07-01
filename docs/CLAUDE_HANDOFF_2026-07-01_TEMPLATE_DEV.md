@@ -192,13 +192,15 @@ detecta esto — corrio manualmente con un script Python.
 
 ### 8.0. Estado snapshot al cierre
 
-- Rama: **`dev @ 94ce941`** (local == `origin/dev`, pusheado).
-- `main @ 4b36607`, **49 commits atras** de `dev`.
-- Unit suite: **1012 pass / 12 fail** (todos pre-existentes Windows).
+- Rama: **`dev @ bc55df8`** (local == `origin/dev`, pusheado).
+- `main @ 4b36607`, **51 commits atras** de `dev`.
+- Unit suite: **1058 pass / 11 fail** (todos pre-existentes Windows).
 - ruff / mypy: **0 errores en codigo del paquete**.
-- Version: **`v0.4.1-django`** (sin bump — pendiente S-05).
+- Coverage total: **88%** (era 86% al abrir la sesion).
+- Version: **`v0.4.2-django`** (bumpeado tras S-05, confirmado en servidor).
 - `services/` package: **14 modulos** (`__init__.py` puro re-export).
-- `views/` package: **9 modulos** (`__init__.py` puro re-export).
+- `views/` package: **9 modulos** (`__init__.py` puro re-export),
+  cobertura 93-100% en los 5 modulos que quedaron bajos tras el split.
 
 ### 8.05. S-05 — ejecutado y aprobado (2026-07-01)
 
@@ -252,6 +254,51 @@ Todas las URLs de `accounts/urls.py` deben responder igual que antes:
 
 Si S-05 pasa: bump a `v0.4.2-django` (VERSION + pyproject.toml +
 CHANGELOG.md entry + commit `close PC-1 cleanup + PC-2 + bump v0.4.2-django`).
+
+### 8.06. S-05 pasado, bump aplicado (commit `11deef0`)
+
+S-05 se aprobo (ver §8.05). Se aplico el bump a `v0.4.2-django`
+(`VERSION`, `pyproject.toml`, entrada en `CHANGELOG.md`). Confirmado
+en runtime en `ha-report2` — `/health` devuelve `version: v0.4.2-django`.
+
+### 8.07. Cierre de cobertura en views/ (commit `bc55df8`)
+
+El operador reviso los logs de CI (`Lint + Test` Python 3.11/3.12) y
+detecto que el reporte de coverage por-archivo (visible por primera
+vez tras el split PC-2, antes enterrado en un unico numero para
+`accounts/views.py`) mostraba 5 modulos bajos: `sessions.py` 48%,
+`account.py` 55%, `mfa.py` 70%, `email_change.py` 74%, `profile.py` 78%.
+
+No era una regresion de PC-2 — las ramas nunca estuvieron testeadas,
+solo quedaban invisibles al estar todas juntas en un solo archivo.
+
+Se agregaron/extendieron 5 archivos de test:
+
+| Archivo | Cambio | Cobertura resultante |
+|---|---|---|
+| `tests/test_profile_session_revoke_views.py` (nuevo) | HTTP tests para `revoke_other_sessions_view` / `revoke_session_view` — antes solo se probaban indirectamente via interceptacion de middleware | `sessions.py`: 48% → **100%** |
+| `tests/test_hardening_20260615.py` (extendido) | JSON malformado, password vacio/incorrecto, form-POST no-JSON para `delete_my_account_view` | `account.py`: 55% → **100%** |
+| `tests/test_mfa_view_error_paths.py` (nuevo) | JSON malformado parametrizado en los 8 endpoints MFA, `mfa_confirm_view` (TOTP confirm, CERO cobertura previa), success de `mfa_start_view`, wrong-password en disable generico + email-disable | `mfa.py`: 70% → **98%** |
+| `tests/test_email_change_double_opt_in.py` (extendido) | `email_change_cancel_view` (link publico de alerta, CERO cobertura previa), token invalido en confirm, "sin pending" 404 en cancel-self, JSON malformado | `email_change.py`: 74% → **95%** |
+| `tests/test_profile_view_gaps.py` (nuevo) | `?partial=sessions`, GET-405/JSON malformado/form invalido en `update_preferences`, form invalido + JSON-success en `update_avatar`, `delete_avatar_view` (CERO cobertura previa) | `profile.py`: 78% → **93%** |
+
+**Suite**: 1013 → **1058 pass** (+45 tests), mismos 11 fail
+pre-existentes de Windows. Coverage total: 86% → **88%**.
+
+**Sin bump de version** — es cierre de deuda de tests surgida de
+PC-2, no una fase de roadmap.
+
+**Lo que queda sin cerrar (bajo valor, requiere mocking pesado)**:
+- `mfa_email_start_view` / `email_change_request_view` / `send_profile_test_email_view`:
+  rama `except Exception` generica de fallo SMTP (necesita mockear
+  `send_with_retry`/`.send()` para forzar una excepcion no-ValueError).
+- `profile.py`: rama de "password con mas de N dias" en
+  `_security_alerts_for` (requiere fijar `password_changed_at` en el
+  pasado) y dos `try/except` de `file.seek()` no-seekable (edge case
+  de streams no reposicionables).
+
+Pendiente opcional para una sesion futura si se quiere cerrar el 100%
+en los 5 modulos.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
