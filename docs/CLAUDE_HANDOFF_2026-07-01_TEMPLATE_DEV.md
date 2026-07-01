@@ -41,8 +41,14 @@ Sesion previa: [`CLAUDE_HANDOFF_2026-06-30_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026
 
 ## §2. Objetivo de la sesion
 
-Elegido por el operador: hacer **A (PC-1 cleanup)** y luego **B (PC-2 —
-split de `accounts/views.py`)** en la misma sesion.
+> **Nota de scope**: la sesion arranco con A+B y se extendio a lo largo
+> del dia hasta completar los 4 splits estructurales. Alcance final:
+> **A (PC-1 cleanup) → B (PC-2 views) → coverage/CI cleanup → PC-3
+> admin_views → PC-4 settings → roadmap D-5 (imagenes)**. Cada frente
+> con su S-0X en servidor y bump. Detalle cronologico en §3 y §8.
+
+Elegido por el operador (arranque): hacer **A (PC-1 cleanup)** y luego
+**B (PC-2 — split de `accounts/views.py`)** en la misma sesion.
 
 **A. PC-1 cleanup** — Extraer los 4 dominios residuales de
 `services/__init__.py` para dejarlo como puro re-export:
@@ -234,18 +240,21 @@ cubre servir `/media` + `/static` directo desde Caddy con brotli +
 
 ## §8. Continuidad — para el proximo agente
 
-### 8.0. Estado snapshot al cierre
+### 8.0. Estado snapshot al cierre (FINAL — actualizado 2026-07-01)
 
-- Rama: **`dev @ HEAD`** tras cierre de gaps residuales + skipif Windows.
-- `main @ 4b36607`, **52+ commits atras** de `dev`.
-- Unit suite: **1063 pass / 0 fail** (los 11 pre-existentes Windows
-  ahora skip explicito en la plataforma).
-- ruff / mypy: **0 errores en codigo del paquete**.
-- Coverage total: **88%** (era 86% al abrir la sesion).
-- Version: **`v0.4.2-django`** (bumpeado tras S-05, confirmado en servidor).
-- `services/` package: **14 modulos** (`__init__.py` puro re-export).
-- `views/` package: **9 modulos** (`__init__.py` puro re-export),
-  cobertura 93-100% en los 5 modulos que quedaron bajos tras el split.
+- Rama: **`dev @ a7592e1`** (local == `origin/dev`, pusheado).
+- `main @ 4b36607`, **66 commits atras** de `dev` (sin tocar).
+- Version: **`v0.4.4-django`** (confirmada en runtime en `ha-report2`).
+- Unit suite: **1060 pass / 0 fail / 18 skip** (14 skipif Windows + 4 e2e opt-in).
+- ruff: **0 errores**. mypy: **0 errores** (salvo `av.py` AF_UNIX, Windows-only).
+- Coverage total: **88%**; paquete `views/` en **96%**.
+- **4 splits estructurales cerrados** — no queda monolito de backend:
+  - `services/` — 14 modulos (PC-1)
+  - `views/` — 9 modulos (PC-2)
+  - `admin_views/` — 10 modulos (PC-3)
+  - `settings/` — 10 modulos (PC-4)
+- Servidor `ha-report2 @ /opt/ameli-app-template-dev`: corriendo
+  `v0.4.4-django`, S-05/S-06/S-07 aprobados.
 
 ### 8.05. S-05 — ejecutado y aprobado (2026-07-01)
 
@@ -271,34 +280,19 @@ al monolito. Runtime aprobado para bump.
 
 ### 8.1. Primer paso (siguiente agente)
 
-**Ejecutar S-05 en `ha-report2`:**
+Los 4 splits estructurales estan cerrados y validados en servidor. El
+proximo agente elige del roadmap (§7). Opciones, en orden sugerido:
 
-```bash
-cd /opt/ameli-app-template-dev
-git pull origin dev
-systemctl restart ameli-app-template-dev-api.service
-curl -s http://127.0.0.1:18080/health | python3 -m json.tool | grep -E '"ok"|"version"'
-```
+1. **D-5 — pipeline de transformacion de avatar** (resize + WebP + strip
+   EXIF). Diseno completo en §7.1; Pillow ya esta instalado. ~1-1.5h.
+   Mismo patron de dominios que PC-1..PC-4 (nuevo `services/images.py`).
+2. **Promote `dev → main` v0.5.0** — con los 4 PCs cerrados, `dev` esta
+   66 commits adelante de `main`. Buen momento para milestone con tag
+   limpio. **Requiere instruccion explicita del operador** (regla vigente).
+3. **D-2 / D-4 / templates inline JS** — polish frontend + testing.
 
-Todas las URLs de `accounts/urls.py` deben responder igual que antes:
-- `/login/`, `/login/verify-mfa/`, `/login/verify-mfa/resend/`
-- `/login/forgot/`, `/login/reset/<uid>/<token>/`
-- `/logout/`
-- `/profile/`, `/profile/preferences/`, `/profile/email/test/`
-- `/profile/avatar/`, `/profile/avatar/delete/`
-- `/profile/password/`, `/profile/delete-account/`
-- `/profile/sessions/revoke-others/`, `/profile/sessions/<key>/revoke/`
-- `/profile/mfa/start/`, `/profile/mfa/confirm/`, `/profile/mfa/disable/`,
-  `/profile/mfa/totp/disable/`, `/profile/mfa/email/disable/`,
-  `/profile/mfa/regenerate-codes/`, `/profile/mfa/email/start/`,
-  `/profile/mfa/email/confirm/`
-- `/profile/email-change/`, `/profile/email-change/cancel-pending/`,
-  `/profile/email-change/confirm/<id>/<token>/`,
-  `/profile/email-change/cancel/<id>/<token>/`
-- `/api/admin/session`
-
-Si S-05 pasa: bump a `v0.4.2-django` (VERSION + pyproject.toml +
-CHANGELOG.md entry + commit `close PC-1 cleanup + PC-2 + bump v0.4.2-django`).
+Nota: si se retoma servidor, la version corriendo es `v0.4.4-django`
+(pull ya hecho). No hay pasos pendientes de deploy.
 
 ### 8.06. S-05 pasado, bump aplicado (commit `11deef0`)
 
