@@ -17,9 +17,21 @@ at the ``scan_bytes`` boundary (or its internal ``_scan_*`` helpers).
 from __future__ import annotations
 
 import io
+import sys
 from unittest.mock import patch
 
 import pytest
+
+# clamd's Unix-domain socket path uses AF_UNIX, which does not exist
+# on Windows (native Python's ``socket`` module has no ``AF_UNIX``
+# attribute on that platform). The three tests below patch
+# ``av.socket.socket`` / call ``av._scan_clamd_unix`` directly and
+# would fail at import time on Windows. Skip them there; CI (Linux)
+# still exercises the full path.
+_skip_on_windows_af_unix = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="AF_UNIX socket is Linux-only; the clamd Unix path is unreachable on Windows",
+)
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image
@@ -255,6 +267,7 @@ class _FakeUnixClamdSocket(_FakeClamdSocket):
         self.closed = True
 
 
+@_skip_on_windows_af_unix
 def test_clamd_unix_clean_verdict():
     fake = _FakeUnixClamdSocket(b"stream: OK\0")
     with patch.object(av.socket, "socket", return_value=fake):
@@ -270,6 +283,7 @@ def test_clamd_unix_clean_verdict():
     assert fake.sent.endswith(b"\0\0\0\0")
 
 
+@_skip_on_windows_af_unix
 def test_clamd_unix_infected_extracts_signature():
     fake = _FakeUnixClamdSocket(b"stream: Eicar-Test-Signature FOUND\0")
     with patch.object(av.socket, "socket", return_value=fake):
@@ -305,6 +319,7 @@ def test_scan_bytes_dispatches_unix_scheme():
     assert mocked_tcp.call_count == 0
 
 
+@_skip_on_windows_af_unix
 def test_scan_bytes_treats_missing_unix_socket_as_unreachable():
     """A non-existent socket path raises ``FileNotFoundError``
     (subclass of ``OSError``). ``scan_bytes`` must bucket that as

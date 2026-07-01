@@ -10,10 +10,35 @@ template instead of adding new features.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 from django.contrib.auth import get_user_model
 
 from ameli_web.accounts.services import bootstrap_superadmin, grant_sudo
+
+# On Windows, ``Path.symlink_to()`` requires either developer mode ON
+# or the process to be elevated (``SeCreateSymbolicLinkPrivilege``);
+# without that, the syscall raises WinError 1314. Same for the
+# ``os.fstat`` inode probe used by the fsync test — Windows exposes
+# ``st_dev/st_ino`` differently than POSIX and the "same inode as the
+# parent dir" identity does not hold. The three tests below rely on
+# behaviour that only reproduces on Linux (which is where the deploy
+# actually lives). Skip them on Windows; CI (Linux) still runs them.
+_skip_on_windows_symlink = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "symlink creation requires elevated privileges on Windows; the "
+        "guard being tested only fires on Linux where the deploy runs"
+    ),
+)
+_skip_on_windows_fsync = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "the parent-dir fsync probe relies on POSIX st_dev/st_ino "
+        "identity that Windows does not expose the same way"
+    ),
+)
 
 User = get_user_model()
 
@@ -656,6 +681,7 @@ def test_apply_audit_key_to_env_file_refuses_newline_injection(tmp_path):
     assert env_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=original\n"
 
 
+@_skip_on_windows_symlink
 def test_apply_audit_key_to_env_file_refuses_symlink(tmp_path):
     """Symlink at the env path could redirect the write to /etc/passwd
     on a compromised host. Refuse it preemptively."""
@@ -694,6 +720,7 @@ def test_apply_audit_key_to_env_file_missing_file(tmp_path):
     assert "not found" in result["error"]
 
 
+@_skip_on_windows_symlink
 def test_apply_audit_key_to_env_file_rejects_symlink_at_syscall_level(tmp_path):
     """O_NOFOLLOW makes the kernel reject a symlink at the final path
     component — closes the TOCTOU window between os.path.islink and
@@ -711,6 +738,7 @@ def test_apply_audit_key_to_env_file_rejects_symlink_at_syscall_level(tmp_path):
     assert real_file.read_text(encoding="utf-8") == "AMELI_APP_AUDIT_HMAC_KEY=x\n"
 
 
+@_skip_on_windows_fsync
 def test_apply_audit_key_to_env_file_fsyncs_parent_dir(tmp_path, monkeypatch):
     """After os.replace we fsync the parent directory so the rename
     survives a power loss. Mock os.fsync to count calls and assert at

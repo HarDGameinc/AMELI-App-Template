@@ -19,11 +19,26 @@ required).
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP_SH = ROOT / "scripts" / "backup.sh"
+
+# Every test in this file shells out to ``sed -E ...`` to reproduce the
+# regex used inside backup.sh. Windows has neither ``sed`` on PATH by
+# default nor a POSIX-shell interpreter that understands the escape
+# sequences in the regex — the test would fail before it can assert
+# anything about backup.sh. Skip the whole module on Windows; CI (Linux)
+# runs it unchanged.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("sed") is None,
+    reason="sed / POSIX shell required; unavailable on Windows",
+)
 
 
 def _strip_driver(url: str) -> str:

@@ -170,7 +170,9 @@ def test_autodetect_prefers_config_yaml_over_example(tmp_path, monkeypatch):
     (cfg_dir / "app.yaml.example").write_text("app: {}\n")
     (cfg_dir / "app.yaml").write_text("app: {}\n")
     manage._autodetect_app_config(tmp_path)
-    assert os.environ["APP_CONFIG"].endswith("/config/app.yaml")
+    # Use os.sep so the assertion works on both POSIX (/config/app.yaml)
+    # and Windows (\config\app.yaml).
+    assert os.environ["APP_CONFIG"].endswith(f"{os.sep}config{os.sep}app.yaml")
 
 
 def test_autodetect_loads_env_file_alongside_config(tmp_path, monkeypatch):

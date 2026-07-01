@@ -419,3 +419,31 @@ def test_email_change_request_endpoint_rejects_malformed_json(client, tester):
     )
     assert response.status_code == 400
     assert response.json()["ok"] is False
+
+
+@pytest.mark.django_db
+def test_email_change_request_endpoint_maps_smtp_exception_to_502(
+    client, tester, monkeypatch,
+):
+    """The generic ``except Exception`` branch fires when the mail
+    backend raises anything other than ``ValueError``. Property: the
+    endpoint surfaces a 502 with a readable error, does NOT 500."""
+    # The view lazy-imports request_email_change from services, so we
+    # patch the source module — the lazy import re-resolves at call
+    # time and receives our boom function.
+    from ameli_web.accounts import services as services_pkg
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("smtp gone")
+
+    monkeypatch.setattr(services_pkg, "request_email_change", boom)
+    client.force_login(tester)
+
+    response = client.post(
+        "/profile/email-change/",
+        data='{"new_email": "new@example.com", "current_password": "%s"}' % TESTER_PASSWORD,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 502
+    assert "smtp" in response.json()["error"].lower()

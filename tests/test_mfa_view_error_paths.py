@@ -164,6 +164,31 @@ def test_mfa_confirm_view_rotates_session_key_on_success(client, viewer_user):
 
 
 @pytest.mark.django_db
+def test_mfa_email_start_view_maps_smtp_exception_to_502(
+    client, viewer_user, monkeypatch,
+):
+    """Generic ``except Exception`` branch fires when the mail
+    backend raises anything other than ``ValueError``. Property:
+    502 with readable error, not a 500."""
+    from ameli_web.accounts.views import mfa as mfa_views
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("smtp gone")
+
+    monkeypatch.setattr(mfa_views, "start_mfa_email_enrollment", boom)
+    client.force_login(viewer_user)
+
+    response = client.post(
+        "/profile/mfa/email/start/",
+        data='{"current_password": "%s"}' % USER_PASSWORD,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 502
+    assert "smtp" in response.json()["error"].lower()
+
+
+@pytest.mark.django_db
 def test_mfa_regenerate_view_returns_fresh_codes(client, viewer_user):
     client.force_login(viewer_user)
     start = start_mfa_enrollment("viewer", current_password=USER_PASSWORD)

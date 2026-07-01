@@ -17,6 +17,7 @@ prior commit:
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -299,6 +300,10 @@ def test_delete_my_account_endpoint_form_post_success_redirects_to_login(client,
 # LOW code-review A2 — backup.sh exit-2 contract
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bash script + POSIX shell required; unavailable on Windows",
+)
 def test_backup_fail_helper_honours_explicit_exit_code(tmp_path):
     """Calling ``fail 2 "pg_dump failed"`` must exit with code 2; the
     legacy single-arg form still exits 1 so existing callers keep
