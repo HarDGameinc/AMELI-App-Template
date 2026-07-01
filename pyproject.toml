@@ -107,7 +107,7 @@ ignore_missing_imports = true
 # tests/test_permissions.py + tests/test_account_guards.py).
 # Narrowing per-view with ``cast()`` would be cleaner long-term;
 # tracked as a follow-up.
-module = ["ameli_web.accounts.views", "ameli_web.admin_views"]
+module = ["ameli_web.accounts.views", "ameli_web.accounts.views.*", "ameli_web.admin_views"]
 disable_error_code = ["union-attr", "call-arg", "misc", "arg-type", "return-value"]
 
 [tool.django-stubs]
