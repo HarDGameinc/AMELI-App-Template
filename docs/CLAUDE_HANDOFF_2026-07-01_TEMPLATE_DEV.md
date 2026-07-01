@@ -353,6 +353,50 @@ edge cases pendientes:
 skip explícito en Windows). Coverage sigue en 88% total, pero las
 ramas SMTP y el edge de seek quedaron cubiertos.
 
+### 8.09. PC-3 — split `admin_views.py` (commit `a5e37fc`)
+
+Mismo patron que PC-2: `ameli_web/admin_views.py` (745 lineas) →
+paquete `ameli_web/admin_views/` con 10 modulos + `__init__.py`
+re-export. `ameli_web/urls.py` no cambia (usa `admin_views.<name>`).
+
+| Modulo | Contenido |
+|---|---|
+| `_common.py` | Decoradores (`superadmin_required`, `sudo_required`), constantes `*_PER_PAGE_COOKIE`, helpers (`_expects_json`, `_json_body`, `_json_error`, `_is_fetch_request`) |
+| `panel.py` | `admin_panel` (HTML dashboard) |
+| `users.py` | `admin_users`, `admin_update_user`, `admin_disable_user_mfa`, `admin_reset_user_password`, `admin_change_password`, `admin_unlock_user` |
+| `audit.py` | `admin_audit` |
+| `maintenance.py` | `admin_maintenance_toggle`, `admin_maintenance_status` |
+| `metrics.py` | `admin_email_queue_metrics` |
+| `sessions.py` | `admin_sessions`, `admin_revoke_session` |
+| `exports.py` | `_AUDIT_EXPORT_COLUMNS`, `_USERS_EXPORT_COLUMNS`, `_csv_safe`, iterators + `admin_audit_export`, `admin_users_export` |
+| `sudo.py` | `admin_sudo`, `admin_sudo_email_code`, `admin_sudo_status`, `admin_django_admin_enter` |
+
+**Ajustes derivados**:
+- Ruff `--fix --unsafe-fixes` limpio 318 F401 (headers permisivos comunes).
+- `pyproject.toml` `[[tool.mypy.overrides]]` extendido con
+  `ameli_web.admin_views.*` para que los submodulos hereden la
+  supresion (`union-attr`, `call-arg`, etc.) que el monolito tenia.
+- `_csv_safe` re-exportado desde `admin_views/__init__.py` porque
+  `tests/test_security_hardening_block1.py` lo importa por la
+  fachada plana.
+
+**Fix de regresion durante la verificacion** (bug del script de
+extraccion, no de PC-3 per se): mi primera version del decorador
+`sudo_required` en `_common.py` retornaba `_json_error("sudo required",
+status=403)`. El original retornaba `JsonResponse({"ok": False,
+"error": "sudo required", "need_sudo": True, "sudo_url": "/admin/sudo/"},
+status=401)` — ese payload especifico permite a la UI prompt-and-retry
+transparente. Dos tests de seguridad
+(`test_admin_write_without_sudo_returns_need_sudo`,
+`test_enter_django_admin_endpoint_requires_sudo`) pinnearon la
+forma exacta y fallaron; se restauro el codigo original antes del push.
+
+**Suite tras el fix**: 1060 pass / 0 fail / 18 skip. Ruff / mypy clean.
+
+**Pendiente**: S-06 en servidor (`ha-report2`) para verificar que
+las 20+ URLs de `/admin/*` siguen respondiendo. Bump a
+`v0.4.3-django` tras S-06 OK.
+
 ### 8.2. Restricciones criticas (siguen vigentes)
 
 - Server pull SIEMPRE de `dev`. `main` solo avanza por instruccion
