@@ -393,9 +393,38 @@ forma exacta y fallaron; se restauro el codigo original antes del push.
 
 **Suite tras el fix**: 1060 pass / 0 fail / 18 skip. Ruff / mypy clean.
 
-**Pendiente**: S-06 en servidor (`ha-report2`) para verificar que
-las 20+ URLs de `/admin/*` siguen respondiendo. Bump a
-`v0.4.3-django` tras S-06 OK.
+### 8.10. S-06 aprobado + bump a `v0.4.3-django`
+
+**S-06** ejecutado en `ha-report2 @ /opt/ameli-app-template-dev` tras
+pull a `ca74d3e`:
+
+- **Boot**: `active (running)` en <1s tras restart; sin traceback a
+  pesar del split de 745 lineas + los 10 modulos nuevos.
+- **Imports por shell**: 25 admin_views symbols accesibles via
+  `from ameli_web import admin_views` — todas las funciones + los 2
+  decoradores + las 3 constantes `*_PER_PAGE_COOKIE` que
+  `ameli_web/urls.py` no necesita pero externos podrian.
+- **Rutas privadas (GET sin cookie)**: `/admin/`, `/admin/users`,
+  `/admin/audit`, `/admin/sessions`, `/admin/maintenance/status/`,
+  `/admin/metrics/email-queue`, `/admin/sudo/status/` → 302 todas
+  (redirect a login, comportamiento intacto).
+- **Browser (manual, confirmado por operador)**: reset password
+  desde `/admin/`, requerir 2FA para un user, forzar cambio de
+  contrasena — todas las acciones pasan por
+  `superadmin_required` + `sudo_required` y funcionan.
+
+**Bump a `v0.4.3-django`** aplicado (`VERSION`, `pyproject.toml`,
+`CHANGELOG.md` con entrada consolidada PC-3 + CI cleanup).
+
+**Nota sobre el smoke test 3 (sudo_required)**: el status devolvio
+`302` en lugar de `401`. Es un falso negativo del test, no un bug de
+PC-3: `bootstrap_superadmin` crea el user con
+`must_change_password=True` por default, y `MustChangePasswordMiddleware`
+intercepta antes de que `sudo_required` ejerza. El fix real del
+decorador esta cubierto por
+`test_admin_write_without_sudo_returns_need_sudo` y
+`test_enter_django_admin_endpoint_requires_sudo` (ambos verdes en
+suite local + CI Linux).
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 

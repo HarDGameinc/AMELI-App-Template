@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.4.3-django — 2026-07-01 (PC-3 + Windows CI cleanup)
+
+Cierre del split de `admin_views.py` + higiene de la suite local en
+Windows. API publica intacta — `from ameli_web import admin_views` +
+`admin_views.<name>` sigue funcionando sin cambios en `urls.py`.
+
+### PC-3 (commit `a5e37fc`)
+
+`ameli_web/admin_views.py` (745 lineas) convertido a paquete
+`ameli_web/admin_views/` con 10 modulos:
+
+- `_common.py` — decoradores (`superadmin_required`, `sudo_required`),
+  constantes `*_PER_PAGE_COOKIE`, helpers.
+- `panel.py` — `admin_panel` (HTML dashboard).
+- `users.py` — 6 endpoints de users (list, update, MFA disable,
+  password reset, unlock, admin change_password).
+- `audit.py` — `admin_audit`.
+- `exports.py` — `_csv_safe`, CSV/JSON export helpers,
+  `admin_audit_export`, `admin_users_export`.
+- `maintenance.py` — `admin_maintenance_toggle`, `admin_maintenance_status`.
+- `metrics.py` — `admin_email_queue_metrics`.
+- `sessions.py` — `admin_sessions`, `admin_revoke_session`.
+- `sudo.py` — 4 endpoints de sudo (grant, email code, status,
+  django-admin gate).
+
+`_csv_safe` re-exportado desde `__init__.py` para preservar el
+import directo de `tests/test_security_hardening_block1.py`.
+
+**Fix de regresion durante la verificacion**: mi primera version
+hand-written del decorador `sudo_required` devolvia `403 "sudo
+required"` — el original devuelve `401 {"need_sudo": true,
+"sudo_url": "/admin/sudo/"}` para que la UI prompt-and-retry
+transparente. Restaurado antes del push.
+
+### CI cleanup (commits `604ffe2`, `bc55df8`, `d607269`, `2556d74`, `35c8785`)
+
+- 11 tests pre-existentes que fallaban en Windows marcados con
+  `pytest.mark.skipif(sys.platform == "win32", ...)` (AF_UNIX, bash
+  `sed`, symlink privilegio elevado, `st_dev/st_ino` POSIX inode).
+  En CI Linux siguen corriendo sin cambios.
+- 1 test corregido para ser cross-platform (`test_autodetect_prefers_
+  config_yaml_over_example` usaba `"/config/app.yaml"` en lugar de
+  `os.sep`-joined).
+- Coverage de `views/` (post-PC-2) subio de ~78% a **96%** con nuevos
+  tests para JSON malformado, form-POST invalido, `?partial=` fetch,
+  wrong-password branches, `_csv_safe` export edge cases, y las 3
+  ramas "generic Exception" (SMTP failure → 502).
+
+### Verificacion
+
+- **Suite local Windows**: 1060 pass / 0 fail / 18 skip (14 nuevos
+  skipif Windows + 4 e2e opt-in).
+- **CI Linux (bandit + pytest)**: 1031 pass / 0 fail / 6 skip.
+- **Ruff / Mypy**: 0 errores.
+- **S-06 aprobado en `ha-report2`**: boot limpio con la nueva
+  version, 25 admin_views symbols importables, 7 URLs `/admin/*`
+  responden 302 sin cookie, browser smoke manual OK (reset password,
+  requerir 2FA, cambio obligatorio) — todas las acciones de admin
+  panel pasan por `superadmin_required` + `sudo_required` correctos.
+
 ## v0.4.2-django — 2026-07-01 (PC-1 cleanup + PC-2)
 
 Cierra el split estructural del paquete `accounts/`: `services/__init__.py`
