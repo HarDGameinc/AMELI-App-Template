@@ -317,7 +317,7 @@ deploy). Archivos tocados:
 | `test_clamd_unix_clean_verdict` | `AF_UNIX` no existe en el `socket` de Windows |
 | `test_clamd_unix_infected_extracts_signature` | idem |
 | `test_scan_bytes_treats_missing_unix_socket_as_unreachable` | idem |
-| `test_backup_sh_pg_url_strip.py` (3 tests) | Requieren `sed` + POSIX shell (module-level `pytestmark`) |
+| `test_backup_sh_pg_url_strip.py` (**7 tests**, module-level `pytestmark`) | Todos usan `_strip_driver()` que invoca `sed` real via subprocess |
 | `test_backup_fail_helper_honours_explicit_exit_code` | Requiere bash script |
 | `test_apply_audit_key_to_env_file_refuses_symlink` | `symlink_to` requiere privilegio elevado en Windows |
 | `test_apply_audit_key_to_env_file_rejects_symlink_at_syscall_level` | idem |
@@ -327,6 +327,14 @@ Un test resulto ser un bug de portabilidad, no incompatibilidad:
 `test_autodetect_prefers_config_yaml_over_example` chequeaba
 `"/config/app.yaml"` en lugar de `os.sep.join(...)`. Corregido — pasa
 en ambas plataformas.
+
+**Nota sobre el conteo**: el `pytestmark` a nivel de módulo del
+`test_backup_sh_pg_url_strip.py` alcanza los 7 tests del archivo, no
+solo los 3 que aparecían como FAILED en el log anterior (los otros 4
+también fallaban silenciosamente porque `_strip_driver()` era su
+dependencia común — el log truncó a los primeros 3). El total real
+de tests que ahora skippean en Windows es 14 (no 11), lo que explica
+`1060 pass / 18 skip` en la corrida final (14 nuevos + 4 e2e).
 
 **b) Gaps residuales de bajo valor cerrados.**
 
@@ -341,7 +349,7 @@ edge cases pendientes:
 | `test_update_avatar_swallows_seek_exception_on_non_seekable_stream` | `profile.py` líneas 258-259, 263-264 (proxy no-seekable) |
 | `test_security_alerts_flags_password_age_over_max` | `profile.py` rama `age_days > max_age` en `_security_alerts_for` (setear `date_joined` en el pasado — no existe `password_changed_at` como field) |
 
-**Suite**: 1058 → **1063 pass, 0 fail** (los 11 anteriores ahora
+**Suite**: 1058 → **1060 pass, 0 fail, 18 skip** (14 nuevos skipif Windows + 4 e2e opt-in). El commit `604ffe2` reporta "1063 pass" por un typo — el numero correcto es 1060; ver "Nota sobre el conteo" arriba. Los 11 anteriores ahora
 skip explícito en Windows). Coverage sigue en 88% total, pero las
 ramas SMTP y el edge de seek quedaron cubiertos.
 
