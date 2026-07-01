@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.4.4-django — 2026-07-01 (PC-4)
+
+Cierre del split de `settings.py`. API pública intacta — Django sigue
+leyendo `settings.<NAME>` sin ningún cambio en `urls.py`, middleware o
+código externo.
+
+### PC-4 (commit `911aea6`)
+
+`ameli_web/settings.py` (746 líneas) convertido a paquete
+`ameli_web/settings/` con 10 módulos:
+
+- `base.py` — `BASE_DIR`, `PROJECT_DIR`, `CFG`, `ENV_NAME`,
+  `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES`,
+  `_int_env`, boot guards secret + debug + hosts + proxies.
+- `integrations.py` — CDN SRI, `HEALTH_METRICS_ALLOWLIST`,
+  `HIBP_PASSWORD_CHECK`, `AV_ENDPOINT` (+ scheme guard),
+  `OTEL_EXPORTER_OTLP_ENDPOINT` (+ scheme guard), `SILK_ENABLED`
+  (+ prod second-flag guard).
+- `auth.py` — `PASSWORD_HASHERS`, `ARGON2_*`,
+  `AUTH_PASSWORD_VALIDATORS`, `AUDIT_HMAC_KEY` (+ prod guard),
+  `MFA_ENCRYPTION_KEY` (+ prod guard), `AUTH_USER_MODEL`,
+  `LOGIN_URL`, `LOGIN_REDIRECT_URL`, `LOGOUT_REDIRECT_URL`.
+- `cookies.py` — SESSION_COOKIE_* (con política `__Host-` +
+  guards para Secure y Domain), CSRF_COOKIE_*.
+- `security_headers.py` — HSTS, `X_FRAME_OPTIONS`,
+  `SECURE_PROXY_SSL_HEADER`, `MESSAGE_STORAGE` (+ allow-list guard).
+- `i18n_static.py` — `LANGUAGE_CODE`, `TIME_ZONE`, `LANGUAGES`,
+  `STATIC_URL`, `MEDIA_ROOT` + path-inside-checkout guard.
+- `database.py` — `_default_sqlite_path`, `_db_pool_options`,
+  `_database_settings`, `DATABASES`. Ver "Late-binding de CFG" abajo.
+- `applications.py` — `INSTALLED_APPS`, `MIDDLEWARE`, `TEMPLATES`,
+  `ROOT_URLCONF`, WSGI/ASGI. Silk apps + middleware condicionales.
+- `email.py` — `EMAIL_BACKEND`, SMTP config, `PASSWORD_RESET_TIMEOUT`,
+  prod-only email backend guard.
+- `__init__.py` — orquestador con orden crítico de imports +
+  `# ruff: noqa: I001` para que ruff no reordene (rompería la
+  cadena de guards).
+
+### Fixes descubiertos durante la extracción
+
+- **Orden crítico de imports**: ruff `--fix` reordena alfabéticamente
+  y rompe la cadena de dependencias (`applications` lee `SILK_ENABLED`
+  de `integrations`; `applications` debe cargarse después). Fix:
+  `# ruff: noqa: I001` en `__init__.py`.
+- **Test helpers `_reload_settings`** en 3 archivos
+  (`test_settings_boot_guards.py`, `test_host_cookie_prefix.py`,
+  `test_message_storage_guard.py`) solo poppeaban `ameli_web.settings`
+  de `sys.modules`. Con package, los submódulos quedaban cacheados y
+  los guards no re-corrían. Extendido a wipe de todos los
+  `ameli_web.settings*`.
+- **Late-binding de `CFG`** en `database.py`: 6 tests hacen
+  `monkeypatch.setattr(settings, "CFG", ...)` y luego llaman
+  `settings._database_settings()`. En el monolito el helper resolvía
+  `CFG` en el mismo módulo → el patch tomaba efecto. En el package,
+  `database.py` importaba `CFG` de `.base` al import time → referencia
+  frozen. Fix: `_cfg()` que lee `settings.CFG` en cada llamada
+  (late-binding a través del package).
+- **Helpers privados** (`_database_settings`, `_db_pool_options`,
+  `_default_sqlite_path`, `_int_env`, `_IS_DEV_ENV`) no propagados por
+  `from .X import *` (drop de underscore names). Re-importados
+  explícitamente en `__init__.py`.
+
+### Verificación
+
+- **Suite local Windows**: 1060 pass / 0 fail / 18 skip.
+- **Ruff / Mypy**: 0 errores.
+- **S-07 aprobado en `ha-report2`**: boot limpio, `manage.py check`
+  0 issues, 15 settings symbols importables, valores derivados
+  coherentes (INSTALLED_APPS=9, MIDDLEWARE=15,
+  SESSION_COOKIE_NAME=`ameli_app_session` en dev,
+  EMAIL_BACKEND=console en dev).
+
 ## v0.4.3-django — 2026-07-01 (PC-3 + Windows CI cleanup)
 
 Cierre del split de `admin_views.py` + higiene de la suite local en
