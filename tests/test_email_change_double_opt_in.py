@@ -336,3 +336,86 @@ def test_email_change_confirm_via_get_renders_outcome(client, tester):
     response = client.post(f"/profile/email-change/confirm/{request_id}/{token}/")
     assert response.status_code == 200
     assert b"Email actualizado" in response.content
+
+
+@pytest.mark.django_db
+def test_email_change_confirm_via_post_rejects_invalid_token(client, tester):
+    """PC-2 split surfaced that the confirm view's POST error branch
+    (invalid/expired token) was never exercised at the HTTP level —
+    only the underlying ``confirm_email_change`` service raising
+    ValueError."""
+    request_email_change(
+        tester,
+        new_email="new@example.com",
+        current_password=TESTER_PASSWORD,
+        request=_make_request(None),
+    )
+    record = EmailChangeRequest.objects.get(user=tester)
+
+    response = client.post(f"/profile/email-change/confirm/{record.id}/wrong-token/")
+
+    assert response.status_code == 400
+    assert "invalido" in response.content.decode("utf-8")
+
+
+@pytest.mark.django_db
+def test_email_change_cancel_pending_returns_404_when_none_pending(client, tester):
+    """cancel-self on an account with no pending request must not 500."""
+    client.force_login(tester)
+    response = client.post("/profile/email-change/cancel-pending/")
+    assert response.status_code == 404
+    assert response.json()["ok"] is False
+
+
+@pytest.mark.django_db
+def test_email_change_cancel_view_via_alert_link_renders_outcome(client, tester):
+    """HTTP-level pin for the public "cancel from the OLD-address alert
+    email" endpoint — PC-2 split left it with zero HTTP coverage
+    (only the underlying ``cancel_email_change`` service was tested)."""
+    request_email_change(
+        tester,
+        new_email="new@example.com",
+        current_password=TESTER_PASSWORD,
+        request=_make_request(None),
+    )
+    alert_msg = next(m for m in mail.outbox if m.to == ["old@example.com"])
+    import re
+
+    match = re.search(r"/cancel/(\d+)/([^/\s]+)/", alert_msg.body)
+    request_id, token = match.group(1), match.group(2)
+
+    response = client.get(f"/profile/email-change/cancel/{request_id}/{token}/")
+
+    assert response.status_code == 200
+    assert b"Pedido cancelado" in response.content
+    tester.refresh_from_db()
+    assert tester.email == "old@example.com"
+    record = EmailChangeRequest.objects.get(id=request_id)
+    assert record.cancelled_at is not None
+
+
+@pytest.mark.django_db
+def test_email_change_cancel_view_rejects_invalid_token(client, tester):
+    request_email_change(
+        tester,
+        new_email="new@example.com",
+        current_password=TESTER_PASSWORD,
+        request=_make_request(None),
+    )
+    record = EmailChangeRequest.objects.get(user=tester)
+
+    response = client.get(f"/profile/email-change/cancel/{record.id}/wrong-token/")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_email_change_request_endpoint_rejects_malformed_json(client, tester):
+    client.force_login(tester)
+    response = client.post(
+        "/profile/email-change/",
+        data=b"not-json{{{",
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
