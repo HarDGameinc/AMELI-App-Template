@@ -200,6 +200,28 @@ detecta esto — corrio manualmente con un script Python.
 - `services/` package: **14 modulos** (`__init__.py` puro re-export).
 - `views/` package: **9 modulos** (`__init__.py` puro re-export).
 
+### 8.05. S-05 — ejecutado y aprobado (2026-07-01)
+
+Ejecutado en `ha-report2 @ /opt/ameli-app-template-dev` tras pull a `1fe655d`:
+
+- **Boot**: servicio `active (running)` en <1s tras restart; sin
+  traceback, sin `ImportError` a pesar del split masivo (~600 lineas
+  de views movidas + lazy imports re-anclados).
+- **Imports por shell**: 29 view symbols accesibles via
+  `from ameli_web.accounts import views` — todas las funciones que
+  `accounts/urls.py` usa via `views.<name>`.
+- **Rutas publicas** (GET sin cookie): `/`, `/login/`, `/login/forgot/`,
+  `/docs` → 200 todas.
+- **Rutas privadas** (GET sin cookie): `/profile/`, `/profile/password/`,
+  `/profile/delete-account/` → 302 (redirect a login) todas.
+- **Browser (manual)**: login normal, `/profile/` tabs, cambio de
+  preferencias, `/login/forgot/` → confirmado OK por el operador.
+- **`ameli-app verify-audit`**: `{"checked": 225, "ok": true}` (+19
+  filas vs baseline pre-S-05).
+
+**Veredicto**: PC-1 cleanup + PC-2 preservan comportamiento identico
+al monolito. Runtime aprobado para bump.
+
 ### 8.1. Primer paso (siguiente agente)
 
 **Ejecutar S-05 en `ha-report2`:**
