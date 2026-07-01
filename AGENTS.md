@@ -28,7 +28,17 @@ src/ameli_app/          # Runtime, CLI, workers, static assets, config helpers
   static/               # CSS (app.css), JS (app.js)
 
 src/ameli_web/          # Django web layer
-  settings.py           # Django settings (746 lines — target for splitting)
+  settings/             # Django settings — domain-split package (PC-4 closed)
+    __init__.py         #   Orchestrator (imports submodules in critical order)
+    base.py             #   BASE_DIR, PROJECT_DIR, CFG, ENV_NAME, ALLOWED_HOSTS, TRUSTED_PROXIES
+    integrations.py     #   CDN SRI, health allowlist, HIBP, AV, OTel, Silk toggle
+    auth.py             #   PASSWORD_HASHERS, validators, AUDIT_HMAC_KEY, MFA_ENCRYPTION_KEY, LOGIN_URL
+    cookies.py          #   SESSION_COOKIE_*, CSRF_COOKIE_*, __Host- guards
+    security_headers.py #   HSTS, X-Frame-Options, proxy SSL, MESSAGE_STORAGE
+    i18n_static.py      #   LANGUAGE_CODE, TIME_ZONE, STATIC_URL, MEDIA_ROOT + path guards
+    database.py         #   DATABASES + psycopg pool option
+    applications.py     #   INSTALLED_APPS, MIDDLEWARE, TEMPLATES, WSGI/ASGI
+    email.py            #   EMAIL_BACKEND, SMTP, PASSWORD_RESET_TIMEOUT
   urls.py               # URL configuration
   asgi.py / wsgi.py     # ASGI/WSGI entry points
   accounts/             # Auth, MFA, profile, sessions, password reset
@@ -172,7 +182,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
 2. **`accounts/views/` (PC-2 CLOSED, 2026-07-01)** — 9 domain modules; `__init__.py` re-exports
 3. **`admin_views/` (PC-3 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` re-exports
-4. **`settings.py` (746 lines)** — candidate for settings package (PC-4 pendiente)
+4. **`settings/` (PC-4 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` orquesta imports en orden crítico
 5. **Inline JS in templates** — `admin/panel.html` (~650 lines), `profile.html` (~470 lines)
 
 ### Frontend design gaps
