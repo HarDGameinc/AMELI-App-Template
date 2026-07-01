@@ -35,16 +35,20 @@ src/ameli_web/          # Django web layer
     models.py           # User, UserSession, MFARecoveryCode, MFAEmailChallenge,
                         # EmailChangeRequest, ThrottleCounter, OutboundEmail,
                         # MaintenanceMode
-    services/           # Business logic — domain-split package (PC-1)
-      __init__.py       #   Re-exports + retention/reporting/auth-alerts/email-change (~1104 lines)
+    services/           # Business logic — domain-split package (PC-1 fully closed)
+      __init__.py       #   Pure re-export surface (~200 lines)
       audit.py          #   Hash-chained audit log, HMAC key rotation (462 lines)
-      throttle.py       #   Atomic counters, lockout, rate limits (495 lines)
-      sudo.py           #   Sudo grants, brute-force gate (211 lines)
+      auth_alerts.py    #   Auth-failure alert (ASVS V2.2.3) (189 lines)
+      email_change.py   #   Email-change double-opt-in flow (302 lines)
       email_queue.py    #   SMTP circuit breaker, outbox pattern (426 lines)
-      mfa.py            #   TOTP, email MFA, recovery codes (545 lines)
-      session.py        #   Session sync/revoke, listing/pagination (234 lines)
       maintenance.py    #   Maintenance mode get/enable/disable (83 lines)
+      mfa.py            #   TOTP, email MFA, recovery codes (545 lines)
       password_reset.py #   Password reset request/verify/complete (178 lines)
+      reporting.py      #   User + email-queue summaries + audit serialization (286 lines)
+      retention.py      #   Retention sweep + audit chain re-anchor (194 lines)
+      session.py        #   Session sync/revoke, listing/pagination (234 lines)
+      sudo.py           #   Sudo grants, brute-force gate (211 lines)
+      throttle.py       #   Atomic counters, lockout, rate limits (495 lines)
       user.py           #   User CRUD, serialize, avatars, password/email/account (543 lines)
     views.py            # View functions (1267 lines — target for splitting)
     mfa.py              # MFA secret encryption/decryption, QR code render
@@ -155,7 +159,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 ## State of the project (v0.4.0-django, 2026-06-30)
 
 ### Known architectural debt (prioritized)
-1. **`accounts/services/` (PC-1 in progress)** — `__init__.py` at 1596 lines; step 8 (user.py) remaining
+1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
 2. **`accounts/views.py` (1267 lines)** — needs splitting and consistent view pattern
 3. **`settings.py` (746 lines)** — candidate for settings package
 4. **`admin_views.py` (~1400+ lines)** — contains inline HTML generation
