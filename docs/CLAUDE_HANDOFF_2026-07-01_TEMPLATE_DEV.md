@@ -192,9 +192,10 @@ detecta esto — corrio manualmente con un script Python.
 
 ### 8.0. Estado snapshot al cierre
 
-- Rama: **`dev @ bc55df8`** (local == `origin/dev`, pusheado).
-- `main @ 4b36607`, **51 commits atras** de `dev`.
-- Unit suite: **1058 pass / 11 fail** (todos pre-existentes Windows).
+- Rama: **`dev @ HEAD`** tras cierre de gaps residuales + skipif Windows.
+- `main @ 4b36607`, **52+ commits atras** de `dev`.
+- Unit suite: **1063 pass / 0 fail** (los 11 pre-existentes Windows
+  ahora skip explicito en la plataforma).
 - ruff / mypy: **0 errores en codigo del paquete**.
 - Coverage total: **88%** (era 86% al abrir la sesion).
 - Version: **`v0.4.2-django`** (bumpeado tras S-05, confirmado en servidor).
@@ -299,6 +300,50 @@ PC-2, no una fase de roadmap.
 
 Pendiente opcional para una sesion futura si se quiere cerrar el 100%
 en los 5 modulos.
+
+### 8.08. Cierre de gaps residuales + Windows-only skipif
+
+Dos frentes cerrados en la misma ronda:
+
+**a) 11 fails pre-existentes de Windows → 0.**
+
+Cada uno depende de comportamiento Linux/POSIX sin equivalente en
+Windows. Marcados con `pytest.mark.skipif(sys.platform == "win32", ...)`
+para que sigan corriendo sin cambios en el CI Linux (donde vive el
+deploy). Archivos tocados:
+
+| Test | Motivo del skip |
+|---|---|
+| `test_clamd_unix_clean_verdict` | `AF_UNIX` no existe en el `socket` de Windows |
+| `test_clamd_unix_infected_extracts_signature` | idem |
+| `test_scan_bytes_treats_missing_unix_socket_as_unreachable` | idem |
+| `test_backup_sh_pg_url_strip.py` (3 tests) | Requieren `sed` + POSIX shell (module-level `pytestmark`) |
+| `test_backup_fail_helper_honours_explicit_exit_code` | Requiere bash script |
+| `test_apply_audit_key_to_env_file_refuses_symlink` | `symlink_to` requiere privilegio elevado en Windows |
+| `test_apply_audit_key_to_env_file_rejects_symlink_at_syscall_level` | idem |
+| `test_apply_audit_key_to_env_file_fsyncs_parent_dir` | Identidad `st_dev/st_ino` de POSIX no aplica en Windows |
+
+Un test resulto ser un bug de portabilidad, no incompatibilidad:
+`test_autodetect_prefers_config_yaml_over_example` chequeaba
+`"/config/app.yaml"` en lugar de `os.sep.join(...)`. Corregido — pasa
+en ambas plataformas.
+
+**b) Gaps residuales de bajo valor cerrados.**
+
+Nuevos tests que ejercen las ramas "generic Exception" (SMTP) y los
+edge cases pendientes:
+
+| Test agregado | Cierra |
+|---|---|
+| `test_send_profile_test_email_view_maps_smtp_exception_to_502` | `profile.py` líneas 219-223 |
+| `test_email_change_request_endpoint_maps_smtp_exception_to_502` | `email_change.py` líneas 43-45 |
+| `test_mfa_email_start_view_maps_smtp_exception_to_502` | `mfa.py` líneas 150-152 |
+| `test_update_avatar_swallows_seek_exception_on_non_seekable_stream` | `profile.py` líneas 258-259, 263-264 (proxy no-seekable) |
+| `test_security_alerts_flags_password_age_over_max` | `profile.py` rama `age_days > max_age` en `_security_alerts_for` (setear `date_joined` en el pasado — no existe `password_changed_at` como field) |
+
+**Suite**: 1058 → **1063 pass, 0 fail** (los 11 anteriores ahora
+skip explícito en Windows). Coverage sigue en 88% total, pero las
+ramas SMTP y el edge de seek quedaron cubiertos.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
