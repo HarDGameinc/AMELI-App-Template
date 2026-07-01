@@ -60,7 +60,17 @@ src/ameli_web/          # Django web layer
   audit/                # Hash-chained audit log
     models.py           # AuditEvent with prev_hmac/hmac chain
   dashboard/            # Home, health, docs, redoc views
-  admin_views.py        # Admin panel views
+  admin_views/          # Admin panel views — domain-split package (PC-3 closed)
+    __init__.py         #   Pure re-export surface
+    _common.py          #   Decorators + PER_PAGE_COOKIE constants + helpers
+    panel.py            #   admin_panel (HTML dashboard)
+    users.py            #   users list/CRUD + password reset + MFA disable + unlock
+    audit.py            #   admin_audit (list)
+    exports.py          #   audit / users CSV+JSON export
+    maintenance.py      #   maintenance toggle + status
+    metrics.py          #   email queue metrics
+    sessions.py         #   sessions list + revoke
+    sudo.py             #   sudo grant + email code + status + django-admin gate
   error_views.py        # 400/403/404/500 handlers
 
 manage.py               # Django management entrypoint (autodiscover config)
@@ -160,9 +170,9 @@ manage.py               # Django management entrypoint (autodiscover config)
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
-2. **`accounts/views.py` (1267 lines)** — needs splitting and consistent view pattern
-3. **`settings.py` (746 lines)** — candidate for settings package
-4. **`admin_views.py` (~1400+ lines)** — contains inline HTML generation
+2. **`accounts/views/` (PC-2 CLOSED, 2026-07-01)** — 9 domain modules; `__init__.py` re-exports
+3. **`admin_views/` (PC-3 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` re-exports
+4. **`settings.py` (746 lines)** — candidate for settings package (PC-4 pendiente)
 5. **Inline JS in templates** — `admin/panel.html` (~650 lines), `profile.html` (~470 lines)
 
 ### Frontend design gaps
