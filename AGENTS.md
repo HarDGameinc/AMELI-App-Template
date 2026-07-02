@@ -36,6 +36,7 @@ src/ameli_web/          # Django web layer
     cookies.py          #   SESSION_COOKIE_*, CSRF_COOKIE_*, __Host- guards
     security_headers.py #   HSTS, X-Frame-Options, proxy SSL, MESSAGE_STORAGE
     i18n_static.py      #   LANGUAGE_CODE, TIME_ZONE, STATIC_URL, MEDIA_ROOT + path guards
+    media.py            #   Avatar transform knobs (AVATAR_FORMAT / MAX_DIMENSION / WEBP_QUALITY) (D-5)
     database.py         #   DATABASES + psycopg pool option
     applications.py     #   INSTALLED_APPS, MIDDLEWARE, TEMPLATES, WSGI/ASGI
     email.py            #   EMAIL_BACKEND, SMTP, PASSWORD_RESET_TIMEOUT
@@ -51,6 +52,7 @@ src/ameli_web/          # Django web layer
       auth_alerts.py    #   Auth-failure alert (ASVS V2.2.3) (189 lines)
       email_change.py   #   Email-change double-opt-in flow (302 lines)
       email_queue.py    #   SMTP circuit breaker, outbox pattern (426 lines)
+      images.py         #   Avatar transform: resize + WebP + strip EXIF (D-5)
       maintenance.py    #   Maintenance mode get/enable/disable (83 lines)
       mfa.py            #   TOTP, email MFA, recovery codes (545 lines)
       password_reset.py #   Password reset request/verify/complete (178 lines)
@@ -161,11 +163,14 @@ manage.py               # Django management entrypoint (autodiscover config)
 
 ## Testing
 
-- **Framework:** pytest + pytest-django
+- **Framework:** pytest + pytest-django (Python); Node's built-in
+  `node:test` for JS helpers (`tests/js/`, run `node --test tests/js/*.test.js`)
 - **Coverage:** ≥85% (enforced in `pyproject.toml`)
-- **Static analysis:** ruff (enforces S security band), mypy (0 errors in 51 source files)
+- **Static analysis:** ruff (enforces S security band), mypy (0 errors)
 - **E2E:** Playwright (`tests/e2e/`, opt-in via `--run-e2e`)
-- **Test count:** 91 unit files + 4 e2e files (as of 2026-06-24)
+- **CI matrix:** Python 3.11 · 3.12 · 3.13 · 3.14 (on Django 5.2 LTS) +
+  a `js-unit` job for the JS tests
+- **JS unit tests (D-4):** password generator, strength evaluator, debounce
 
 ### Test categories
 - Account guards, login, MFA (TOTP, email, stacked, recovery UX, secret encryption)
@@ -176,7 +181,13 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.0-django, 2026-06-30)
+## State of the project (v0.4.7-django, 2026-07-02)
+
+Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
++ WebP + strip EXIF/GPS), an interactive client-side avatar cropper
+(`app.js:setupAvatarCropper`), the CI matrix widened to Python 3.11-3.14
+on Django 5.2 LTS (D-6'), and JS unit tests via `node:test` (D-4). All
+validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -193,7 +204,8 @@ manage.py               # Django management entrypoint (autodiscover config)
 - Inline styles in templates instead of utility classes
 
 ### Testing gaps
-- No JavaScript unit tests (password generator, strength evaluator, debounce)
+- JS unit tests exist for the pure helpers (D-4, node:test); the DOM-wiring
+  paths (cropper drag/zoom, pagination swap) are still e2e-only
 - No accessibility tests (axe-core, pa11y)
 - No migration tests (alembic upgrade/downgrade)
 - No visual regression tests
