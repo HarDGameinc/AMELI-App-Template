@@ -145,6 +145,37 @@ Entonces D-6' (reducido, sin tocar framework ni dropear Python):
 a los required status checks de branch protection (ver
 `OPERATIONS.md`). El CI Linux es el validador final del lock en 3.14.
 
+### 3.5. D-4 — framework de tests JS (lean)
+
+Cierra el gap que el roadmap nombraba ("no JS unit tests: password
+generator, strength evaluator, debounce") — reforzado porque el bug del
+cropper (§6.3) fue JS que solo cazo el e2e.
+
+Enfoque: **`node:test`** (runner nativo de Node, sin npm/package.json/
+build) + mock timers. Node v24 ya esta en la maquina.
+
+- `app.js` ahora es **require-able en Node**: el arranque DOM se
+  consolido en un bloque guardado por `typeof document`, y las funciones
+  puras se exportan via `module.exports` (guardado por `typeof module`).
+  Cambios menores para portabilidad: `window.crypto` → `globalThis.crypto`
+  (Web Crypto en ambos), `window.setTimeout/clearTimeout` → globales en
+  `debounce`, `window.AmeliPassword` guardado por `typeof window`.
+  **Comportamiento en navegador identico** (el <script> corre al final
+  del body; el bloque guardado corre igual que las invocaciones sueltas
+  anteriores).
+- `tests/js/password.test.js` + `tests/js/debounce.test.js` — **13
+  tests**: largo/clases de policy del generador, alfabeto sin ambiguos,
+  entropia (draws distintos), niveles de strength, y debounce con mock
+  timers (colapsa rafaga, timer interrumpido, rafagas separadas).
+- CI: nuevo job **`js-unit`** (`node --test tests/js/*.test.js`,
+  `setup-node@v4`). Aditivo.
+
+Verificado: 13/13 local; avatar e2e verde (valida el refactor de
+`app.js` en navegador real).
+
+Nota: `node --test tests/js/` (directorio) falla en Windows (lo trata
+como modulo); usar el glob `tests/js/*.test.js`.
+
 ## §4. Decisiones tomadas
 
 1. **Sin bump de version**. D-5 es codigo nuevo no probado en servidor
@@ -256,7 +287,7 @@ re-auth de alguien ya adentro; el burst ~2x por straddle es tolerable).
 | ~~D-6'~~ | ~~Bendecir Python 3.14 en CI (sigue 5.2 LTS)~~ | — | **CERRADO 2026-07-02** (§3.4) — matrix CI 3.11-3.14; el lock ya cubre cp313/cp314 (verificado contra PyPI), sin regen. Pendiente OPS: sumar los 2 checks nuevos a branch protection |
 | Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
 | D-2 | UX MFA prompts | 45 min | Polish |
-| D-4 | JS test framework | 2h | |
+| ~~D-4~~ | ~~JS test framework~~ | — | **CERRADO 2026-07-02** (§3.5) — node:test (built-in, sin deps): 13 tests para password gen/strength/debounce. `app.js` ahora es require-able en Node. Job CI `js-unit` |
 | Templates | Split inline JS `admin/panel.html` + `profile.html` | 2-3h | Deuda frontend |
 | D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | Promote | `dev → main` v0.5.0 | — | Requiere instruccion explicita |

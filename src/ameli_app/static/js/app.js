@@ -13,8 +13,6 @@ async function refreshHealthBadge() {
   }
 }
 
-refreshHealthBadge();
-
 function setupUserMenu() {
   const toggle = document.querySelector("[data-user-menu-toggle]");
   const panel = document.querySelector("[data-user-menu-panel]");
@@ -46,8 +44,6 @@ function setupUserMenu() {
   });
 }
 
-setupUserMenu();
-
 const AMELI_PASSWORD_SYMBOLS = "!@#$%^&*()-_=+?";
 
 function ameliRandomIndex(max) {
@@ -58,13 +54,17 @@ function ameliRandomIndex(max) {
   // a forensic adversary regenerate the password offline. Refuse
   // instead of producing a weak credential.
   // (SKILLS_REVIEW §4 Security MEDIUM, 2026-06-25.)
-  if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+  // ``globalThis.crypto`` is the Web Crypto API in browsers AND in
+  // Node (global since Node 20) — using it instead of ``window.crypto``
+  // lets the pure helpers run under node:test without a DOM.
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
     throw new Error(
-      "window.crypto.getRandomValues is unavailable; refusing to generate a password with non-cryptographic randomness."
+      "crypto.getRandomValues is unavailable; refusing to generate a password with non-cryptographic randomness."
     );
   }
   const values = new Uint32Array(1);
-  window.crypto.getRandomValues(values);
+  cryptoObj.getRandomValues(values);
   return values[0] % max;
 }
 
@@ -127,8 +127,6 @@ function setupGlobalPasswordVisibilityToggle() {
     if (icon) icon.textContent = nextType === "password" ? "visibility" : "visibility_off";
   });
 }
-
-setupGlobalPasswordVisibilityToggle();
 
 function setupPasswordForm(container, options = {}) {
   if (!(container instanceof Element)) return null;
@@ -245,12 +243,14 @@ function setupPasswordForm(container, options = {}) {
   };
 }
 
-window.AmeliPassword = {
-  SYMBOLS: AMELI_PASSWORD_SYMBOLS,
-  generate: ameliGeneratePassword,
-  evaluate: ameliEvaluatePasswordStrength,
-  setupForm: setupPasswordForm,
-};
+if (typeof window !== "undefined") {
+  window.AmeliPassword = {
+    SYMBOLS: AMELI_PASSWORD_SYMBOLS,
+    generate: ameliGeneratePassword,
+    evaluate: ameliEvaluatePasswordStrength,
+    setupForm: setupPasswordForm,
+  };
+}
 
 
 // ---- Pagination AJAX swap ----
@@ -319,10 +319,12 @@ function buildFilterFormUrl(form, panel) {
 }
 
 function debounce(fn, delay) {
+  // Bare ``setTimeout`` / ``clearTimeout`` (not ``window.``-prefixed) so
+  // the helper works both in the browser and under node:test.
   let timer;
   return (...args) => {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => fn(...args), delay);
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
   };
 }
 
@@ -399,9 +401,6 @@ function setupPaginationSwap() {
   });
 }
 
-setupPaginationSwap();
-
-
 // ---- Audit date range presets ----
 //
 // Buttons inside ``[data-audit-date-presets]`` set the ``audit_date_from``
@@ -456,9 +455,6 @@ function setupAuditDatePresets() {
   });
 }
 
-setupAuditDatePresets();
-
-
 // ---- Back to top button ----
 //
 // Injects a single floating button bottom-right that appears once the
@@ -501,9 +497,6 @@ function setupBackToTop() {
     window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
   });
 }
-
-setupBackToTop();
-
 
 // ---- Avatar cropper (progressive enhancement) ----
 //
@@ -733,4 +726,30 @@ function setupAvatarCropper() {
   });
 }
 
-setupAvatarCropper();
+// ---- Bootstrap (browser only) ----
+//
+// Guard on ``document`` so this file can be ``require``d in Node for unit
+// tests (node:test, see tests/js/) WITHOUT a DOM. The DOM wiring only
+// runs in a browser; the pure helpers are exported for Node below. In
+// the browser this runs at load (the <script> sits at the end of <body>),
+// identical to the previous scattered invocations.
+if (typeof document !== "undefined") {
+  refreshHealthBadge();
+  setupUserMenu();
+  setupGlobalPasswordVisibilityToggle();
+  setupPaginationSwap();
+  setupAuditDatePresets();
+  setupBackToTop();
+  setupAvatarCropper();
+}
+
+// CommonJS export surface for node:test. ``module`` is undefined in the
+// browser, so this is a no-op there.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    PASSWORD_SYMBOLS: AMELI_PASSWORD_SYMBOLS,
+    generatePassword: ameliGeneratePassword,
+    evaluatePasswordStrength: ameliEvaluatePasswordStrength,
+    debounce,
+  };
+}

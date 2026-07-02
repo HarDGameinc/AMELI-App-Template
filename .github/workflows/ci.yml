@@ -237,3 +237,24 @@ jobs:
           DJANGO_ALLOW_ASYNC_UNSAFE: "true"
         run: |
           python -m pytest tests/e2e/ -v --tb=short
+
+  js-unit:
+    # D-4 (2026-07-02). Unit tests for the pure JS helpers in app.js
+    # (password generator, strength evaluator, debounce) using Node's
+    # built-in test runner + mock timers — zero npm dependencies, no
+    # package.json, no build step. app.js guards its DOM bootstrap on
+    # ``typeof document`` so it is ``require``-able under node:test.
+    name: JS unit tests (node:test)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run JS unit tests
+        run: node --test tests/js/*.test.js
