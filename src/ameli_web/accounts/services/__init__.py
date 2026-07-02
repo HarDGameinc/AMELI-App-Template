@@ -53,6 +53,11 @@ from .email_change import (
     request_email_change as request_email_change,
 )
 
+# Avatar image transform pipeline — services/images.py (D-5, 2026-07-02).
+from .images import (
+    transform_avatar as transform_avatar,
+)
+
 # Email queue (transport layer) — services/email_queue.py (PC-1 step 5, 2026-06-30).
 from .email_queue import (
     _PasswordResetEmail as _PasswordResetEmail,

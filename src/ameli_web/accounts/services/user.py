@@ -93,8 +93,19 @@ def serialize_user(user) -> dict[str, Any]:
 
 
 def replace_avatar(user, uploaded_file) -> None:
+    from .images import transform_avatar
+
     old_name = user.avatar.name if user.avatar else ""
-    user.avatar.save(uploaded_file.name, uploaded_file, save=False)
+    # D-5: normalise the upload (resize + WebP + EXIF strip) before it
+    # hits storage. ``transform_avatar`` returns ``None`` when the
+    # operator opted out (``AVATAR_FORMAT=keep``) or the transform
+    # failed — in either case we fall back to storing the file verbatim.
+    transformed = transform_avatar(uploaded_file, filename=uploaded_file.name)
+    if transformed is not None:
+        content, name = transformed
+        user.avatar.save(name, content, save=False)
+    else:
+        user.avatar.save(uploaded_file.name, uploaded_file, save=False)
     user.save(update_fields=["avatar", "updated_at"])
     if old_name and old_name != user.avatar.name and default_storage.exists(old_name):
         default_storage.delete(old_name)

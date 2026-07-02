@@ -39,6 +39,10 @@ from .security_headers import *
 #    MEDIA_ROOT + path-inside-checkout guard.
 from .i18n_static import *
 
+# 6b. Media transform knobs — avatar resize/WebP/EXIF-strip pipeline
+#     (D-5). Read only by services.images; no boot guards here.
+from .media import *
+
 # 7. Database — DATABASES + connection pool option.
 from .database import *
 
