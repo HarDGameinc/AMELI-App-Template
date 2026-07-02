@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.4.5-django — 2026-07-02 (D-5)
+
+Pipeline de transformación de avatar (resize + WebP + strip EXIF).
+Validado en servidor (S-08 en `ha-report2`): un avatar subido en wire
+queda como `WEBP (512, 512) EXIF: {}` y `verify-audit` → `ok: true`.
+
+### D-5 (commit `da239cd`)
+
+`services/user.py:replace_avatar` ahora pasa cada upload por el nuevo
+`services/images.py:transform_avatar` **después del AV scan, antes del
+`.save()`**:
+
+- `ImageOps.exif_transpose` — hornea la orientación EXIF en los píxeles.
+- `img.thumbnail((MAX, MAX))` — reduce a un cuadrado configurable
+  (solo achica, nunca agranda).
+- Strip explícito de `exif`/`xmp`/`icc_profile` + re-encode a WebP —
+  **este strip es lo que realmente elimina el bloque GPS/PII** (el
+  encoder WebP de Pillow re-incrusta `img.info['exif']` si no se limpia).
+
+Un PNG grande de celular (3 MB / 4000px) → WebP ~30 KB / ≤512px sin
+EXIF. Transparente para templates (`avatar_url` ya apunta al archivo).
+
+- **Settings** (`settings/media.py`, nuevo): `AVATAR_FORMAT`
+  (`webp`/`keep`), `AVATAR_MAX_DIMENSION` (512, clamp 64-2048),
+  `AVATAR_WEBP_QUALITY` (82, clamp 1-100). Env `AMELI_APP_AVATAR_*` con
+  clamp defensivo — un valor basura no rompe un upload. Registrado en el
+  orquestador `settings/__init__.py` (paso 6b).
+- **Fallback**: `transform_avatar` devuelve `None` (→ guardar verbatim)
+  si el operador puso `keep` o si el transform falla, para que un avatar
+  nunca se pierda por un edge case de Pillow.
+- **Tests** (`tests/test_avatar_transform.py`, nuevo, 8): resize ≤ MAX +
+  WebP, strip EXIF/GPS (con guard anti-vacuo), orientación aplicada,
+  `keep` → None, no-upscale, alpha preservado, `.webp` + `avatar_url`
+  resuelve, `keep` preserva extensión.
+
+Sin cambios de dependencias ni migraciones.
+
 ## v0.4.4-django — 2026-07-01 (PC-4)
 
 Cierre del split de `settings.py`. API pública intacta — Django sigue

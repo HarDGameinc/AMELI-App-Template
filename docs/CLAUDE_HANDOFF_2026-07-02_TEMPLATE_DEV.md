@@ -137,8 +137,8 @@ a otros 14). No se toco esta sesion (fuera de scope D-5).
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| **S-08** | Validar D-5 en `ha-report2` + bump a `v0.4.5-django` | 20 min | Pull a `dev`, subir un avatar real, confirmar WebP + sin EXIF, `verify-audit` |
-| **D-6** | Migracion runtime Django 6 + Pillow 12 + Python 3.14 | 1.5-2.5h | La app YA pasa la suite en 6/12; falta regen locks (hashes), subir floors, CI matrix a 3.14, `pip-audit`. Ver §7.1 |
+| ~~S-08~~ | ~~Validar D-5 en `ha-report2`~~ | — | **CERRADO 2026-07-02** — `WEBP (512,512) EXIF: {}`, audit ok. Bump `v0.4.5-django`. Ver §8.05 |
+| **D-6** | Migracion runtime Django 5.2→6 (+ Python 3.14 en dev) | 1-2h | Pillow ya es 12 en el lock; solo falta Django. La app YA pasa la suite en Django 6 local. Falta regen locks (hashes), subir floor `Django>=6`, CI matrix a 3.14, `pip-audit`. Ver §7.1 |
 | Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
 | D-2 | UX MFA prompts | 45 min | Polish |
 | D-4 | JS test framework | 2h | |
@@ -164,25 +164,45 @@ con la suite verde (salvo Windows-only). Retirado el riesgo grande
 cubre lo que suele romper. Pillow 12 y Django 6 no rompieron ninguna
 API que la app usa.
 
+### 8.05. S-08 — ejecutado y aprobado (2026-07-02)
+
+Ejecutado por el operador en `ha-report2 @ /opt/ameli-app-template-dev`
+tras `git reset --hard origin/dev` a `da239cd`:
+
+- **Stack real del server**: `Django 5.2.15 + Pillow 12.2.0 + Python
+  3.13`. El lock YA estaba en Pillow 12 — el delta pendiente de D-6 es
+  solo Django 5.2→6 (ver §7.1, actualizado).
+- **Deps**: `pip install --require-hashes` → all satisfied (no-op).
+  `migrate --check` sin pendientes. `check` → 0 issues.
+- **Servicio**: `active` tras restart; boot sin traceback.
+- **Upload en wire** (journalctl): `POST /profile/avatar/ → 302`,
+  luego `GET /media/avatars/admin-f9f0275a20ff24f5.webp → 200`.
+- **Archivo transformado** (el criterio central):
+  `WEBP (512, 512) EXIF: {}`, 29 KB. Resize + WebP + strip GPS
+  confirmados en el stack de produccion.
+- **`verify-audit`**: `{"checked": 242, "ok": true}` (+17 filas vs
+  baseline S-07 de 225).
+
+**Veredicto**: D-5 preserva integridad y transforma correctamente.
+Runtime aprobado → bump aplicado a `v0.4.5-django`.
+
 ## §8. Continuidad — para el proximo agente
 
 ### 8.0. Snapshot al cierre
 
-- Rama: **`dev`** (commit de esta sesion con D-5 + este handoff).
+- Rama: **`dev`** (D-5 `da239cd` + bump `v0.4.5-django` + este handoff).
 - `main` local borrado; `origin/main` intacto (default GitHub).
-- Version: **`v0.4.4-django`** (sin bump — S-08 pendiente).
-- D-5 code-complete: ruff + mypy limpios, 8 tests nuevos verdes.
-- **Verificado en Django 6 / Pillow 12 / Python 3.14, NO en el stack
-  pinneado del CI (5.2 / 11).** El CI Linux confirmara en 5.2/11 al push
-  — D-5 usa solo APIs estables presentes en ambos (Pillow
-  `exif_transpose`/`thumbnail`/`save(WEBP)`, Django `ContentFile` /
-  `ImageField.save`).
+- Version: **`v0.4.5-django`** (bump aplicado tras S-08 verde).
+- D-5 validado en servidor: `WEBP (512,512) EXIF: {}`, audit ok.
+- Nota dev-local: el venv del dev se reconstruyo en Python 3.14 y
+  trajo Django 6.0.6 (el server sigue en 5.2.15 via lock). Suite verde
+  en ambos stacks.
 
 ### 8.1. Primer paso (siguiente agente)
 
-1. **S-08** — validar D-5 en `ha-report2` (subir avatar, confirmar
-   `.webp` + sin EXIF) y bumpear a `v0.4.5-django`.
-2. O **D-6** — arrancar la migracion runtime si el operador la aprueba.
+1. **D-6** — migracion runtime Django 5.2→6 (Pillow ya es 12 en el
+   lock). Ver §7.1. La app ya pasa la suite en Django 6 local.
+2. O **Win-skip** / D-2 / D-4 / templates del roadmap §7.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
