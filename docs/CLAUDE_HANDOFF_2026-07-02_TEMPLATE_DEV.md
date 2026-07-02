@@ -104,6 +104,47 @@ la CSP. (2) `DataTransfer` al input + submit nativo en vez de fetch —
 el CSRF token oculto viaja solo, sin manejo extra. (3) Progressive
 enhancement total: sin JS, sube el archivo crudo.
 
+### 3.4. D-6' — bendecir Python 3.14 en CI (sigue Django 5.2 LTS)
+
+El D-6 original ("migrar a Django 6") se **descarta** por recomendacion
+senior: Django 5.2 es **LTS** (parches hasta abr-2028); 6.0 es no-LTS
+(ventana ~8 meses). Para un template que otras apps heredan, el piso
+responsable es LTS. El driver de la "migracion" fue un accidente: al
+reconstruir el venv desde los rangos (`Django<7`), pip agarro 6.0; la
+produccion (el lock) siempre estuvo en 5.2.15.
+
+Ademas Django 6.0 requiere Python `>=3.12` → migrar habria **dropeado
+3.11** sin ganancia.
+
+**Insight clave**: lo unico util que buscabamos (correr el Python nuevo
+del dev, 3.14) **ya esta disponible en LTS**: Django 5.2.15 lista
+oficialmente Python 3.14 en sus classifiers (3.10-3.14), y Pillow ya es
+12 en el lock. Verificado: suite completa verde en Django 5.2.15 /
+Pillow 12.2.0 / Python 3.14 (1062 pass, solo los Windows-only
+pre-existentes fallan).
+
+Entonces D-6' (reducido, sin tocar framework ni dropear Python):
+
+- `.github/workflows/ci.yml` — matrix `["3.11","3.12"]` →
+  `["3.11","3.12","3.13","3.14"]`. 3.13 = lo que corre el server, 3.14 =
+  lo que corre el dev. **Aditivo**: los checks 3.11/3.12 siguen, no se
+  rompe branch protection.
+- **Lock sin cambios**: verificado contra la API de PyPI que los 8 deps
+  binarios (pillow, cffi, grpcio, psycopg-binary, uvloop, watchfiles,
+  httptools, websockets) tienen su wheel `cp314-manylinux` con hash EN
+  `requirements.lock` → `--require-hashes` instala en 3.14 sin regen.
+  (No se pudo validar el lock en Windows: `uvloop` no compila ahi; la
+  validacion definitiva es el propio CI Linux + el cross-check de
+  hashes contra PyPI.)
+- Docs: `README.md`, `OPERATIONS.md`, `BUILDING_NEW_APP.md`,
+  `FIRST_INSTALL_DJANGO.md` actualizados a "3.11-3.14".
+- Venv de dev re-alineado al stack de prod (Django 6→5.2.15,
+  Pillow→12.2.0) — corrige la deriva que origino todo esto.
+
+**Pendiente OPS**: sumar `Lint + Test (Python 3.13)` y `(Python 3.14)`
+a los required status checks de branch protection (ver
+`OPERATIONS.md`). El CI Linux es el validador final del lock en 3.14.
+
 ## §4. Decisiones tomadas
 
 1. **Sin bump de version**. D-5 es codigo nuevo no probado en servidor
@@ -169,7 +210,8 @@ a otros 14). No se toco esta sesion (fuera de scope D-5).
 | ~~S-08~~ | ~~Validar D-5 en `ha-report2`~~ | — | **CERRADO 2026-07-02** — `WEBP (512,512) EXIF: {}`, audit ok. Bump `v0.4.5-django`. Ver §8.05 |
 | ~~S-09~~ | ~~Smoke navegador del cropper~~ | — | **CERRADO 2026-07-02** — cropper aparece, drag+zoom OK, avatar refleja el encuadre, disco `WEBP (512,512) EXIF: {}`. Bump `v0.4.6-django`. Ver §8.06 |
 | ~~D-7~~ | ~~Cropper cliente de avatar~~ | — | **CERRADO 2026-07-02** (§3.3), validado S-09 |
-| **D-6** | Migracion runtime Django 5.2→6 (+ Python 3.14 en dev) | 1-2h | Pillow ya es 12 en el lock; solo falta Django. La app YA pasa la suite en Django 6 local. Falta regen locks (hashes), subir floor `Django>=6`, CI matrix a 3.14, `pip-audit`. Ver §7.1 |
+| ~~D-6~~ | ~~Migracion Django 6~~ | — | **DESCARTADO 2026-07-02** — recomendacion senior: quedarnos en 5.2 **LTS** (soporte hasta abr-2028) en vez de 6.0 (no-LTS). El driver era un accidente (venv reconstruido desde rangos). Ver §3.4 |
+| ~~D-6'~~ | ~~Bendecir Python 3.14 en CI (sigue 5.2 LTS)~~ | — | **CERRADO 2026-07-02** (§3.4) — matrix CI 3.11-3.14; el lock ya cubre cp313/cp314 (verificado contra PyPI), sin regen. Pendiente OPS: sumar los 2 checks nuevos a branch protection |
 | Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
 | D-2 | UX MFA prompts | 45 min | Polish |
 | D-4 | JS test framework | 2h | |

@@ -158,8 +158,8 @@ Repo policy (applied 2026-06-18, roadmap #23):
 * `main` is protected: **no force-push, no deletion, no bypass**.
 * Pushes to `main` are blocked — every change goes through a PR.
 * A PR can merge only when:
-    - the CI workflow (`Lint + Test` matrix on 3.11 and 3.12) reports
-      `success` on the head SHA, AND
+    - the CI workflow (`Lint + Test` matrix on 3.11 · 3.12 · 3.13 · 3.14)
+      reports `success` on the head SHA, AND
     - the `Supply chain audit (pip-audit)` job reports `success`.
 * PR review is NOT required (single-operator template), but the
   status checks must be green and up-to-date with `main`.
@@ -239,7 +239,15 @@ Branches → Branch protection rules → Add rule:
     - Require branches to be up to date before merging: ON
     - Status checks: `Lint + Test (Python 3.11)`,
       `Lint + Test (Python 3.12)`,
+      `Lint + Test (Python 3.13)`,
+      `Lint + Test (Python 3.14)`,
       `Supply chain audit (pip-audit)`
+    - **OPS (2026-07-02)**: the matrix grew from 3.11/3.12 to
+      3.11-3.14. The two new contexts (`Python 3.13`, `Python 3.14`)
+      must be added to the required set here — the pre-existing
+      3.11/3.12 checks keep passing, so protection does not break if
+      you forget, but the new Pythons would not gate a merge until
+      added.
 * Restrict who can push to matching branches: ON (empty allowlist
   — nobody pushes directly)
 * Allow force pushes: OFF
@@ -259,6 +267,8 @@ gh api -X PUT "/repos/HarDGameinc/AMELI-App-Template/branches/main/protection" \
     "contexts": [
       "Lint + Test (Python 3.11)",
       "Lint + Test (Python 3.12)",
+      "Lint + Test (Python 3.13)",
+      "Lint + Test (Python 3.14)",
       "Supply chain audit (pip-audit)"
     ]
   },

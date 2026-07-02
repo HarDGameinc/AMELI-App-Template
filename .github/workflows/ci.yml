@@ -19,7 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        # Django 5.2 LTS supports Python 3.10-3.14. We test 3.11 (floor)
+        # through 3.14 — 3.13 is what the dev server runs, 3.14 what the
+        # dev workstation runs. The hash-locked requirements.lock already
+        # carries cp313/cp314 manylinux wheel hashes, so --require-hashes
+        # installs cleanly across the whole matrix without a lock regen.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     # Sensible default env so the test suite + management commands
     # boot without manual export. Mirrors the minimum the boot

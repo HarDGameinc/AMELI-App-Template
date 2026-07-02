@@ -19,7 +19,7 @@ día 1.
 
 ## Stack incluido
 
-- Python 3.11+
+- Python 3.11+ (CI prueba 3.11 · 3.12 · 3.13 · 3.14)
 - Layout `src/`
 - Django ASGI + Uvicorn
 - PostgreSQL como base oficial + SQLite local opcional

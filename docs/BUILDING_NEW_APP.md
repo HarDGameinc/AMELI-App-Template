@@ -64,7 +64,7 @@ re-implement.
   for integrity. Restore script with `verify` and destructive
   modes.
 - Pre-push git hook blocks direct push to `main` / `master`.
-- CI workflow: ruff + bandit + mypy + pytest (matrix 3.11+3.12)
+- CI workflow: ruff + bandit + mypy + pytest (matrix 3.11-3.14)
   + supply-chain audit (pip-audit on hash-verified lockfile) +
   Playwright e2e.
 
