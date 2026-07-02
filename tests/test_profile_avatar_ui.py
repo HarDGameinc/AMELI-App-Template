@@ -51,6 +51,28 @@ def test_profile_page_renders_avatar_upload_form(client, user):
 
 
 @pytest.mark.django_db
+def test_profile_page_renders_avatar_cropper_scaffold(client, user):
+    """The client-side cropper (progressive enhancement) needs its
+    scaffold in the DOM: the form + input carry the crop hooks, and the
+    hidden canvas + zoom control are present for app.js to reveal.
+    The plain file input must survive alongside it (no-JS fallback).
+    """
+    client.login(username="probe", password="ProbePass!12?Secure")
+    response = client.get(reverse("accounts:profile"))
+    body = response.content.decode("utf-8")
+
+    assert "data-avatar-crop-form" in body
+    assert "data-avatar-crop-input" in body
+    # Cropper container starts hidden; app.js reveals it on image select.
+    assert "data-avatar-cropper" in body
+    assert "data-avatar-crop-canvas" in body
+    assert "data-avatar-crop-zoom" in body
+    # The native input is still there so the no-JS path uploads the raw file.
+    assert 'type="file"' in body
+    assert 'name="avatar"' in body
+
+
+@pytest.mark.django_db
 def test_profile_page_hides_delete_form_when_no_avatar(client, user):
     """Operator without an avatar should not see a "delete" button
     that does nothing (the backend would 200 anyway, but the UX

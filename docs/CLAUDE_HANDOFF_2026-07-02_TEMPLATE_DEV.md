@@ -75,6 +75,35 @@ rangos permiten (`Django<7`, `Pillow<13`): **Django 6.0.6** y **Pillow
 suite corrio verde en ese stack — buena senal de forward-compat, pero
 **se verifico contra un stack distinto al de produccion**. Ver §7 (D-6).
 
+### 3.3. Cropper de avatar cliente (commit `<cropper>`)
+
+Feature nueva pedida tras D-5: capa para que el usuario **elija que
+mostrar** (pan + zoom) antes de subir, en vez del recorte-al-centro
+implicito del `object-fit: cover`.
+
+Hallazgo previo: el CSS ya tenia clases `.avatar-crop-*` huerfanas
+(disenadas, nunca cableadas — `app.js` no tenia una linea de crop).
+
+- `templates/accounts/profile.html` — scaffold del cropper dentro del
+  `#avatar-form` (canvas cuadrado + slider de zoom), **oculto por
+  defecto**. El `<input type=file>` nativo se preserva intacto (los
+  tests lo pinnean + es el fallback no-JS).
+- `static/js/app.js` — `setupAvatarCropper()`: lee la imagen con
+  `FileReader.readAsDataURL` (**`data:` URL, no `blob:`**, para respetar
+  la CSP `img-src 'self' data:` sin relajarla), pinta a canvas con
+  pan (pointer + flechas) y zoom (slider), y en submit renderiza el
+  cuadro visible a un canvas 512, exporta a Blob y lo mete al input via
+  `DataTransfer` → el submit **nativo** lo sube y el pipeline D-5 lo
+  procesa. Todo feature-gated (canvas/FileReader/DataTransfer); sin
+  soporte → input plano.
+- `static/css/app.css` — estilos del cropper (reusa `.avatar-crop-*`).
+- `tests/test_profile_avatar_ui.py` — test de presencia del scaffold.
+
+**Decisiones clave**: (1) `data:` URL en vez de `blob:` para no tocar
+la CSP. (2) `DataTransfer` al input + submit nativo en vez de fetch —
+el CSRF token oculto viaja solo, sin manejo extra. (3) Progressive
+enhancement total: sin JS, sube el archivo crudo.
+
 ## §4. Decisiones tomadas
 
 1. **Sin bump de version**. D-5 es codigo nuevo no probado en servidor
@@ -138,6 +167,8 @@ a otros 14). No se toco esta sesion (fuera de scope D-5).
 | # | Item | Costo | Notas |
 |---|---|---|---|
 | ~~S-08~~ | ~~Validar D-5 en `ha-report2`~~ | — | **CERRADO 2026-07-02** — `WEBP (512,512) EXIF: {}`, audit ok. Bump `v0.4.5-django`. Ver §8.05 |
+| **S-09** | Smoke en navegador del cropper de avatar | 15 min | Code-complete (§3.3): geometria + sintaxis + markup verificados; falta drag/zoom/upload en navegador real. Sin bump hasta S-09 |
+| ~~D-7~~ | ~~Cropper cliente de avatar~~ | — | **IMPLEMENTADO 2026-07-02** (§3.3), pendiente S-09 |
 | **D-6** | Migracion runtime Django 5.2→6 (+ Python 3.14 en dev) | 1-2h | Pillow ya es 12 en el lock; solo falta Django. La app YA pasa la suite en Django 6 local. Falta regen locks (hashes), subir floor `Django>=6`, CI matrix a 3.14, `pip-audit`. Ver §7.1 |
 | Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
 | D-2 | UX MFA prompts | 45 min | Polish |
