@@ -61,10 +61,24 @@ def viewer_user(db, django_user_model):
 
 
 @pytest.mark.django_db
-def test_verify_sudo_throttles_after_burst_of_failures(admin_user):
+def test_verify_sudo_throttles_after_burst_of_failures(admin_user, monkeypatch):
     """5 consecutive ValueError-raising attempts must trip the gate; the
     6th call surfaces the throttle message regardless of whether the
     password / MFA payload is correct on that attempt."""
+    # Pin the throttle clock so all 5 failures + the 6th read land in the
+    # SAME fixed-window bucket. The sudo gate uses ``_read_throttle_counter``
+    # (fixed 60s bucket via ``_window_start_for``), so without freezing time
+    # the test flakes when the burst straddles a wall-clock minute boundary:
+    # the increments split across two buckets (e.g. 3 + 2), neither reaches
+    # the threshold of 5, and the 6th call is not throttled. Caught as an
+    # intermittent CI red on the Python 3.14 job (2026-07-02, run 28617080639).
+    from datetime import UTC, datetime
+
+    from ameli_web.accounts.services import throttle
+
+    frozen = datetime(2026, 1, 1, 12, 0, 30, tzinfo=UTC)
+    monkeypatch.setattr(throttle.timezone, "now", lambda: frozen)
+
     for _ in range(5):
         with pytest.raises(ValueError):
             verify_sudo_credentials(admin_user, password="WrongPass!12?")

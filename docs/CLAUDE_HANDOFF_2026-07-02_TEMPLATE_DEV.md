@@ -220,6 +220,26 @@ Lecciones:
   estuvieron verdes — D-6' quedo validado en Linux; el unico rojo era
   el e2e.
 
+### 6.4. Test flaky de throttle de sudo (LOW, cerrado)
+
+Al re-correr el CI del fix del cropper, el job Python 3.14 fallo en
+`test_verify_sudo_throttles_after_burst_of_failures` ("DID NOT RAISE").
+Confirmado flaky (paso en el rerun sin cambio de codigo; 3.11/3.12/3.13
+verdes en la misma corrida).
+
+Causa raiz: el gate de sudo usa `_read_throttle_counter` = **bucket fijo
+de 60s** (`_window_start_for: (epoch // 60) * 60`). El test hace 5
+intentos seguidos; si la rafaga cruza un borde de minuto de reloj, los
+increments se parten en 2 buckets (ej. 3 + 2), ninguno llega al umbral
+de 5, y el 6º no throttlea. Es la debilidad de bucket fijo que el propio
+docstring de `_read_throttle_counter_sliding` documenta.
+
+Fix (test-only, sin bump): se congela `throttle.timezone.now` a un
+instante fijo con `monkeypatch` para que los 5 + el 6º caigan en el
+mismo bucket. Determinista (5/5 local). NO se toco el codigo de
+produccion — el gate sigue con bucket fijo (trade-off aceptado: sudo es
+re-auth de alguien ya adentro; el burst ~2x por straddle es tolerable).
+
 ## §7. Roadmap actualizado
 
 **D-5 implementado** (pendiente S-08 en servidor para bump). Version:
