@@ -679,53 +679,57 @@ function setupAvatarCropper() {
     draw();
   });
 
-  function exportCropInto(callback) {
+  function dataUrlToBlob(dataUrl) {
+    const comma = dataUrl.indexOf(",");
+    const header = dataUrl.slice(0, comma);
+    const mime = (header.match(/data:([^;]+)/) || [])[1] || "image/png";
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  function buildCroppedFile() {
     const out = document.createElement("canvas");
     out.width = EXPORT_SIZE;
     out.height = EXPORT_SIZE;
     const outCtx = out.getContext("2d");
-    if (!outCtx) {
-      callback(null, "png");
-      return;
-    }
+    if (!outCtx) return null;
     const s = effScale();
     // Source rectangle under the viewport, mapped back to image pixels.
     const sx = -state.offsetX / s;
     const sy = -state.offsetY / s;
     const sSize = view / s;
     outCtx.drawImage(state.image, sx, sy, sSize, sSize, 0, 0, EXPORT_SIZE, EXPORT_SIZE);
-    // Prefer WebP (small); fall back to PNG where the encoder returns null.
-    out.toBlob(
-      (blob) => {
-        if (blob) {
-          callback(blob, "webp");
-          return;
-        }
-        out.toBlob((pngBlob) => callback(pngBlob, "png"), "image/png");
-      },
-      "image/webp",
-      0.9
-    );
+    // ``toDataURL`` is SYNCHRONOUS (unlike ``toBlob``), so the file swap
+    // in the submit handler happens inside the submit event's own tick —
+    // the native submission then serialises the cropped file with no
+    // preventDefault and no deferred re-submit. Keeping the
+    // click -> navigation chain synchronous is what the browser AND
+    // Playwright's auto-wait expect (the async path broke the e2e).
+    // Prefer WebP; fall back to PNG if the encoder declined.
+    let ext = "webp";
+    let dataUrl = out.toDataURL("image/webp", 0.9);
+    if (dataUrl.indexOf("data:image/webp") !== 0) {
+      dataUrl = out.toDataURL("image/png");
+      ext = "png";
+    }
+    return new File([dataUrlToBlob(dataUrl)], `avatar.${ext}`, { type: `image/${ext}` });
   }
 
-  form.addEventListener("submit", (event) => {
-    // No image staged in the cropper (JS-picked a non-image, or the
-    // element is hidden) -> let the native submit carry whatever the
-    // input holds.
+  form.addEventListener("submit", () => {
+    // No image staged (a non-image was picked, or it hasn't decoded yet)
+    // -> let the native submit carry whatever the input holds.
     if (!state.image || cropper.hidden) return;
-    event.preventDefault();
-    exportCropInto((blob, ext) => {
-      if (!blob) {
-        // Export failed unexpectedly; fall back to submitting the raw file.
-        form.submit();
-        return;
-      }
-      const file = new File([blob], `avatar.${ext}`, { type: blob.type });
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      input.files = transfer.files;
-      form.submit();
-    });
+    const file = buildCroppedFile();
+    if (!file) return; // ctx unavailable -> native submit with the raw file
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    // Swap the cropped image into the file input synchronously. We do NOT
+    // preventDefault: the browser serialises the form (with the updated
+    // files) after this handler returns, so the submission stays native
+    // and the click -> redirect chain is synchronous.
+    input.files = transfer.files;
   });
 }
 

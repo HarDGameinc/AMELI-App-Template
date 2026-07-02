@@ -198,6 +198,28 @@ Candidatos a `pytest.mark.skipif(sys.platform == "win32", ...)` en una
 pasada de limpieza (mismo patron que las sesiones 30-jun/01-jul aplicaron
 a otros 14). No se toco esta sesion (fuera de scope D-5).
 
+### 6.3. El cropper shipeo con el CI e2e rojo (MEDIUM, cerrado)
+
+El commit del cropper (`618b451`, v0.4.6) paso los tests unitarios +
+S-09 (navegador manual) pero **dejo el CI e2e Playwright en rojo** —
+`test_avatar_upload_renders_image_in_hero` fallaba. Solo se detecto al
+conectar `gh` y revisar los runs (venian fallando desde `618b451`).
+
+Causa: el submit del cropper era **async** (`preventDefault` +
+`toBlob` + `form.submit()` diferido). Playwright hace auto-wait de la
+navegacion que dispara SINCRONICAMENTE el `.click()`; con el submit
+diferido, `.click()` retornaba sin navegacion y `wait_for_url("/profile")`
+matcheaba trivialmente la URL actual → asercion sobre pagina vieja.
+
+Lecciones:
+- **S-09 manual NO sustituye el e2e automatizado**: un humano espera;
+  Playwright no. Para features de JS, mirar el CI e2e ANTES de bumpear.
+- El fix (submit sincrono via `toDataURL` + swap sin `preventDefault`)
+  esta en v0.4.7. 4/4 e2e verdes en local.
+- Los 4 jobs `Lint + Test (Python 3.11-3.14)` + `pip-audit` SIEMPRE
+  estuvieron verdes — D-6' quedo validado en Linux; el unico rojo era
+  el e2e.
+
 ## §7. Roadmap actualizado
 
 **D-5 implementado** (pendiente S-08 en servidor para bump). Version:
@@ -285,11 +307,13 @@ insegura". Es esperado en dev (Caddy/TLS es de prod, ver
 
 ### 8.0. Snapshot al cierre
 
-- Rama: **`dev`** (D-5 + bump 0.4.5 + cropper + bump 0.4.6 + este handoff).
+- Rama: **`dev`** (D-5 → cropper → D-6' → fix e2e; version `v0.4.7`).
 - `main` local borrado; `origin/main` intacto (default GitHub).
-- Version: **`v0.4.6-django`** (bump aplicado tras S-09 verde).
+- Version: **`v0.4.7-django`** (fix del submit sincrono del cropper).
 - D-5 validado en servidor (S-08): `WEBP (512,512) EXIF: {}`, audit ok.
-- Cropper validado en navegador (S-09): encuadre elegido se respeta.
+- Cropper validado en navegador (S-09) + e2e Playwright (4/4 local).
+- D-6' (Python 3.11-3.14 en CI, sigue Django 5.2 LTS): matrix verde en
+  los 4 Pythons + pip-audit. `gh` CLI ya conectado para ver runs.
 - Nota dev-local: el venv del dev se reconstruyo en Python 3.14 y
   trajo Django 6.0.6 (el server sigue en 5.2.15 via lock). Suite verde
   en ambos stacks.

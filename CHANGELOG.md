@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.7-django — 2026-07-02 (fix: cropper submit síncrono)
+
+Fix del cropper de avatar (v0.4.6): el submit hacía `preventDefault` +
+`canvas.toBlob` **async** + `form.submit()` diferido. En un navegador
+manual funciona (S-09 pasó), pero rompía el e2e Playwright
+`test_avatar_upload_renders_image_in_hero`: el `.click()` retornaba
+antes de que arrancara la navegación diferida, `wait_for_url` matcheaba
+la URL `/profile/` actual de forma trivial y la aserción corría sobre la
+página vieja → 0 imágenes. El CI e2e venía rojo desde el commit del
+cropper (`618b451`).
+
+**Fix**: el submit ahora es **síncrono** — se arma el archivo recortado
+con `canvas.toDataURL` (síncrono, no `toBlob`) y se hace el swap al
+`<input type=file>` vía `DataTransfer` **sin** `preventDefault`, así el
+submit nativo serializa el archivo recortado en el mismo tick y la
+cadena click→redirect queda síncrona (lo que espera el navegador y el
+auto-wait de Playwright). Además simplifica el código (sin callback
+async ni re-submit).
+
+Verificado: los 4 tests e2e Playwright verdes en local (chromium).
+
 ## v0.4.6-django — 2026-07-02 (cropper de avatar)
 
 Capa de recorte/encuadre en el cliente para el avatar: el usuario elige
