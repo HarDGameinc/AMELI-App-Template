@@ -75,7 +75,7 @@ rangos permiten (`Django<7`, `Pillow<13`): **Django 6.0.6** y **Pillow
 suite corrio verde en ese stack — buena senal de forward-compat, pero
 **se verifico contra un stack distinto al de produccion**. Ver §7 (D-6).
 
-### 3.3. Cropper de avatar cliente (commit `<cropper>`)
+### 3.3. Cropper de avatar cliente (commit `618b451`)
 
 Feature nueva pedida tras D-5: capa para que el usuario **elija que
 mostrar** (pan + zoom) antes de subir, en vez del recorte-al-centro
