@@ -285,7 +285,7 @@ re-auth de alguien ya adentro; el burst ~2x por straddle es tolerable).
 | ~~D-7~~ | ~~Cropper cliente de avatar~~ | — | **CERRADO 2026-07-02** (§3.3), validado S-09 |
 | ~~D-6~~ | ~~Migracion Django 6~~ | — | **DESCARTADO 2026-07-02** — recomendacion senior: quedarnos en 5.2 **LTS** (soporte hasta abr-2028) en vez de 6.0 (no-LTS). El driver era un accidente (venv reconstruido desde rangos). Ver §3.4 |
 | ~~D-6'~~ | ~~Bendecir Python 3.14 en CI (sigue 5.2 LTS)~~ | — | **CERRADO 2026-07-02** (§3.4) — matrix CI 3.11-3.14; el lock ya cubre cp313/cp314 (verificado contra PyPI), sin regen. Pendiente OPS: sumar los 2 checks nuevos a branch protection |
-| Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
+| ~~Win-skip~~ | ~~`skipif` a los 7 tests Windows-only de §6.2~~ | — | **CERRADO 2026-07-02** — módulos `test_common_sh_slug_autodetect` + `test_systemd_profile` con `pytestmark` skipif win32; los 2 `skipif os.geteuid()` en `test_backup_restore` guardados con `hasattr` (fallaban en colección). Suite Windows local: **1063 pass / 33 skip / 0 fail / 0 error** |
 | D-2 | UX MFA prompts | 45 min | Polish |
 | ~~D-4~~ | ~~JS test framework~~ | — | **CERRADO 2026-07-02** (§3.5) — node:test (built-in, sin deps): 13 tests para password gen/strength/debounce. `app.js` ahora es require-able en Node. Job CI `js-unit` |
 | Templates | Split inline JS `admin/panel.html` + `profile.html` | 2-3h | Deuda frontend |

@@ -152,7 +152,7 @@ def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
 @pytest.mark.skipif(
-    os.geteuid() != 0,
+    not hasattr(os, "geteuid") or os.geteuid() != 0,
     reason="backup.sh::require_root refuses non-root callers; CI runners are non-root by default",
 )
 def test_backup_restore_sqlite_round_trip(stage, tmp_path):
@@ -211,7 +211,7 @@ def test_backup_restore_sqlite_round_trip(stage, tmp_path):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
 @pytest.mark.skipif(
-    os.geteuid() != 0,
+    not hasattr(os, "geteuid") or os.geteuid() != 0,
     reason="backup.sh::require_root refuses non-root callers",
 )
 def test_backup_restore_round_trip_preserves_data_dir(stage, tmp_path):
