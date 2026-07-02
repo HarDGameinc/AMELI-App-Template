@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.4.6-django — 2026-07-02 (cropper de avatar)
+
+Capa de recorte/encuadre en el cliente para el avatar: el usuario elige
+**qué mostrar** (pan + zoom) antes de subir, en vez del recorte-al-centro
+implícito. Validado en navegador (S-09 en `ha-report2`): el cropper
+aparece, drag+zoom responden, el avatar guardado refleja el encuadre
+elegido y el archivo en disco es `WEBP (512, 512) EXIF: {}`.
+
+### Cropper de avatar (commit `618b451`)
+
+`setupAvatarCropper()` en `static/js/app.js` revela un canvas cuadrado
+al elegir una imagen; pan (pointer + flechas) y zoom (slider). En submit
+renderiza el cuadro visible a un canvas 512, lo exporta a Blob y lo mete
+al `<input type=file>` vía `DataTransfer` → el submit **nativo** lo sube
+y el pipeline D-5 (resize + WebP + strip EXIF) lo procesa.
+
+- **Seguridad/CSP**: la imagen se lee con `FileReader.readAsDataURL`
+  (`data:` URL), NO `URL.createObjectURL` (`blob:`), para respetar la CSP
+  `img-src 'self' data:` sin relajarla. Sin sinks de Trusted Types
+  (solo canvas + `createElement`).
+- **Progressive enhancement**: feature-gated
+  (canvas/FileReader/DataTransfer). Sin JS, el `<input>` nativo sube el
+  archivo crudo y el pipeline lo procesa. El input plano se preserva.
+- `templates/accounts/profile.html`: scaffold del cropper dentro de
+  `#avatar-form`, oculto por defecto.
+- `static/css/app.css`: estilos del cropper (reusa las clases
+  `.avatar-crop-*` antes huérfanas).
+- `tests/test_profile_avatar_ui.py`: test de presencia del scaffold +
+  fallback no-JS intacto.
+
+Sin cambios de dependencias ni migraciones.
+
 ## v0.4.5-django — 2026-07-02 (D-5)
 
 Pipeline de transformación de avatar (resize + WebP + strip EXIF).

@@ -167,8 +167,8 @@ a otros 14). No se toco esta sesion (fuera de scope D-5).
 | # | Item | Costo | Notas |
 |---|---|---|---|
 | ~~S-08~~ | ~~Validar D-5 en `ha-report2`~~ | — | **CERRADO 2026-07-02** — `WEBP (512,512) EXIF: {}`, audit ok. Bump `v0.4.5-django`. Ver §8.05 |
-| **S-09** | Smoke en navegador del cropper de avatar | 15 min | Code-complete (§3.3): geometria + sintaxis + markup verificados; falta drag/zoom/upload en navegador real. Sin bump hasta S-09 |
-| ~~D-7~~ | ~~Cropper cliente de avatar~~ | — | **IMPLEMENTADO 2026-07-02** (§3.3), pendiente S-09 |
+| ~~S-09~~ | ~~Smoke navegador del cropper~~ | — | **CERRADO 2026-07-02** — cropper aparece, drag+zoom OK, avatar refleja el encuadre, disco `WEBP (512,512) EXIF: {}`. Bump `v0.4.6-django`. Ver §8.06 |
+| ~~D-7~~ | ~~Cropper cliente de avatar~~ | — | **CERRADO 2026-07-02** (§3.3), validado S-09 |
 | **D-6** | Migracion runtime Django 5.2→6 (+ Python 3.14 en dev) | 1-2h | Pillow ya es 12 en el lock; solo falta Django. La app YA pasa la suite en Django 6 local. Falta regen locks (hashes), subir floor `Django>=6`, CI matrix a 3.14, `pip-audit`. Ver §7.1 |
 | Win-skip | `skipif` a los 7 tests Windows-only de §6.2 | 30 min | Limpieza; deja verde el run local en Windows |
 | D-2 | UX MFA prompts | 45 min | Polish |
@@ -217,14 +217,37 @@ tras `git reset --hard origin/dev` a `da239cd`:
 **Veredicto**: D-5 preserva integridad y transforma correctamente.
 Runtime aprobado → bump aplicado a `v0.4.5-django`.
 
+### 8.06. S-09 — cropper validado en navegador (2026-07-02)
+
+Ejecutado por el operador en `ha-report2` (browser, tras sync a
+`b140c61` + restart):
+
+- **Cropper aparece** al elegir imagen: canvas cuadrado + slider Zoom.
+- **Drag + zoom responden**: el encuadre cambia en vivo (confirmado con
+  el slider a distintas posiciones).
+- **Upload**: `POST /profile/avatar/ → 302`; el hero muestra el avatar
+  con el **encuadre elegido** (no el centro), nuevo
+  `admin-f75cade253459f5a.webp` servido.
+- **Disco**: `WEBP (512, 512) EXIF: {}`.
+- `app.js`/`app.css` nuevos cargados (200, tras hard refresh).
+
+**Veredicto**: el cropper cliente funciona end-to-end. Bump aplicado a
+`v0.4.6-django`.
+
+**Nota OPS (no bug)**: el dev server va sin TLS (`http://…:18080`), asi
+que el navegador muestra el warning "campos de contrasena en pagina
+insegura". Es esperado en dev (Caddy/TLS es de prod, ver
+`docs/TLS_WITH_CADDY.md`). El favicon 404 tambien es pre-existente.
+
 ## §8. Continuidad — para el proximo agente
 
 ### 8.0. Snapshot al cierre
 
-- Rama: **`dev`** (D-5 `da239cd` + bump `v0.4.5-django` + este handoff).
+- Rama: **`dev`** (D-5 + bump 0.4.5 + cropper + bump 0.4.6 + este handoff).
 - `main` local borrado; `origin/main` intacto (default GitHub).
-- Version: **`v0.4.5-django`** (bump aplicado tras S-08 verde).
-- D-5 validado en servidor: `WEBP (512,512) EXIF: {}`, audit ok.
+- Version: **`v0.4.6-django`** (bump aplicado tras S-09 verde).
+- D-5 validado en servidor (S-08): `WEBP (512,512) EXIF: {}`, audit ok.
+- Cropper validado en navegador (S-09): encuadre elegido se respeta.
 - Nota dev-local: el venv del dev se reconstruyo en Python 3.14 y
   trajo Django 6.0.6 (el server sigue en 5.2.15 via lock). Suite verde
   en ambos stacks.
