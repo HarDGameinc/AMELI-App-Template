@@ -23,13 +23,13 @@ recomendacion para AMELI es Caddy por simplicidad operativa.
 ## Instalacion
 
 ```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
+  | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update
+apt install caddy
 ```
 
 ## Caddyfile minimo
@@ -147,9 +147,9 @@ app necesita importarla para que el browser no muestre warnings.
 
 ```bash
 # En el servidor con Caddy:
-sudo caddy trust  # importa la CA del propio Caddy en el trust store local
+caddy trust  # importa la CA del propio Caddy en el trust store local
 # Para distribuir a otros clientes:
-sudo cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
+cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
 # Copia ese archivo a cada cliente e instalalo en:
 #   - Linux: /usr/local/share/ca-certificates/, luego ``update-ca-certificates``
 #   - Windows: Certificados confiables -> Entidades de certificacion raiz
@@ -190,8 +190,8 @@ candado aparece verde. Firefox deja de quejarse por formularios en HTTP.
 ## Backout
 
 ```bash
-sudo systemctl stop caddy
-sudo systemctl disable caddy
+systemctl stop caddy
+systemctl disable caddy
 # Apuntar /etc/hosts (o DNS) directo al puerto del backend
 ```
 

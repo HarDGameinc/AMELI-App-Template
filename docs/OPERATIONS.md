@@ -70,7 +70,7 @@ database is available yet, SQLite can be used temporarily through
 ## Linux install
 
 ```bash
-sudo APP_ENV=dev APP_SLUG=ameli-new-app APP_PACKAGE=ameli_new_app bash scripts/install.sh
+APP_ENV=dev APP_SLUG=ameli-new-app APP_PACKAGE=ameli_new_app bash scripts/install.sh
 ```
 
 The installer preserves `/etc/<instance>/app.env` and `/etc/<instance>/app.yaml`
@@ -349,13 +349,13 @@ Use the full first-install walkthrough in:
 
 ```bash
 # create an archive
-sudo APP_ENV=prod bash scripts/backup.sh
+APP_ENV=prod bash scripts/backup.sh
 
 # verify an archive without touching the live deploy (cron-friendly)
-sudo APP_ENV=prod bash scripts/restore.sh verify /var/backups/<archive>.tar.gz
+APP_ENV=prod bash scripts/restore.sh verify /var/backups/<archive>.tar.gz
 
 # restore (destructive)
-sudo APP_ENV=prod bash scripts/restore.sh restore /var/backups/<archive>.tar.gz --yes
+APP_ENV=prod bash scripts/restore.sh restore /var/backups/<archive>.tar.gz --yes
 ```
 
 `backup.sh` bundles:
@@ -1314,14 +1314,14 @@ exact failure mode the #6 verification hit on dev.
    file (or worse, a blanked env file from a typo'd `sed`). Then
    restart the service.
    ```bash
-   sudo -E .venv/bin/ameli-app rotate-audit-key \
+   .venv/bin/ameli-app rotate-audit-key \
      --from-key-env OLD_KEY \
      --to-key-env NEW_KEY \
      --apply-env /etc/ameli-app-template-<env>/app.env || {
        echo "ABORT: rotation failed; env file untouched"
        return 1 2>/dev/null || exit 1
    }
-   sudo systemctl restart ameli-app-template-<env>-api.service
+   systemctl restart ameli-app-template-<env>-api.service
    unset OLD_KEY NEW_KEY   # keep them out of the shell after rotation
    ```
    Exit codes: `0` = full success, `2` = rotation refused (chain
@@ -1335,7 +1335,7 @@ exact failure mode the #6 verification hit on dev.
    **stdin variant** (when you cannot or don't want to export the
    keys): pipe two lines, from-key first.
    ```bash
-   { printf '%s\n%s\n' "$OLD_KEY" "$NEW_KEY"; } | sudo .venv/bin/ameli-app \
+   { printf '%s\n%s\n' "$OLD_KEY" "$NEW_KEY"; } | .venv/bin/ameli-app \
      rotate-audit-key --from-key-stdin --to-key-stdin \
      --apply-env /etc/ameli-app-template-<env>/app.env
    ```
@@ -1345,14 +1345,14 @@ exact failure mode the #6 verification hit on dev.
    `ps`/history:
    ```bash
    # NOT RECOMMENDED: keys land in /proc/<pid>/cmdline
-   sudo .venv/bin/ameli-app rotate-audit-key \
+   .venv/bin/ameli-app rotate-audit-key \
      --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
        echo "ABORT: rotation failed; do NOT touch the env file"
        return 1 2>/dev/null || exit 1
    }
-   sudo sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
+   sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
      /etc/ameli-app-template-<env>/app.env
-   sudo systemctl restart ameli-app-template-<env>-api.service
+   systemctl restart ameli-app-template-<env>-api.service
    ```
 
 4. **Sanity-check the post-rotation chain.**

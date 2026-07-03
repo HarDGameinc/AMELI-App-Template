@@ -106,7 +106,7 @@ After rename, the CLI command becomes `your-app version` /
 
 | Variable | Default | Override at install time |
 |---|---|---|
-| `APP_NAME` | `AMELI App Template` | `sudo APP_NAME="Your App" bash scripts/install.sh` |
+| `APP_NAME` | `AMELI App Template` | `APP_NAME="Your App" bash scripts/install.sh` |
 | `APP_SLUG` | auto-detected from directory name | `APP_SLUG=your-app-prod` |
 | `APP_PACKAGE` | `ameli_app` | `APP_PACKAGE=your_app` (match source rename) |
 | `APP_ENV` | `dev` | `APP_ENV=prod` |

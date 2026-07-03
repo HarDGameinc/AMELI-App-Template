@@ -177,7 +177,7 @@ cd /opt/ameli-app-dev
 ### 2. Crear base y usuario PostgreSQL
 
 ```bash
-sudo -u postgres psql
+su - postgres -c psql
 ```
 
 Dentro de `psql`:
