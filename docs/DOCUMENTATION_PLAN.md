@@ -1,0 +1,105 @@
+# Documentation plan (to integrate before next dev cycle)
+
+Date: `2026-07-03`
+Status: **plan — execute in a future session, then delete or mark done.**
+Context: an external recommendation proposed a ~35-file "industry
+standard" doc set. This is the tailored plan: adopt only the genuine
+gaps, consolidate instead of proliferating. Full reasoning in the
+2026-07-03 handoff (§ conversation) and `TECH_EVOLUTION.md`.
+
+## Guiding principle
+
+Few rich, maintained docs > many thin ones. Every `X.md` is a doc-rot
+surface an agent will trust. **Before creating a doc, ask "does this
+already live in `OPERATIONS.md` or `AGENTS.md`?"** — usually yes, and the
+right move is a section there, not a new file. The repo already covers
+~70% of the proposed set, consolidated into fewer, denser docs.
+
+## Do NOT create (already covered or N/A)
+
+- **Covered elsewhere** — QUICKSTART/INSTALL (`FIRST_INSTALL_DJANGO.md`),
+  DEPLOYMENT (`OPERATIONS.md` + `TLS_WITH_CADDY.md`), OBSERVABILITY /
+  BACKUP_RESTORE / TROUBLESHOOTING / RUNBOOK / MAINTENANCE (sections in
+  `OPERATIONS.md`), COMPLIANCE (`COMPLIANCE_ASVS_L2_*`), USAGE
+  (`README.md`), API (self-documented via `/openapi.json` + `/docs` +
+  `/redoc`), DATABASE (models in `AGENTS.md`), INTEGRATIONS
+  (`OPERATIONS.md` + `settings/integrations.py`), DESIGN
+  (`FRONTEND_DESIGN_REVIEW.md`).
+- **Redundant with `AGENTS.md`** — AI_CONTEXT.md, AGENT_WORKFLOWS.md.
+  `AGENTS.md` IS the AI entry point; duplicating fragments the source of
+  truth.
+- **N/A for a single-operator template** — SUPPORT.md, GOVERNANCE.md,
+  PROMPTS.md (marginal), SLSA.md (overkill unless a client mandates it),
+  DATA_HANDLING.md (fold into PRIVACY).
+
+## Create — the genuine gaps (ranked)
+
+### 1. `CONTRIBUTING.md`  *(highest value)*
+
+Operating conventions currently live only in dated handoffs (§8.2), which
+are historical logs — a future agent reading `AGENTS.md` alone does not
+get them reliably. Seed with:
+
+- **Commits**: Conventional Commits; footer
+  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. No
+  `--no-verify` / hook skipping.
+- **Branches**: work on `dev`; the server always pulls `dev`; `main` is
+  frozen until the **v0.5.0 / v1.0.0** milestone and advances only by
+  explicit operator instruction, via PR.
+- **Pre-push checks**: `ruff check .` · `mypy src` · `pytest` ·
+  `node --test tests/js/*.test.js`.
+- **Windows dev notes** (pointer): install from the ranges (not the
+  hash-locked `requirements.lock` — `uvloop` won't compile on Windows);
+  reinstall mypy with `--no-binary mypy` (App-Control blocks the DLL);
+  local run env vars (`AMELI_APP_DJANGO_SECRET_KEY`, `DATABASE_URL=""`,
+  `AMELI_APP_SQLITE_PATH`, `APP_CONFIG`, `DJANGO_SETTINGS_MODULE`).
+
+Consider making this a **section in `AGENTS.md`** instead of a separate
+file (put it where agents already read first) — decide at execution time.
+
+### 2. `RELEASE.md`  (folds in VERSIONING)
+
+- **Scheme**: `vMAJOR.MINOR.PATCH-django` in the `VERSION` file, mirrored
+  as `MAJOR.MINOR.PATCH` in `pyproject.toml`. Runtime reads it via
+  `src/ameli_app/version.py`.
+- **Bump ritual — all four**: `VERSION` + `pyproject.toml [project].version`
+  + a `CHANGELOG.md` entry + the `AGENTS.md` "State of the project" line.
+- **Policy**: bump only after a phase / roadmap item is validated on the
+  dev server (`ha-report2`). A behaviour-neutral refactor that ships new
+  browser-served assets may still get a marker bump (precedent: v0.4.9).
+
+### 3. `DECISIONS.md`  (ADR-lite)
+
+Consolidate the "why" that is scattered across handoffs. Format: one
+lightweight ADR per entry (Context / Decision / Consequences); point to
+`TECH_EVOLUTION.md` for the fuller narrative. Seed entries:
+
+- Django (not FastAPI); Django **5.2 LTS** (Django 6 non-LTS declined
+  2026-07-02).
+- Server-rendered + vanilla JS, **no build step**; HTMX/Alpine if
+  interactivity grows (not a SPA).
+- PostgreSQL (prod) / SQLite (dev fallback); **SQLAlchemy/Alembic
+  configured-but-unused** → candidate for removal.
+- Dependency minimalism: hand-rolled Prometheus exposition + CSP.
+- Security posture: per-request CSP nonces + Trusted Types + SRI;
+  hash-pinned locks (`--require-hashes`).
+- Static-asset config injection via `data-*` on a hidden element (not
+  `json_script` / view context) — from the 2026-07-03 JS split.
+
+## Create only if going "productive / critical"
+
+- **`SBOM.md`** — low effort, real supply-chain value: `cyclonedx-python-lib`
+  is already a dev dep and the locks are hash-pinned. Document generating
+  the SBOM from the locks, where it lives, and to refresh it on lock change.
+- **`PRIVACY.md`** — real users → PII. Inventory (user email, avatars,
+  audit log, sessions), retention windows (already implemented in the
+  `OPERATIONS.md` retention sweep), avatar EXIF/GPS stripping, audit HMAC.
+
+## Execution notes for the next session
+
+- Do this **before** the next feature work (operator's instruction).
+- Register any new files in the `AGENTS.md` documentation index.
+- Keep each doc concise and **link to existing docs instead of copying**
+  (e.g. RELEASE points at CHANGELOG; CONTRIBUTING points at OPERATIONS
+  "Local validation"). Duplicated content is the failure mode to avoid.
+- When done, delete this plan or mark it `Status: DONE`.

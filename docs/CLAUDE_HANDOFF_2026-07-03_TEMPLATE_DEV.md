@@ -219,6 +219,7 @@ script para no sorprender a operadores de prod).
 |---|---|---|---|
 | ~~D-2~~ | ~~UX MFA prompts~~ | — | **CERRADO 2026-07-03** (§3.1) — validado smoke navegador en `ha-report2`; bump v0.4.8 |
 | ~~Templates~~ | ~~Split inline JS `admin/panel.html` + `profile.html`~~ | — | **CERRADO 2026-07-03** (§3.6) — a `static/js/{profile,admin-panel}.js` con SRI; validado en server; bump v0.4.9 |
+| **Docs** | Integrar el set base de docs para agentes | 1-2h | **HACER PRIMERO (antes de desarrollar)** — instrucción del operador. Plan listo en [`DOCUMENTATION_PLAN.md`](DOCUMENTATION_PLAN.md): crear CONTRIBUTING + RELEASE + DECISIONS (opc. SBOM + PRIVACY), sin duplicar lo existente |
 | D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | Promote | `dev → main` v0.5.0 | — | Requiere instruccion explicita |
 
