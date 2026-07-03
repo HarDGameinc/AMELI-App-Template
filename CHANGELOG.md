@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.4.8-django — 2026-07-03 (D-2: re-auth MFA inline + tools de recuperación)
+
+Cierra **D-2** del roadmap: la re-autenticación por contraseña en el
+panel MFA de `/profile` dejó de usar los diálogos nativos del navegador
+(`window.prompt` / `confirm` / `alert`) y ahora usa **campos de
+contraseña inline**, igual que el flujo de desactivación que ya existía.
+Validado en `ha-report2` (smoke navegador): activar app, activar email y
+regenerar códigos, los tres sin popups nativos.
+
+### D-2 — re-auth inline (commit `fb8e9e1`)
+
+Tres acciones endurecidas contra robo de sesión (PHASE_B A1/A2) pasan a
+input inline con toggle de visibilidad:
+
+- **Activar 2FA (app)**: `#profile-mfa-totp-activate-password`.
+- **Activar 2FA (email)**: input inline, solo cuando hay email
+  registrado (si no, el botón queda deshabilitado como antes).
+- **Regenerar códigos**: input inline + leyenda de advertencia +
+  feedback `aria-live`, reemplazando el trío `confirm()`+`prompt()`+
+  `alert()`.
+
+Cada campo se limpia al éxito, valida vacío con foco y muestra errores
+en línea. Los IDs de botón se preservaron, así que los tests de render
+apilado siguen verdes. +3 tests que fijan los campos inline y la
+ausencia de `window.prompt` en el body servido.
+
+### Fix — tools de recuperación tras regenerar (commit `9a9d7d8`)
+
+El handler de regenerar pintaba los códigos pero **nunca cableaba**
+`setupRecoveryTools()`, así que Copiar / Descargar / Imprimir quedaban
+muertos tras un regenerado (bug pre-existente, aflorado en el smoke de
+D-2). Ahora reusa `showRecoveryOrReload()` — el mismo helper que ya
+usan los flujos de enrolamiento app/email — para cablearlos consistente.
+
+### Fallback de copia en HTTP (commit `3889fbd`)
+
+El botón Copiar usaba solo `navigator.clipboard`, gateado a contexto
+seguro (HTTPS / localhost). En un deploy HTTP (dev o red interna sin
+TLS) degradaba a "copia manual". Se añade un fallback legacy
+(`<textarea>` temporal + `document.execCommand('copy')`) que corre
+**solo** cuando `window.isSecureContext` es `false`: un deploy
+HTTPS/Caddy toma la rama de la Clipboard API moderna y nunca ejecuta
+`execCommand`, así el path viejo se auto-desactiva en producción sin
+flag. Descargar / Imprimir ya eran independientes del contexto seguro.
+
+Validado en `ha-report2` (HTTP): copiar, descargar e imprimir OK.
+
 ## v0.4.7-django — 2026-07-02 (fix: cropper submit síncrono)
 
 Fix del cropper de avatar (v0.4.6): el submit hacía `preventDefault` +

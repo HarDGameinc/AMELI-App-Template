@@ -181,13 +181,16 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.7-django, 2026-07-02)
+## State of the project (v0.4.8-django, 2026-07-03)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
 (`app.js:setupAvatarCropper`), the CI matrix widened to Python 3.11-3.14
-on Django 5.2 LTS (D-6'), and JS unit tests via `node:test` (D-4). All
-validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+on Django 5.2 LTS (D-6'), JS unit tests via `node:test` (D-4), and D-2
+inline password re-auth for the MFA panel (replacing native
+`prompt`/`confirm`/`alert`) plus a secure-context-gated clipboard
+fallback for the recovery-code tools. All validated on the dev server /
+CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
