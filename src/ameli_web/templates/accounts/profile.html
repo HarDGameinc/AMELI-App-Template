@@ -994,15 +994,11 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       if (regeneratePassword) regeneratePassword.value = "";
       if (regenerateFeedback) regenerateFeedback.textContent = "";
-      if (recoveryList && Array.isArray(data.recovery_codes)) {
-        recoveryList.replaceChildren();
-        data.recovery_codes.forEach((codeValue) => {
-          const li = document.createElement("li");
-          li.textContent = codeValue;
-          recoveryList.appendChild(li);
-        });
-      }
-      showMfaSection("recovery");
+      // Reuse the enrollment path so the copy / download / print tools
+      // get wired via setupRecoveryTools(). The old inline list-build
+      // rendered the codes but never wired the buttons, leaving them
+      // dead after a regenerate (pre-existing bug surfaced during D-2).
+      showRecoveryOrReload(data.recovery_codes);
     } catch (error) {
       if (regenerateFeedback) regenerateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       regenerateBtn.disabled = false;
