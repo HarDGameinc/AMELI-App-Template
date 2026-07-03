@@ -418,3 +418,20 @@ def test_admin_panel_renders_2fa_off_for_unenrolled_user(client, admin_user, pub
 
     body = _body(response)
     assert "2FA off" in body
+
+
+@pytest.mark.django_db
+def test_admin_panel_loads_external_js_with_sri(client, admin_user):
+    # Frontend-debt split: the panel behaviour lives in the external,
+    # SRI-protected admin-panel.js. The page must reference it and inject
+    # the CSRF token via the #admin-js-config data element, not inline JS.
+    client.force_login(admin_user)
+
+    response = client.get("/admin/")
+
+    body = _body(response)
+    assert "js/admin-panel.js" in body
+    assert 'integrity="sha384-' in body
+    assert 'id="admin-js-config"' in body
+    assert "data-csrf-token" in body
+    assert "DOMContentLoaded" not in body  # no inline script left behind
