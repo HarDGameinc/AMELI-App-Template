@@ -88,6 +88,14 @@ se toco el feature "sudo mode" de la app (`services/sudo.py`, sudo
 grants, `@sudo_required`, prompt de re-auth admin) ni los handoffs con
 fecha / snapshots de compliance/threat.
 
+### 3.5. OPS — CI setup-node@v4 → v6 (post-release)
+
+GitHub avisaba que `actions/setup-node@v4` apunta al runtime node20
+(deprecado; lo fuerza a node24 con warning). Se bumpeo a `@v6` (ultima
+major, node24) en el job `js-unit` de `ci.yml`. `checkout@v5` y
+`setup-python@v6` ya estaban en node24. Sin cambio de `node-version`
+(sigue "22" LTS).
+
 ## §4. Decisiones tomadas
 
 1. **Bump `v0.4.7` → `v0.4.8-django`** tras validacion en servidor
@@ -149,13 +157,18 @@ local ahora **0 fail**.
 | D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | Promote | `dev → main` v0.5.0 | — | Requiere instruccion explicita |
 
-### Pendiente OPS (sigue del 02-jul)
+### OPS — branch protection (BLOQUEADO por plan, no accionable)
 
 Sumar `Lint + Test (Python 3.13)` y `(Python 3.14)` a los required
-status checks de branch protection de `main` (ver `OPERATIONS.md`
-§"Branch protection"). Los 3.11/3.12 siguen gateando; los 2 nuevos aun
-no. (Nota: branch protection es no-op en el plan Free privado — ver la
-misma seccion.)
+status checks de branch protection de `main` **no se puede hoy**:
+`gh api .../branches/main/protection` devuelve **403 "Upgrade to GitHub
+Pro or make this repository public"**. En el plan Free privado la
+feature no existe (ni configurable por API) — o sea, **nada** gatea
+`main` actualmente (ni los 3.11/3.12). El payload documentado en
+`OPERATIONS.md` §"Branch protection" ya lista los 4 Pythons + pip-audit,
+listo para aplicarse el dia que se suba a GitHub Pro/Team o se haga
+publico el repo. Sacar de la lista de "pendientes" — es latente, no
+olvidado.
 
 ## §8. Continuidad — para el proximo agente
 
