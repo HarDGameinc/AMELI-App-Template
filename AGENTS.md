@@ -234,6 +234,7 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/COMPLIANCE_ASVS_L2_*.md` | ASVS L2 compliance snapshots |
 | `docs/HANDOFF_TEMPLATE.md` | Session handoff structure |
 | `docs/FRONTEND_DESIGN_REVIEW.md` | Frontend design audit |
+| `docs/TECH_EVOLUTION.md` | Stack/tooling assessment: keep vs evolve, ranked opportunities |
 | `docs/SKILLS_REVIEW.md` | Multi-skill code review |
 | `docs/PHASE_A_PREPROD_AUDIT_*.md` | Pre-production audit report |
 | `docs/PHASE_B_SECURITY_REVIEW_*.md` | Security review report |
