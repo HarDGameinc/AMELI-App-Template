@@ -2,7 +2,7 @@
 
 Fecha: `2026-07-03`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (HEAD `dd910cc` al abrir → `3889fbd`+bump al cerrar)
+Rama de trabajo: `dev` (HEAD `dd910cc` al abrir → `241eea7` al cerrar, `v0.4.9-django`)
 Rama estable: `main` (default en GitHub; `dev` va muy adelante)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-02_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-02_TEMPLATE_DEV.md)
 
@@ -117,6 +117,28 @@ validado en servidor (ambas páginas responden igual, DevTools limpio).
 - Extracción hecha con script Python (no a mano) para evitar errores de
   transcripción en ~1130 líneas; `node --check` verde en ambos archivos.
 
+### 3.7. De-flake del e2e password-change (commit `ab45de9`)
+
+`test_change_password_then_login` flakeaba ~66% (pegó en 2 de 3 runs
+post-split). **No era regresión** (código idéntico pasó en Phase 2):
+carrera client-side. Tras el cambio, el JS reescribe el status y recarga
+a los ~450ms; el test esperaba `networkidle` (dispara en ese hueco) y
+luego enviaba el logout POST → esa POST corría concurrente con el reload
+sobre la misma fila de sesión mientras el cambio revoca sesiones →
+`SessionStore UpdateError: "Forced update did not affect any rows"` → la
+página no navegaba → `Page.fill` timeout. Fix test-only: esperar la
+señal determinista `"…Recargando…"` en el feedback y llegar a estado
+anónimo con `page.context.clear_cookies()` en vez de correr el logout
+POST. Local 5/5 en el test target + 4/4 suite e2e; 2 runs Linux CI
+verdes consecutivos. Sin bump (test-only).
+
+### 3.8. Hygiene: `.gitignore` + doc de validate (commits `ce8aa38`, `241eea7`)
+
+- `.gitignore` ahora ignora `*.sqlite3` (las DB locales de dev/e2e
+  aparecían untracked; Postgres es la DB real).
+- `FIRST_INSTALL_DJANGO.md` §6: el ejemplo de `validate_installation.sh`
+  ahora lleva `APP_ENV=dev` (ver §6.3).
+
 ## §4. Decisiones tomadas
 
 1. **Bump `v0.4.7` → `v0.4.8-django`** tras validacion en servidor
@@ -129,16 +151,26 @@ validado en servidor (ambas páginas responden igual, DevTools limpio).
 4. **Docs sudo**: solo comandos shell, no el feature. Solo docs vivos,
    no historicos.
 
-## §5. Metricas al cierre (Windows local)
+## §5. Metricas al cierre
 
 | Indicador | Valor |
 |---|---|
-| Unit tests | **1070 pass / 29 skip / 0 fail** |
+| Unit tests (Windows local) | **1072 pass / 29 skip / 0 fail** |
 | Ruff | 0 errores |
 | Node JS tests | 13 pass |
+| e2e (local + CI Linux) | 4/4; password-change de-flakeado (§3.7) |
 | Mypy | limpio salvo 1 falso positivo Windows (`socket.AF_UNIX`, ver §6.1) |
-| Version | `v0.4.8-django` |
-| HEAD | `3889fbd` + commit del bump |
+| CI (dev) | verde: matriz 3.11-3.14 + pip-audit + js-unit + e2e |
+| Version | `v0.4.9-django` |
+| HEAD | `241eea7` |
+
+### Validacion en servidor (`ha-report2`, v0.4.9 contra Postgres)
+
+- `validate_installation.sh` (con `APP_ENV=dev`): **OK=23 / WARN=0 / FAIL=0**.
+- `verify-audit`: `{"checked": 301, "ok": true}`.
+- `/health/deep`: `db_write` + `fs_write` ok (write path real).
+- Smoke navegador: D-2 (MFA inline app/email + regenerar + tools), panel
+  admin (mantenimiento, cola email, sudo, CRUD) — todo OK, DevTools limpio.
 
 ## §6. Hallazgos / findings
 
@@ -164,6 +196,17 @@ como host remoto (`Cannot connect to C:`). Se le puso `skipif
 sys.platform == "win32"` puntual (no de modulo: varios tests del archivo
 si corren y aportan en Windows). Validado en CI Linux. Suite Windows
 local ahora **0 fail**.
+
+### 6.3. `validate_installation.sh` defaultea a `APP_ENV=prod`
+
+El script hace `export APP_ENV="${APP_ENV:-prod}"` (a diferencia de
+`_common.sh` que defaultea a `dev`). Correrlo pelado en una instancia
+**dev** chequea la instancia *prod* (paths + units `*-prod-*` que no
+existen) → FAIL espurios (visto en `ha-report2`: OK=0/WARN=11/FAIL=8
+mientras `verify-audit` + `/health/deep` daban verde). Con
+`APP_ENV=dev bash scripts/validate_installation.sh` → **OK=23**. Se
+documento en `FIRST_INSTALL_DJANGO.md` §6 (no se cambio el default del
+script para no sorprender a operadores de prod).
 
 ## §7. Roadmap actualizado
 
@@ -196,23 +239,31 @@ olvidado.
 
 ### 8.0. Snapshot al cierre
 
-- Rama: **`dev`** (D-2 + 2 fixes de recuperacion + docs sudo; version
-  `v0.4.8-django`). `main` local no existe; `origin/main` es el default.
-- D-2 validado end-to-end en `ha-report2` (HTTP): activar app/email
-  inline sin prompts, regenerar + Copiar/Descargar/Imprimir OK.
-- `/health` en server: OK (DB, SMTP, audit chain tail 768, disco 26%).
+- Rama: **`dev @ 241eea7`**, version **`v0.4.9-django`**. `main` local no
+  existe; `origin/main` es el default (congelado — ver 8.2).
+- Sesion completa: D-2 (re-auth MFA inline) + 2 fixes de recuperacion +
+  docs sudo + CI node24 + **split completo del JS inline** + de-flake del
+  e2e password-change + hygiene (gitignore, doc validate).
+- **Validado en servidor** (`ha-report2`, Postgres): `validate_installation.sh`
+  OK=23/0/0, `verify-audit` 301 ok, `/health/deep` ok, smoke navegador de
+  D-2 + panel admin limpio. CI dev totalmente verde.
 - Entorno de dev es Windows nativo — ver §6.1 antes de correr checks.
 
 ### 8.1. Primer paso (siguiente agente)
 
-1. **Split inline JS** de `admin/panel.html` + `profile.html`, o
-2. **D-1** identidad visual (si el operador lo decide), o
-3. **Promote `dev → main`** (requiere instruccion explicita).
+Roadmap casi vacio camino a v0.5.0/1.0.0. Queda:
+1. **D-1** — identidad visual del template (6-8h; solo si el operador lo
+   decide — ver `docs/FRONTEND_DESIGN_REVIEW.md`).
+2. **Promote `dev → main`** — bloqueado hasta milestone v0.5.0/1.0.0 por
+   decision del operador (8.2); requiere instruccion explicita.
+3. Menores: OPS branch-protection (latente, §7), bump `actions/setup-node`
+   ya hecho.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
-- Server pull SIEMPRE de `dev`. `main` solo avanza por instruccion
-  explicita "milestone".
+- Server pull SIEMPRE de `dev`. `main` **congelado** hasta milestone
+  **v0.5.0 o v1.0.0** (decision del operador 2026-07-03); solo avanza por
+  instruccion explicita.
 - Deploy en el server (root, sin sudo): `git fetch && git reset --hard
   origin/dev` → `.venv/bin/pip install --require-hashes -r
   requirements.lock` (no-op si no cambiaron deps) → `manage.py migrate`
