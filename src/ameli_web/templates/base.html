@@ -139,5 +139,11 @@
       </div>
     </footer>
     <script src="{% static 'js/app.js' %}"{% sri_for 'js/app.js' %}></script>
+    {# Page-specific external scripts (SRI-protected, served from 'self'). #}
+    {# Loaded after app.js but before </body>, so a DOMContentLoaded #}
+    {# listener registered inside still fires. Pages inject server values #}
+    {# (URLs, csrf) via data-* on a hidden config element, keeping the JS #}
+    {# a pure static asset with no Django template tags. #}
+    {% block extra_scripts %}{% endblock %}
   </body>
   </html>
