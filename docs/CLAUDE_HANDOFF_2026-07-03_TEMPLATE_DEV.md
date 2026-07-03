@@ -240,11 +240,14 @@ olvidado.
 
 ### 8.0. Snapshot al cierre
 
-- Rama: **`dev @ 241eea7`**, version **`v0.4.9-django`**. `main` local no
-  existe; `origin/main` es el default (congelado — ver 8.2).
+- Rama: **`dev`**, version **`v0.4.9-django`** (HEAD = el commit de cierre
+  de este handoff). `main` local no existe; `origin/main` es el default
+  (congelado — ver 8.2).
 - Sesion completa: D-2 (re-auth MFA inline) + 2 fixes de recuperacion +
   docs sudo + CI node24 + **split completo del JS inline** + de-flake del
-  e2e password-change + hygiene (gitignore, doc validate).
+  e2e password-change + hygiene (gitignore, doc validate) +
+  **`TECH_EVOLUTION.md`** (evaluacion de stack) + **`DOCUMENTATION_PLAN.md`**
+  (plan del set de docs para agentes).
 - **Validado en servidor** (`ha-report2`, Postgres): `validate_installation.sh`
   OK=23/0/0, `verify-audit` 301 ok, `/health/deep` ok, smoke navegador de
   D-2 + panel admin limpio. CI dev totalmente verde.
@@ -252,13 +255,23 @@ olvidado.
 
 ### 8.1. Primer paso (siguiente agente)
 
-Roadmap casi vacio camino a v0.5.0/1.0.0. Queda:
-1. **D-1** — identidad visual del template (6-8h; solo si el operador lo
+1. **Integrar el set de docs para agentes** — **HACER PRIMERO, antes de
+   desarrollar** (instruccion del operador). Plan completo con contenido
+   semilla en [`DOCUMENTATION_PLAN.md`](DOCUMENTATION_PLAN.md): crear
+   CONTRIBUTING + RELEASE + DECISIONS (opc. SBOM + PRIVACY), sin duplicar
+   lo existente. ~1-2h.
+2. **D-1** — identidad visual del template (6-8h; solo si el operador lo
    decide — ver `docs/FRONTEND_DESIGN_REVIEW.md`).
-2. **Promote `dev → main`** — bloqueado hasta milestone v0.5.0/1.0.0 por
+3. **Promote `dev → main`** — bloqueado hasta milestone v0.5.0/1.0.0 por
    decision del operador (8.2); requiere instruccion explicita.
-3. Menores: OPS branch-protection (latente, §7), bump `actions/setup-node`
-   ya hecho.
+4. Menores: OPS branch-protection (latente, §7), Postgres en CI
+   (`TECH_EVOLUTION.md`, top pick), bump `actions/setup-node` ya hecho.
+
+### 8.3. Cierre
+
+Sesion **cerrada 2026-07-03**. Todo lo entregado esta validado en
+servidor + CI y pusheado a `dev` (`v0.4.9-django`). El proximo agente
+arranca por §8.1.1 (integrar docs) y despues sigue con desarrollo.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
