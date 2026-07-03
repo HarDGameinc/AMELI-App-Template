@@ -54,17 +54,26 @@ def test_change_password_then_login_with_new_password(
     page.fill('input#profile-cp-new', new_password)
     page.fill('input#profile-cp-confirm', new_password)
     page.locator('button#profile-password-submit').click()
-    page.wait_for_load_state("networkidle")
 
-    # Django auth flow may force a re-login after password change;
-    # either way the OLD password should no longer work.
-    # Logout to ensure a clean slate. ``logout_view`` is
-    # ``@require_POST`` (accounts/views.py:175) — a GET returns 405
-    # and leaves the session intact, so we submit the canonical
-    # logout form (base.html: ``form.menu-logout-form``) via JS to
-    # POST with the CSRF token already on the page.
-    page.evaluate("document.querySelector('form.menu-logout-form').submit()")
-    page.wait_for_load_state("networkidle")
+    # De-flake: the JS handler POSTs the change via fetch, writes an
+    # "…Recargando perfil…" status into the feedback line on success,
+    # then reloads the page ~450ms later (profile.js). Wait on that text
+    # — it is the deterministic signal that the server persisted the new
+    # hash. ``networkidle`` alone can fire inside the setTimeout(reload)
+    # gap, and the old code then submitted the logout form *concurrently*
+    # with the reload: two authenticated requests racing the same session
+    # row while the change revokes sessions, tripping the DB session
+    # backend (``UpdateError: Forced update did not affect any rows``)
+    # and timing out the downstream ``fill``.
+    page.wait_for_selector(
+        '#profile-password-feedback:has-text("Recargando")', timeout=15000
+    )
+
+    # Reach an anonymous state deterministically: drop the session cookie
+    # instead of racing a logout POST against the JS reload. The OLD
+    # password must no longer work regardless of whether the change kept
+    # or invalidated the current session.
+    page.context.clear_cookies()
 
     # Attempt login with the OLD password — should fail
     page.goto(f"{live_url}/login/")
