@@ -817,13 +817,47 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     const text = codes.join("\n") + "\n";
 
+    // Legacy fallback for non-secure (HTTP) contexts — e.g. an internal
+    // operational network without TLS. A temp textarea + execCommand is
+    // the only path that copies without the async Clipboard API. It runs
+    // ONLY when isSecureContext is false, so an HTTPS/Caddy deploy uses
+    // the modern API below and never touches execCommand.
+    const legacyCopy = (value) => {
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (err) {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+      return ok;
+    };
+
     const copyBtn = document.getElementById("profile-mfa-recovery-copy");
     if (copyBtn) {
       copyBtn.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(text);
+        // Prefer the async Clipboard API — it requires a secure context
+        // (HTTPS or localhost). In HTTPS/prod this is the only branch taken.
+        if (window.isSecureContext && navigator.clipboard) {
+          try {
+            await navigator.clipboard.writeText(text);
+            flash("Copiados al portapapeles");
+            return;
+          } catch (err) {
+            // fall through to the legacy path
+          }
+        }
+        if (legacyCopy(text)) {
           flash("Copiados al portapapeles");
-        } catch (err) {
+        } else {
           flash("No se pudo copiar — selecciona y copia manualmente");
         }
       };
