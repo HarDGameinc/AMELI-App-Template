@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,14 @@ def test_restore_script_supports_verify_mode():
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "restore.sh passes the archive to tar with a Windows drive-letter "
+        "path (C:\\...), which GNU tar misreads as a remote host:path "
+        "(`Cannot connect to C:`). POSIX-only; validated on the Linux CI."
+    ),
+)
 def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
     """Manually craft a fake archive with a mismatching checksum and
     confirm verify mode fails loudly."""

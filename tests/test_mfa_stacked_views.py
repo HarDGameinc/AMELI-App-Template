@@ -105,6 +105,55 @@ def test_profile_renders_two_inactive_cards_when_no_mfa(client, public_user):
 
 
 @pytest.mark.django_db
+def test_profile_activate_cards_use_inline_password_not_prompt(client, public_user):
+    # D-2: MFA re-auth moved from native window.prompt() to inline
+    # password fields (matching the disable flow). Assert the inline
+    # inputs render and no native prompt survives in the shipped JS.
+    client.force_login(public_user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-totp-activate-password"' in body
+    assert 'id="profile-mfa-email-activate-password"' in body
+    assert "window.prompt(" not in body
+
+
+@pytest.mark.django_db
+def test_profile_regenerate_uses_inline_password(client, public_user):
+    # D-2: regenerating recovery codes now re-auths via an inline
+    # password field instead of confirm() + window.prompt().
+    _enroll_totp("viewer")
+    client.force_login(public_user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-regenerate-password"' in body
+    assert 'id="profile-mfa-regenerate"' in body
+    assert "window.prompt(" not in body
+
+
+@pytest.mark.django_db
+def test_profile_email_activate_password_hidden_without_email(client, admin_user):
+    # Without a registered email, the email-activate button is disabled
+    # and its inline password field is not rendered (nothing to submit).
+    create_user_account(
+        actor_username="admin",
+        username="noemail",
+        password=USER_PASSWORD,
+        role="public",
+    )
+    user = User.objects.get(username="noemail")
+    client.force_login(user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-email-activate-password"' not in body
+
+
+@pytest.mark.django_db
 def test_profile_renders_only_totp_card_active_when_only_totp_enrolled(client, public_user):
     _enroll_totp("viewer")
     client.force_login(public_user)

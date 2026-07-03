@@ -361,6 +361,15 @@
           </div>
           <p class="muted" id="profile-mfa-totp-disable-feedback"></p>
           {% else %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-totp-activate-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-totp-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-totp-activate-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-activate" type="button">
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">smartphone</span>
@@ -393,6 +402,17 @@
           </div>
           <p class="muted" id="profile-mfa-email-disable-feedback"></p>
           {% else %}
+          {% if mfa_status.has_email %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-email-activate-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-email-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-email-activate-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
+          {% endif %}
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-email-activate" type="button"{% if not mfa_status.has_email %} disabled{% endif %}>
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
@@ -408,11 +428,24 @@
       <p class="muted" id="profile-mfa-activate-feedback"></p>
 
       {% if mfa_status.enabled %}
-      <div class="modal-actions-row" style="margin-top:14px;">
-        <button class="icon-action" type="button" id="profile-mfa-regenerate">
-          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
-          <span>Regenerar codigos de recuperacion</span>
-        </button>
+      <div class="form-card" style="margin-top:14px;">
+        <p class="muted panel-copy warn-text"><strong>Regenerar reemplaza todos tus codigos actuales:</strong> los que tengas guardados dejaran de funcionar. Confirma con tu contrasena.</p>
+        <div class="modal-form-row">
+          <label class="modal-form-label" for="profile-mfa-regenerate-password">Contrasena actual</label>
+          <div class="modal-input-with-action">
+            <input id="profile-mfa-regenerate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para regenerar">
+            <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-regenerate-password" aria-label="Mostrar u ocultar contrasena">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+            </button>
+          </div>
+        </div>
+        <div class="modal-actions-row">
+          <button class="icon-action" type="button" id="profile-mfa-regenerate">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
+            <span>Regenerar codigos de recuperacion</span>
+          </button>
+        </div>
+        <p class="muted" id="profile-mfa-regenerate-feedback" aria-live="polite"></p>
       </div>
       {% endif %}
     </div>
@@ -688,6 +721,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const activateBtn = document.getElementById("profile-mfa-activate");
+  const activatePassword = document.getElementById("profile-mfa-totp-activate-password");
   const activateFeedback = document.getElementById("profile-mfa-activate-feedback");
   const verifyBtn = document.getElementById("profile-mfa-verify");
   const cancelBtn = document.getElementById("profile-mfa-cancel");
@@ -704,7 +738,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const emailDisablePassword = document.getElementById("profile-mfa-email-disable-password");
   const emailDisableFeedback = document.getElementById("profile-mfa-email-disable-feedback");
   const regenerateBtn = document.getElementById("profile-mfa-regenerate");
+  const regeneratePassword = document.getElementById("profile-mfa-regenerate-password");
+  const regenerateFeedback = document.getElementById("profile-mfa-regenerate-feedback");
   const emailActivateBtn = document.getElementById("profile-mfa-email-activate");
+  const emailActivatePassword = document.getElementById("profile-mfa-email-activate-password");
   const emailVerifyBtn = document.getElementById("profile-mfa-email-verify");
   const emailCancelBtn = document.getElementById("profile-mfa-email-cancel");
   const emailCodeInput = document.getElementById("profile-mfa-email-code");
@@ -714,9 +751,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Cookie-thief hardening (PHASE_B Bloque A1): the backend now
     // requires the current password to provision a fresh TOTP secret
     // so a stolen session alone cannot enroll the attacker's
-    // authenticator on the victim's account.
-    const currentPassword = window.prompt("Confirma tu contrasena actual para activar 2FA:");
-    if (currentPassword === null || currentPassword === "") return;
+    // authenticator on the victim's account. D-2: the re-auth uses an
+    // inline password field (matching the disable flow) instead of a
+    // native browser prompt dialog.
+    const currentPassword = String(activatePassword?.value || "").trim();
+    if (!currentPassword) {
+      if (activateFeedback) activateFeedback.textContent = "Confirma tu contrasena para activar.";
+      activatePassword?.focus();
+      return;
+    }
     activateBtn.disabled = true;
     if (activateFeedback) activateFeedback.textContent = "Generando codigo QR...";
     try {
@@ -724,6 +767,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "{% url 'accounts:profile-mfa-start' %}",
         { current_password: currentPassword },
       );
+      if (activatePassword) activatePassword.value = "";
       if (qrSlot) qrSlot.innerHTML = window.ameliTrusted.createHTML(data.qr_svg || "");
       if (secretText) secretText.textContent = data.secret || "-";
       if (codeInput) codeInput.value = "";
@@ -879,8 +923,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   emailActivateBtn?.addEventListener("click", async () => {
     // Cookie-thief hardening (PHASE_B Bloque A2): re-auth required.
-    const currentPassword = window.prompt("Confirma tu contrasena actual para activar MFA por email:");
-    if (currentPassword === null || currentPassword === "") return;
+    // D-2: inline password field instead of a native browser prompt dialog.
+    const currentPassword = String(emailActivatePassword?.value || "").trim();
+    if (!currentPassword) {
+      if (activateFeedback) activateFeedback.textContent = "Confirma tu contrasena para activar.";
+      emailActivatePassword?.focus();
+      return;
+    }
     emailActivateBtn.disabled = true;
     if (activateFeedback) activateFeedback.textContent = "Enviando codigo...";
     try {
@@ -888,6 +937,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "{% url 'accounts:profile-mfa-email-start' %}",
         { current_password: currentPassword },
       );
+      if (emailActivatePassword) emailActivatePassword.value = "";
       if (emailCodeInput) emailCodeInput.value = "";
       if (emailVerifyFeedback) emailVerifyFeedback.textContent = "";
       if (activateFeedback) activateFeedback.textContent = "";
@@ -923,21 +973,27 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   regenerateBtn?.addEventListener("click", async () => {
-    if (!confirm("Confirmas regenerar tus codigos de recuperacion? Todos los codigos actuales dejaran de funcionar.")) {
-      return;
-    }
     // Cookie-thief hardening (PHASE_B Bloque A1): re-auth required so
     // a stolen session alone cannot mint a fresh set of recovery
     // codes — which would be a permanent MFA backdoor since the codes
-    // don't expire.
-    const currentPassword = window.prompt("Confirma tu contrasena actual para regenerar los codigos:");
-    if (currentPassword === null || currentPassword === "") return;
+    // don't expire. D-2: the confirmation prompt + password prompt +
+    // error alert are now an inline password field + warning caption +
+    // feedback line (no native prompt/confirm/alert dialogs).
+    const currentPassword = String(regeneratePassword?.value || "").trim();
+    if (!currentPassword) {
+      if (regenerateFeedback) regenerateFeedback.textContent = "Confirma tu contrasena para regenerar.";
+      regeneratePassword?.focus();
+      return;
+    }
     regenerateBtn.disabled = true;
+    if (regenerateFeedback) regenerateFeedback.textContent = "Regenerando...";
     try {
       const data = await postJson(
         "{% url 'accounts:profile-mfa-regenerate' %}",
         { current_password: currentPassword },
       );
+      if (regeneratePassword) regeneratePassword.value = "";
+      if (regenerateFeedback) regenerateFeedback.textContent = "";
       if (recoveryList && Array.isArray(data.recovery_codes)) {
         recoveryList.replaceChildren();
         data.recovery_codes.forEach((codeValue) => {
@@ -948,7 +1004,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       showMfaSection("recovery");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Error inesperado.");
+      if (regenerateFeedback) regenerateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
       regenerateBtn.disabled = false;
     }
   });
