@@ -240,9 +240,14 @@ la base esperada para una instalación Debian real.
 
 ### 6. Validar instalación
 
+`validate_installation.sh` **defaultea a `APP_ENV=prod`**. En una
+instalación `dev` hay que pasarle `APP_ENV=dev`, si no chequea la
+instancia prod (paths y units `*-prod-*` que no existen) y reporta FAIL
+espurios:
+
 ```bash
 cd /opt/ameli-app-dev
-bash scripts/validate_installation.sh
+APP_ENV=dev bash scripts/validate_installation.sh
 ```
 
 Revisión manual recomendada:
