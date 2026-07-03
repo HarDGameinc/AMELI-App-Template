@@ -181,7 +181,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.8-django, 2026-07-03)
+## State of the project (v0.4.9-django, 2026-07-03)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -197,7 +197,7 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 2. **`accounts/views/` (PC-2 CLOSED, 2026-07-01)** — 9 domain modules; `__init__.py` re-exports
 3. **`admin_views/` (PC-3 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` re-exports
 4. **`settings/` (PC-4 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` orquesta imports en orden crítico
-5. **Inline JS in templates** — `admin/panel.html` (~650 lines), `profile.html` (~470 lines)
+5. **Inline JS in templates (CLOSED, 2026-07-03)** — extracted to external SRI-protected `static/js/profile.js` + `static/js/admin-panel.js`; templates inject server values via `data-*` on a hidden config element
 
 ### Frontend design gaps
 - No signature visual element (generic admin panel look)

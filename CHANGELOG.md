@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.4.9-django — 2026-07-03 (refactor: split del JS inline a estáticos)
+
+Cierra el ítem de deuda frontend **"split inline JS"** del roadmap. Los
+dos `<script>` inline grandes de las plantillas pasan a archivos
+estáticos externos, protegidos con SRI y servidos desde `'self'` bajo el
+`script-src` de la CSP (sin nonce). Refactor **sin cambio de
+comportamiento**, validado en `ha-report2` (ambas páginas responden
+igual, sin errores en DevTools).
+
+### Fase 1 — `profile.js` (commit `1dcb8ff`)
+
+`accounts/profile.html` adelgaza ~530 líneas: el JS (tabs, cambio de
+contraseña, MFA activar/desactivar app+email, tools de recuperación,
+cambio de email) se movió a `static/js/profile.js`. Los 9 `{% url %}`
+server-rendered viajan por `data-*` en un `#profile-js-config` oculto; el
+CSRF se sigue leyendo del input oculto del form. Include gateado por
+`not must_change_password` (misma condición que tenía el inline).
+
+### Fase 2 — `admin-panel.js` (commit `8e1e5e6`)
+
+`admin/panel.html` adelgaza ~600 líneas: el JS (toggle de mantenimiento,
+widget de cola de email, sudo grant/status, CRUD de usuarios +
+rol/password/MFA) se movió a `static/js/admin-panel.js`. Las URLs ya
+eran literales `/admin/*`, así que el único valor inyectado es el CSRF,
+vía `data-csrf-token` en `#admin-js-config`.
+
+### Infra
+
+- `base.html`: nuevo `{% block extra_scripts %}` tras `app.js` (antes de
+  `</body>`, para que un listener `DOMContentLoaded` siga disparando).
+- Sin `collectstatic`: `_serve_static` (urls.py) resuelve `/static/*`
+  con `finders.find()` directo desde `STATICFILES_DIRS`.
+- Tests: la aserción de wiring de recovery-tools se movió al archivo
+  `profile.js`; +1 test que fija el include externo con SRI en `/admin/`.
+
 ## v0.4.8-django — 2026-07-03 (D-2: re-auth MFA inline + tools de recuperación)
 
 Cierra **D-2** del roadmap: la re-autenticación por contraseña en el

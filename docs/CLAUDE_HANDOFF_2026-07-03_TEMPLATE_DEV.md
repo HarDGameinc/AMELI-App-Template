@@ -96,6 +96,27 @@ major, node24) en el job `js-unit` de `ci.yml`. `checkout@v5` y
 `setup-python@v6` ya estaban en node24. Sin cambio de `node-version`
 (sigue "22" LTS).
 
+### 3.6. Split del JS inline → estáticos (commits `1dcb8ff`, `8e1e5e6`; v0.4.9)
+
+Cierra la deuda frontend "split inline JS". Los 2 `<script>` inline
+grandes salen a estáticos externos con SRI, servidos desde `'self'`
+(CSP `script-src 'self'`, sin nonce). Refactor sin cambio de conducta,
+validado en servidor (ambas páginas responden igual, DevTools limpio).
+
+- **Fase 1** `profile.html` (−532 líneas) → `static/js/profile.js`. Los
+  9 `{% url %}` viajan por `data-*` en `#profile-js-config`; CSRF sigue
+  del input oculto. Include gateado por `not must_change_password`.
+- **Fase 2** `admin/panel.html` (−601 líneas) → `static/js/admin-panel.js`.
+  URLs ya eran literales `/admin/*`; único valor inyectado: CSRF vía
+  `data-csrf-token` en `#admin-js-config`.
+- `base.html`: nuevo `{% block extra_scripts %}` tras `app.js`.
+- **Sin collectstatic**: `_serve_static` (urls.py) resuelve `/static/*`
+  con `finders.find()` directo de `STATICFILES_DIRS` (git pull + restart
+  basta). Confirmado en server: `GET /static/js/{profile,admin-panel}.js`
+  → 200 con `integrity`.
+- Extracción hecha con script Python (no a mano) para evitar errores de
+  transcripción en ~1130 líneas; `node --check` verde en ambos archivos.
+
 ## §4. Decisiones tomadas
 
 1. **Bump `v0.4.7` → `v0.4.8-django`** tras validacion en servidor
@@ -146,14 +167,15 @@ local ahora **0 fail**.
 
 ## §7. Roadmap actualizado
 
-**D-2 cerrado y validado en servidor.** Version: `v0.4.8-django`.
+**D-2 + split inline JS cerrados y validados en servidor.** Version:
+`v0.4.9-django`.
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
 | ~~D-2~~ | ~~UX MFA prompts~~ | — | **CERRADO 2026-07-03** (§3.1) — validado smoke navegador en `ha-report2`; bump v0.4.8 |
-| Templates | Split inline JS `admin/panel.html` (~650) + `profile.html` (~500) | 2-3h | Deuda frontend (no backend) |
+| ~~Templates~~ | ~~Split inline JS `admin/panel.html` + `profile.html`~~ | — | **CERRADO 2026-07-03** (§3.6) — a `static/js/{profile,admin-panel}.js` con SRI; validado en server; bump v0.4.9 |
 | D-1 | Identidad visual | 6-8h | Solo si operador decide |
 | Promote | `dev → main` v0.5.0 | — | Requiere instruccion explicita |
 
