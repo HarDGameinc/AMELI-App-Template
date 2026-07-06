@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.10-django — 2026-07-06 (accesibilidad: smoke axe-core + fixes)
+
+Cierra el gap "no accessibility tests". Nuevo smoke axe-core (WCAG 2.1
+A/AA) sobre login/dashboard/profile/admin vía Playwright, gateando
+critical + serious. Validado en CI (Linux) y smoke visual en servidor.
+
+### a11y (commit `254948e`)
+
+- **Test** (`tests/e2e/test_accessibility.py`): axe-core 4.10.2 vendoreado
+  (`tests/e2e/vendor/axe.min.js`, MPL-2.0, test-only, sin dep pip ni
+  cambio de lock) inyectado vía `page.evaluate` (sortea la CSP por CDP).
+- **Fixes que el test encontró**:
+  - `select-name` (critical): los 4 `<select>` de filtro admin sin nombre
+    accesible → `aria-label` (`users_role`, `users_status`,
+    `audit_outcome`, `admin_sessions_status`).
+  - `color-contrast` (serious): `--muted` (#687385) y `--warn` (#b46a00)
+    del tema claro caían apenas bajo 4.5:1 → #5b6472 / #a15e00.
+  - `.password-policy-item.fail` usaba un durazno claro (#ffcfbf) pensado
+    para fondo oscuro (~1.3:1 en blanco) → `var(--bad)`, por-tema
+    (#b42318 claro / #e5564a oscuro), legible en ambos.
+- Atribución axe-core en `THIRD_PARTY_LICENSES.md`.
+
+Bump aplicado tras smoke visual en `ha-report2` (checklist de contraseña
+rojo/legible, filtros OK, nada roto por el cambio de contraste).
+
 ## v0.4.9-django — 2026-07-03 (refactor: split del JS inline a estáticos)
 
 Cierra el ítem de deuda frontend **"split inline JS"** del roadmap. Los
