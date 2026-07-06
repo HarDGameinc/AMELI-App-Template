@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.4.11-django — 2026-07-06 (a11y: tema oscuro + teclado + tokens -fill)
+
+Amplía el smoke de accesibilidad a **ambos temas** y agrega checks de
+teclado. Validado en CI (axe con `emulate_media` claro+oscuro) y smoke
+visual en servidor (tema oscuro impecable).
+
+### a11y+ (commit `5a86106`)
+
+- **Test** (`tests/e2e/test_accessibility.py`): cada página corre en
+  claro **y oscuro** (`page.emulate_media`); se suma `/login/forgot/` y
+  2 checks de teclado (skip-link es el primer Tab stop y apunta a
+  `<main>`; el form de login es alcanzable). El mensaje de fallo muestra
+  fg/bg/ratio de axe.
+- **Fixes de contraste del tema oscuro** (el claro no los tenía): el
+  palette oscuro reutilizaba colores brillantes como **fondos rellenos**
+  con texto blanco, cayendo bajo 4.5:1 — botones primarios (3.16:1),
+  pills de estado (2.83:1), botones danger. Se introdujeron tokens
+  `--accent-fill` / `--ok-fill` / `--warn-fill` / `--bad-fill` (color de
+  fondo relleno bajo texto blanco): claro = base; oscuro = variantes más
+  oscuras que superan 4.5:1. `--bad` oscuro #e5564a → #ee6459 para el
+  texto "fail" del checklist.
+
+Nota: el tema **Auto** delega correctamente en `prefers-color-scheme`
+(sin `data-theme`); si el navegador (p.ej. Firefox "Apariencia del sitio
+web") fuerza oscuro, Auto se ve oscuro — es esperado, no un bug.
+
+Bump tras smoke visual en `ha-report2` (tema oscuro: botones/pills/checklist
+legibles, nada lavado).
+
 ## v0.4.10-django — 2026-07-06 (accesibilidad: smoke axe-core + fixes)
 
 Cierra el gap "no accessibility tests". Nuevo smoke axe-core (WCAG 2.1
