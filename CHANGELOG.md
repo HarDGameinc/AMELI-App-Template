@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.12-django — 2026-07-06 (a11y: focus management de modales)
+
+a11y++ — manejo de foco en los modales del admin (WCAG 2.1.2 / 2.4.3).
+Validado en CI (e2e Playwright).
+
+### a11y++ (commit `d0f8307`)
+
+- `admin-panel.js`: `openModal()` recuerda el elemento que lo disparó y
+  mueve el foco al diálogo; `closeModal()` lo restaura. Un handler de
+  `keydown` **atrapa Tab** dentro de cualquier `.modal-backdrop` visible y
+  rutea Escape por el botón de cierre del modal (así el flujo del sudo
+  cancela su promesa). El sudo-modal usa el mismo remember/restore.
+- `admin/panel.html`: los modales reset-password / change-role /
+  delete-user ganaron `role="dialog" aria-modal="true" aria-labelledby`
+  (el sudo ya los tenía).
+- `test_accessibility.py`: valida el markup del diálogo, que Tab quede
+  atrapado y que Escape cierre. 13/13 a11y verde.
+
+Sin cambio visual (comportamiento de teclado) → validado por e2e, sin
+smoke visual de servidor.
+
 ## v0.4.11-django — 2026-07-06 (a11y: tema oscuro + teclado + tokens -fill)
 
 Amplía el smoke de accesibilidad a **ambos temas** y agrega checks de
