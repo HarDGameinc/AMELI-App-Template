@@ -2,7 +2,11 @@
 
 Fecha: `2026-07-06`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (HEAD `3daffc5` al abrir → `c1e2d5f` al cerrar, `v0.4.10-django`)
+Rama de trabajo: `dev` (HEAD `3daffc5` al abrir; version final `v0.4.11-django`)
+
+> **Nota**: la sesion se extendio tras un primer cierre. Bloque 1 (docs +
+> Postgres-CI + a11y, `v0.4.10`) esta abajo; el Bloque 2 (a11y+ tema
+> oscuro/teclado `v0.4.11` + doc de theming) se resume en §3.5 y §6.4.
 Rama estable: `main` (default en GitHub; congelado hasta v0.5.0/v1.0.0)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-03_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-03_TEMPLATE_DEV.md)
 
@@ -99,6 +103,28 @@ El primer run encontro violaciones **reales**, arregladas:
 Atribucion axe-core en `THIRD_PARTY_LICENSES.md`; gap de a11y de
 `AGENTS.md` actualizado.
 
+### 3.5. a11y+ — tema oscuro + teclado (commits `5a86106`, `dcd2a17`, v0.4.11)
+
+Extension del smoke a11y (§3.4). Ahora axe corre cada pagina en **claro
+Y oscuro** (`page.emulate_media`), se agrega `/login/forgot/` y 2 checks
+de **teclado** (skip-link es el primer Tab stop y apunta a `<main>`; el
+form de login es alcanzable). El mensaje de fallo imprime fg/bg/ratio.
+
+El tema oscuro destapo contraste sistematico que el claro no tenia: el
+palette oscuro reusa colores brillantes (correctos como texto/iconos)
+como **fondos rellenos** con texto blanco, cayendo bajo 4.5:1 — botones
+primarios (3.16:1), status pills (2.83:1), danger. Fix con **tokens
+`--*-fill`** (color de fondo relleno bajo texto blanco): claro = base,
+oscuro = variantes mas oscuras que superan 4.5:1. Estructura de tokens
+durable (un futuro D-1 la conserva). 12/12 a11y verde (5 pag x 2 temas +
+2 teclado). Bump `v0.4.11` tras smoke visual del tema oscuro en server.
+
+### 3.6. Doc de theming (`docs/THEMING.md`)
+
+Nuevo doc que explica los 3 modos (Claro/Oscuro/Auto), que Auto delega en
+`prefers-color-scheme`, y el gotcha que confundio al operador (§6.4).
+Registrado en el indice de `AGENTS.md`.
+
 ## §4. Decisiones tomadas
 
 1. **Docs primero** (instruccion del operador): Core 3 como archivos
@@ -153,18 +179,38 @@ inmediato pega cuerpo vacio → `json.load` explota. No es bug: esperar
 readiness (`for i in $(seq 1 10); do curl -sf .../health && break; sleep
 1; done`) antes de leer la version.
 
+### 6.4. Tema "Auto" oscuro en Firefox — NO es bug (documentado)
+
+En el smoke de a11y+, el operador vio la app oscura con tema **Auto**
+aunque Windows se veia claro. Diagnostico completo (con capturas):
+
+- `matchMedia('(prefers-color-scheme: dark)').matches` → **`true`** → el
+  navegador reporta oscuro, asi que Auto se ve oscuro **correctamente**.
+- Reproducido en **Firefox** solamente; Chrome/Brave/Edge se veian claros.
+- **Modo de resolucion de problemas** de Firefox (extensiones off) →
+  seguia `true` → **NO es una extension** (se descarto FortiClient), es
+  **politica de la org / pref del SO** (`ui.systemUsesDarkTheme`). El
+  Firefox estaba "administrado por su organizacion".
+
+**La app es correcta** — `active_theme=""` en Auto → sin `data-theme` →
+`@media prefers-color-scheme` manda. Fix es del lado del navegador
+(Website appearance → Claro) o usar el tema explicito del perfil.
+Documentado en `docs/THEMING.md` para que no vuelva a confundir.
+
 ## §7. Roadmap actualizado
 
-**Docs + Postgres-CI + a11y cerrados.** Version `v0.4.10-django`. La cola
-high/medium de `TECH_EVOLUTION.md` quedo **agotada** (el #2 SQLAlchemy ya
-estaba hecho; solo restan Low/optional: `django-csp`/`prometheus_client`,
-Ansible, jsdom-level JS tests — ninguno urgente).
+**Docs + Postgres-CI + a11y + a11y+ cerrados.** Version
+`v0.4.11-django`. La cola high/medium de `TECH_EVOLUTION.md` quedo
+**agotada** (el #2 SQLAlchemy ya estaba hecho; solo restan Low/optional:
+`django-csp`/`prometheus_client`, Ansible, jsdom-level JS tests — ninguno
+urgente).
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| a11y+ | Cobertura a11y mas profunda | 1-2h | Tema oscuro, sub-vistas admin, keyboard-nav. Opcional |
+| ~~a11y+~~ | ~~Tema oscuro + teclado~~ | — | **CERRADO 2026-07-06** (§3.5) — claro+oscuro + keyboard; tokens `-fill`; v0.4.11 |
+| a11y++ | Modales (sudo/MFA) con focus-trap | 1h | Menor; lo que resta de a11y |
 | D-1 | Identidad visual | 6-8h | Solo si operador decide — ver `FRONTEND_DESIGN_REVIEW.md` |
 | Promote | `dev → main` v0.5.0 | — | `main` congelado; requiere instruccion explicita |
 | Low/opt | `django-csp`, Prometheus lib, Ansible, jsdom | — | Ninguno urgente (`TECH_EVOLUTION.md`) |
@@ -179,12 +225,16 @@ dia que se suba a Pro/Team o se haga publico. No es olvido.
 
 ### 8.0. Snapshot al cierre
 
-- Rama **`dev` @ `c1e2d5f`**, version **`v0.4.10-django`**, todo pusheado.
+- Rama **`dev`**, version **`v0.4.11-django`**, todo pusheado.
   `main` congelado.
 - Sesion: docs para agentes (CONTRIBUTING/RELEASE/DECISIONS) + Postgres en
-  CI + correccion de docs SQLAlchemy + tests de accesibilidad (axe-core) +
-  fixes de contraste/aria-label.
-- Validado: CI dev totalmente verde; smoke visual en `ha-report2`.
+  CI + correccion de docs SQLAlchemy + tests de accesibilidad (axe-core,
+  claro+oscuro + teclado) + fixes de contraste (tokens `-fill`) +
+  `docs/THEMING.md`.
+- Validado: CI dev totalmente verde (matriz 3.11-3.14 + Postgres + e2e con
+  12 checks a11y + js-unit + pip-audit); smoke visual en `ha-report2`
+  (tema oscuro impecable). El tema Auto/oscuro en Firefox se diagnostico
+  como browser/politica, no bug (§6.4, `THEMING.md`).
 - Entorno dev = Windows nativo (ver `CONTRIBUTING.md` "Local dev
   environment"). `gh` CLI conectado (en `C:\Program Files\GitHub CLI\`,
   no en PATH de las shells — invocar por ruta).
