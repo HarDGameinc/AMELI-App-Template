@@ -65,7 +65,7 @@ is current (ruff, mypy, pytest, Playwright, OpenTelemetry).
 
 | Priority | Item | Rationale |
 |---|---|---|
-| **High** | **PostgreSQL in CI** | CI + local run on **SQLite**; prod is **Postgres**. Behaviours diverge — e.g. `select_for_update()` (the throttling gate) is a real row lock on Postgres and a near-no-op on SQLite; transaction / constraint / isolation semantics differ. A GitHub Actions job with a `services: postgres` container closes the gap. Low cost, high value. |
+| ~~**High**~~ | ~~**PostgreSQL in CI**~~ | **DONE 2026-07-06** — the `test-postgres` job in `ci.yml` runs the unit suite against a `services: postgres:16` container on Python 3.13, so `select_for_update()` and the transaction/constraint semantics are exercised on the real backend. |
 | **Medium** | **Remove unused SQLAlchemy / Alembic** | Configured but with no active models; `AGENTS.md` already lists it under "what not to port." Django ORM + Django migrations are the real system. Dead weight that confuses new readers and adds dependency surface — remove it, or document explicitly why it stays. |
 | **Low / optional** | `django-csp` + `prometheus_client` | The hand-rolled versions are deliberate (dependency-free) and fine today. If maintaining them becomes a burden as the app grows, these mature libraries reduce upkeep. A trade-off, not urgent. |
 | **Low / optional** | **Ansible** for provisioning | The bash + systemd scripts work and are auditable, but bash is fragile (this project hit a Windows `tar` path issue and the `validate_installation.sh` `APP_ENV=prod` default gotcha). For single-operator internal deploys, bash is defensible; if deploys scale, Ansible adds idempotence and testability at the cost of a new toolchain. |
@@ -73,10 +73,10 @@ is current (ruff, mypy, pytest, Playwright, OpenTelemetry).
 
 ## Recommendation
 
-If only one thing is done next: **PostgreSQL in CI**. It is the one real
-quality gap (the suite is validated against a different backend than
-production), it is cheap, and it matches the rigor the project already
-has. Second would be the SQLAlchemy/Alembic cleanup.
+~~If only one thing is done next: **PostgreSQL in CI**.~~ **Done
+2026-07-06** (the `test-postgres` CI job). The next targeted item is the
+**SQLAlchemy/Alembic cleanup** (Medium, above) — configured-but-unused
+dead weight; remove it or document why it stays.
 
 ## Explicitly do NOT
 

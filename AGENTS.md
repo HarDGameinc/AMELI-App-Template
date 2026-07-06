@@ -168,8 +168,10 @@ manage.py               # Django management entrypoint (autodiscover config)
 - **Coverage:** ≥85% (enforced in `pyproject.toml`)
 - **Static analysis:** ruff (enforces S security band), mypy (0 errors)
 - **E2E:** Playwright (`tests/e2e/`, opt-in via `--run-e2e`)
-- **CI matrix:** Python 3.11 · 3.12 · 3.13 · 3.14 (on Django 5.2 LTS) +
-  a `js-unit` job for the JS tests
+- **CI matrix:** Python 3.11 · 3.12 · 3.13 · 3.14 (on Django 5.2 LTS,
+  SQLite) + a `test-postgres` job running the suite against real
+  PostgreSQL (Python 3.13) + a `js-unit` job for the JS tests + e2e +
+  pip-audit
 - **JS unit tests (D-4):** password generator, strength evaluator, debounce
 
 ### Test categories
