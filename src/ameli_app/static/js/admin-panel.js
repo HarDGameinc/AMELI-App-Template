@@ -139,6 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const errorBox = document.getElementById("sudo-error");
     const submitBtn = document.getElementById("sudo-submit");
 
+    rememberModalTrigger();
     modal.hidden = false;
     passwordInput.value = "";
     mfaInput.value = "";
@@ -169,6 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sudoInFlight = new Promise((resolve, reject) => {
       const cleanup = () => {
         modal.hidden = true;
+        restoreModalFocus();
         form.removeEventListener("submit", onSubmit);
         modal.querySelectorAll("[data-modal-close]").forEach((b) =>
           b.removeEventListener("click", onCancel)
@@ -342,14 +344,49 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---- Modal infrastructure ----
   const openModals = new Set();
+  // Element that had focus when the first modal opened, so it can be
+  // restored on close (WCAG 2.4.3). Shared across the openModal() path and
+  // the bespoke sudo flow via ``rememberModalTrigger`` / ``restoreModalFocus``.
+  let modalReturnFocus = null;
+
+  const MODAL_FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]), ' +
+    'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function modalFocusables(modal) {
+    // Visible, tabbable descendants (skip hidden rows like the collapsed
+    // MFA input in the sudo modal).
+    return Array.from(modal.querySelectorAll(MODAL_FOCUSABLE)).filter(
+      (el) => el.offsetParent !== null || el === document.activeElement
+    );
+  }
+
+  function rememberModalTrigger() {
+    if (!modalReturnFocus) modalReturnFocus = document.activeElement;
+  }
+
+  function restoreModalFocus() {
+    if (modalReturnFocus && typeof modalReturnFocus.focus === "function") {
+      modalReturnFocus.focus();
+    }
+    modalReturnFocus = null;
+  }
+
+  function focusFirstIn(modal) {
+    if (modal.contains(document.activeElement)) return; // caller already focused
+    const focusables = modalFocusables(modal);
+    (focusables[0] || modal).focus();
+  }
 
   function openModal(modalId, contextSetup) {
     const modal = document.getElementById(modalId);
     if (!modal) return null;
+    rememberModalTrigger();
     if (typeof contextSetup === "function") contextSetup(modal);
     modal.hidden = false;
     document.body.classList.add("modal-open");
     openModals.add(modalId);
+    focusFirstIn(modal);
     return modal;
   }
 
@@ -358,7 +395,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!modal) return;
     modal.hidden = true;
     openModals.delete(modalId);
-    if (openModals.size === 0) document.body.classList.remove("modal-open");
+    if (openModals.size === 0) {
+      document.body.classList.remove("modal-open");
+      restoreModalFocus();
+    }
   }
 
   document.querySelectorAll(".modal-backdrop").forEach((modal) => {
@@ -370,10 +410,37 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // Escape closes the top modal; Tab is trapped inside the open dialog so a
+  // keyboard user cannot tab out into the (inert) background (WCAG 2.4.3).
+  // Keyed off any visible ``.modal-backdrop`` so it covers both the
+  // openModal() path and the sudo flow that toggles ``hidden`` directly.
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && openModals.size > 0) {
-      const last = Array.from(openModals).pop();
-      if (last) closeModal(last);
+    const modal = document.querySelector(".modal-backdrop:not([hidden])");
+    if (!modal) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      // Route through the modal's own close control so bespoke flows (the
+      // sudo modal cancels its in-flight promise via ``onCancel``) run
+      // their teardown; fall back to a plain close.
+      const closeBtn = modal.querySelector("[data-modal-close]");
+      if (closeBtn) closeBtn.click();
+      else closeModal(modal.id);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusables = modalFocusables(modal);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!modal.contains(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
     }
   });
 

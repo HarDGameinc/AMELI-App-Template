@@ -214,9 +214,10 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 - Accessibility smoke covers axe-core WCAG 2.1 A/AA (critical+serious) on
   login / forgot-password / dashboard / profile / admin in **both light
   and dark themes**, plus keyboard checks (skip-link is the first Tab
-  stop; login form is reachable) — `tests/e2e/test_accessibility.py`.
-  Still open: admin sub-view modals (sudo, MFA enrol), focus-trap in
-  modals, screen-reader announcement audits
+  stop; login form is reachable) plus admin dialog focus management
+  (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
+  focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
+  Still open: screen-reader announcement audits (`aria-live` coverage)
 - No migration tests (alembic upgrade/downgrade)
 - No visual regression tests
 

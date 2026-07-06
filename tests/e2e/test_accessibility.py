@@ -165,6 +165,46 @@ def test_skip_link_is_first_tab_stop(page, live_url):
     assert main_tabindex == "-1", f"#main-content tabindex is {main_tabindex!r}, expected -1"
 
 
+def test_admin_modal_traps_focus_and_escape_closes(page, live_url, e2e_admin):
+    """An open dialog must (a) advertise role=dialog/aria-modal, (b) keep
+    Tab focus inside it, and (c) close on Escape (WCAG 2.1.2 / 2.4.3).
+
+    The modal is revealed the way ``openModal()`` does rather than driving
+    a real trigger — every admin write needs a sudo grant / a second user
+    to pop a modal, and the focus-trap keydown handler keys off any visible
+    ``.modal-backdrop``, so this still exercises the real handler."""
+    _login_no_mfa(page, live_url, e2e_admin)
+    page.goto(f"{live_url}/admin/")
+    page.wait_for_load_state("networkidle")
+
+    # role / aria-modal markup.
+    assert page.get_attribute("#delete-user-modal", "role") == "dialog"
+    assert page.get_attribute("#delete-user-modal", "aria-modal") == "true"
+    assert page.get_attribute("#delete-user-modal", "aria-labelledby") == "delete-user-title"
+
+    page.evaluate(
+        """() => {
+            const m = document.getElementById('delete-user-modal');
+            m.hidden = false;
+            document.body.classList.add('modal-open');
+            const f = m.querySelector('button, a[href], input, select, textarea');
+            if (f) f.focus();
+        }"""
+    )
+    in_modal = "() => document.getElementById('delete-user-modal').contains(document.activeElement)"
+    assert page.evaluate(in_modal), "focus was not inside the opened dialog"
+
+    # Tab repeatedly — focus must never escape to the background.
+    for _ in range(8):
+        page.keyboard.press("Tab")
+        assert page.evaluate(in_modal), "Tab let focus escape the modal"
+
+    # Escape closes it (routes through the modal's own close control).
+    page.keyboard.press("Escape")
+    assert page.get_attribute("#delete-user-modal", "hidden") is not None, \
+        "Escape did not close the modal"
+
+
 def test_login_form_reachable_by_keyboard(page, live_url):
     """Tabbing through the login page must reach the username, password
     and submit control — no keyboard trap before the form."""
