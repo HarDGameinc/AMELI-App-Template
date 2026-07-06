@@ -47,6 +47,7 @@ These are NOT shipped in the runtime artifact but appear in
 | pytest-django | ~=4.9 | BSD-3-Clause |
 | ruff | ~=0.6 | MIT |
 | pip-audit | ~=2.7 | Apache-2.0 |
+| axe-core (vendored) | 4.10.2 | **MPL-2.0** | Vendored at `tests/e2e/vendor/axe.min.js` for the Playwright accessibility smoke. Test-only (not shipped in the runtime artifact), unmodified, MPL header preserved. File-level copyleft applies only to `axe.min.js` itself, which we do not modify — no effect on the template's MIT license. Not a pip dependency (kept out of the hash-locked `requirements*.lock`). |
 
 ## LGPL note (psycopg)
 

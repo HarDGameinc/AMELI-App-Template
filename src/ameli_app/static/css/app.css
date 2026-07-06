@@ -23,8 +23,8 @@
         scroll-behavior:auto !important; }
     }
     :root, :root[data-theme="light"] {
-      --bg:#f6f7fb; --surface:#fff; --ink:#17202a; --muted:#687385;
-      --line:#d8dde8; --ok:#137a4b; --warn:#b46a00; --bad:#b42318;
+      --bg:#f6f7fb; --surface:#fff; --ink:#17202a; --muted:#5b6472;
+      --line:#d8dde8; --ok:#137a4b; --warn:#a15e00; --bad:#b42318;
       --unknown:#5f6d84; --closed:#4f6177; --accent:#155eef;
     }
     /* Oscuro explicito */
@@ -657,7 +657,7 @@
              background:rgba(127,140,170,.45); box-shadow:0 0 0 4px rgba(127,140,170,.10); transition:background .18s ease, box-shadow .18s ease; }
     .password-policy-item.pass { color:var(--ink); }
     .password-policy-item.pass .password-policy-dot { background:var(--ok); box-shadow:0 0 0 4px rgba(47,174,110,.10); }
-    .password-policy-item.fail { color:#ffcfbf; }
+    .password-policy-item.fail { color:var(--bad); }
     .password-policy-item.fail .password-policy-dot { background:var(--bad); box-shadow:0 0 0 4px rgba(212,84,84,.12); }
     .password-policy-note { margin:0; font-size:12px; color:var(--muted); line-height:1.45; }
     .password-policy-note strong { color:var(--ink); font-size:inherit; text-transform:none; letter-spacing:0; }

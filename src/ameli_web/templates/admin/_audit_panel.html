@@ -20,7 +20,7 @@ helper can swap just this fragment without reloading the whole admin page.
   <input type="search" name="audit_action" class="users-toolbar-input"
          placeholder="Accion (ej: login)" autocomplete="off"
          value="{{ audit_filters.action }}">
-  <select name="audit_outcome" class="users-toolbar-input">
+  <select name="audit_outcome" class="users-toolbar-input" aria-label="Filtrar por resultado">
     <option value="">Todos los resultados</option>
     <option value="ok" {% if audit_filters.outcome == "ok" %}selected{% endif %}>OK</option>
     <option value="error" {% if audit_filters.outcome == "error" %}selected{% endif %}>Errores</option>

@@ -14,12 +14,12 @@ helper can swap just this fragment without reloading the whole admin page.
   <input type="search" name="users_search" class="users-toolbar-input"
          placeholder="Buscar por usuario o alias..." autocomplete="off"
          value="{{ users_filters.search }}">
-  <select name="users_role" class="users-toolbar-input">
+  <select name="users_role" class="users-toolbar-input" aria-label="Filtrar por rol">
     <option value="">Todos los roles</option>
     <option value="superadmin" {% if users_filters.role == "superadmin" %}selected{% endif %}>superadmin</option>
     <option value="public" {% if users_filters.role == "public" %}selected{% endif %}>public</option>
   </select>
-  <select name="users_status" class="users-toolbar-input">
+  <select name="users_status" class="users-toolbar-input" aria-label="Filtrar por estado">
     <option value="">Todos los estados</option>
     <option value="enabled" {% if users_filters.status == "enabled" %}selected{% endif %}>Activos</option>
     <option value="disabled" {% if users_filters.status == "disabled" %}selected{% endif %}>Deshabilitados</option>
