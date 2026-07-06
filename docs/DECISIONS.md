@@ -45,16 +45,20 @@ entry and note it.
 - **Consequences**: CSP stays `script-src 'self'` (no per-page nonce for
   app JS); the script is cacheable and SRI-pinned.
 
-## 4. PostgreSQL (prod) / SQLite (dev); SQLAlchemy/Alembic unused
+## 4. PostgreSQL (prod) / SQLite (dev); Django ORM is the only ORM
 
 - **Context**: production needs a real RDBMS; local dev benefits from a
-  zero-setup fallback. SQLAlchemy + Alembic were configured early but no
-  active models use them (Django ORM owns the schema).
-- **Decision**: PostgreSQL in production, SQLite for local/dev and e2e.
-  Keep the Django ORM as the single schema owner. **SQLAlchemy/Alembic are
-  configured-but-unused → removal candidate** (tracked in
-  `TECH_EVOLUTION.md`).
-- **Consequences**: migrations are Django's. `*.sqlite3` is gitignored.
+  zero-setup fallback. An early lineage used a thin SQLAlchemy engine for
+  a `SELECT 1` health probe.
+- **Decision**: PostgreSQL in production, SQLite for local/dev and e2e,
+  with the **Django ORM as the single schema owner**. SQLAlchemy was
+  removed (its ~5 MB bought one 7-line health probe with no other
+  consumer) in favour of Django's `connection.cursor()` — see
+  `ameli_app/database.py`. The DSN parser tolerates SQLAlchemy-style
+  schemes (`postgresql+psycopg://`) so operators can reuse such URLs.
+- **Consequences**: migrations are Django's; there is no Alembic. The CI
+  `test-postgres` job (2026-07-06) validates the suite on real Postgres.
+  `*.sqlite3` is gitignored.
 
 ## 5. Dependency minimalism
 

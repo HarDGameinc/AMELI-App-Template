@@ -269,7 +269,10 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 - Metro-specific capture logic, incidents, snapshots, data sources, text, or branding
 - FastAPI runtime layer (template is Django-only)
-- SQLAlchemy/Alembic setup if unused (currently configured but no active models)
+- (SQLAlchemy/Alembic is already gone — replaced by Django's
+  `connection.cursor()` in `ameli_app/database.py`; not a dependency. The
+  DSN parser still tolerates `postgresql+psycopg://`-style schemes on
+  purpose.)
 
 ## Out-of-scope (not yet addressed)
 

@@ -66,7 +66,7 @@ is current (ruff, mypy, pytest, Playwright, OpenTelemetry).
 | Priority | Item | Rationale |
 |---|---|---|
 | ~~**High**~~ | ~~**PostgreSQL in CI**~~ | **DONE 2026-07-06** — the `test-postgres` job in `ci.yml` runs the unit suite against a `services: postgres:16` container on Python 3.13, so `select_for_update()` and the transaction/constraint semantics are exercised on the real backend. |
-| **Medium** | **Remove unused SQLAlchemy / Alembic** | Configured but with no active models; `AGENTS.md` already lists it under "what not to port." Django ORM + Django migrations are the real system. Dead weight that confuses new readers and adds dependency surface — remove it, or document explicitly why it stays. |
+| ~~Medium~~ | ~~Remove unused SQLAlchemy / Alembic~~ | **N/A (verified 2026-07-06)** — SQLAlchemy/Alembic is NOT a dependency (absent from `pyproject.toml` / `requirements*.txt` / `requirements.lock`) and is imported nowhere in `src/`. It was already removed: `ameli_app/database.py` swapped its thin SQLAlchemy health-probe engine for Django's `connection.cursor()`. The only residue is intentional — the DSN parser tolerates SQLAlchemy-style schemes (`postgresql+psycopg://`) so operators can reuse such URLs. Nothing to remove. |
 | **Low / optional** | `django-csp` + `prometheus_client` | The hand-rolled versions are deliberate (dependency-free) and fine today. If maintaining them becomes a burden as the app grows, these mature libraries reduce upkeep. A trade-off, not urgent. |
 | **Low / optional** | **Ansible** for provisioning | The bash + systemd scripts work and are auditable, but bash is fragile (this project hit a Windows `tar` path issue and the `validate_installation.sh` `APP_ENV=prod` default gotcha). For single-operator internal deploys, bash is defensible; if deploys scale, Ansible adds idempotence and testability at the cost of a new toolchain. |
 | **Low** | **Frontend JS unit tests beyond pure helpers** | `node:test` covers the pure helpers (D-4); DOM-wiring paths are e2e-only. A jsdom layer could unit-test wiring, but the Playwright e2e coverage is arguably sufficient. Low priority. |
@@ -74,9 +74,12 @@ is current (ruff, mypy, pytest, Playwright, OpenTelemetry).
 ## Recommendation
 
 ~~If only one thing is done next: **PostgreSQL in CI**.~~ **Done
-2026-07-06** (the `test-postgres` CI job). The next targeted item is the
-**SQLAlchemy/Alembic cleanup** (Medium, above) — configured-but-unused
-dead weight; remove it or document why it stays.
+2026-07-06** (the `test-postgres` CI job). The SQLAlchemy/Alembic cleanup
+(previously ranked second) turned out to be **already done** — it is not a
+dependency (verified 2026-07-06). Only **Low / optional** items remain
+(`django-csp` / `prometheus_client`, Ansible, jsdom-level JS wiring
+tests) — none urgent. The stack is in good shape; there is no pressing
+technical-evolution work queued.
 
 ## Explicitly do NOT
 
