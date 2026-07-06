@@ -273,6 +273,10 @@ Sesion **cerrada 2026-07-03**. Todo lo entregado esta validado en
 servidor + CI y pusheado a `dev` (`v0.4.9-django`). El proximo agente
 arranca por §8.1.1 (integrar docs) y despues sigue con desarrollo.
 
+→ Continuado en
+[`CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md)
+(docs para agentes + Postgres-en-CI + tests de accesibilidad, `v0.4.10`).
+
 ### 8.2. Restricciones criticas (siguen vigentes)
 
 - Server pull SIEMPRE de `dev`. `main` **congelado** hasta milestone
