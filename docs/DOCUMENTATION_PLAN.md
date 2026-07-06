@@ -1,7 +1,11 @@
 # Documentation plan (to integrate before next dev cycle)
 
 Date: `2026-07-03`
-Status: **plan — execute in a future session, then delete or mark done.**
+Status: **DONE (2026-07-06)** — Core 3 created: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+(root), [`RELEASE.md`](RELEASE.md), [`DECISIONS.md`](DECISIONS.md), all
+registered in the `AGENTS.md` documentation index. Optional `SBOM.md` /
+`PRIVACY.md` deferred (create when going productive/critical). This plan
+is kept as the record of what was scoped and why.
 Context: an external recommendation proposed a ~35-file "industry
 standard" doc set. This is the tailored plan: adopt only the genuine
 gaps, consolidate instead of proliferating. Full reasoning in the

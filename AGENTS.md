@@ -226,6 +226,9 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | File | Purpose |
 |------|---------|
 | `README.md` | Main onboarding |
+| `CONTRIBUTING.md` | Contributing conventions: branches, commits, pre-push checks, Windows dev notes |
+| `docs/RELEASE.md` | Version scheme + bump ritual (the four files) + when to bump |
+| `docs/DECISIONS.md` | Architecture decisions (ADR-lite): the durable "why" |
 | `docs/ARCHITECTURE.md` | Technical structure |
 | `docs/FIRST_INSTALL_DJANGO.md` | First install guide |
 | `docs/OPERATIONS.md` | Operational procedures |
