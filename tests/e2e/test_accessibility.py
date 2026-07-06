@@ -52,17 +52,30 @@ def _run_axe(page) -> list[dict]:
     return results["violations"]
 
 
+def _node_detail(node: dict) -> str:
+    """One node's target + (for color-contrast) the fg/bg/ratio axe
+    measured, so a failure message points straight at the fix."""
+    target = node.get("target", [])
+    sel = target[0] if target else "?"
+    for check in node.get("any", []):
+        data = check.get("data") or {}
+        if "contrastRatio" in data:
+            return (
+                f"{sel}  (fg {data.get('fgColor')} on bg {data.get('bgColor')}"
+                f" = {data.get('contrastRatio')}:1, need {data.get('expectedContrastRatio')})"
+            )
+    return sel
+
+
 def _format(violations: list[dict]) -> str:
     lines = []
     for v in violations:
-        first_targets = []
-        for node in v.get("nodes", [])[:3]:
-            target = node.get("target", [])
-            first_targets.append(target[0] if target else "?")
+        details = [_node_detail(n) for n in v.get("nodes", [])[:4]]
         lines.append(
             f"  [{v.get('impact')}] {v['id']}: {v.get('help')}"
-            f"  ({v.get('nodes', []).__len__()} node(s): {', '.join(first_targets)})"
+            f"  ({len(v.get('nodes', []))} node(s))"
         )
+        lines.extend(f"      - {d}" for d in details)
     return "\n".join(lines)
 
 
@@ -77,28 +90,102 @@ def _assert_no_blocking_a11y(page, where: str) -> None:
         raise AssertionError(msg)
 
 
-def test_login_page_accessibility(page, live_url):
+# Both themes are checked: the palette has a light and a dark variant
+# (auto-switched by ``prefers-color-scheme`` when the user leaves theme on
+# "auto", which the e2e_admin fixture does). ``emulate_media`` drives that
+# media feature so axe evaluates the actually-rendered colors.
+_SCHEMES = ["light", "dark"]
+
+
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+def test_login_page_accessibility(page, live_url, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
     page.goto(f"{live_url}/login/")
     page.wait_for_load_state("networkidle")
-    _assert_no_blocking_a11y(page, "/login/")
+    _assert_no_blocking_a11y(page, f"/login/ [{color_scheme}]")
 
 
-def test_dashboard_accessibility(page, live_url, e2e_admin):
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+def test_forgot_password_accessibility(page, live_url, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
+    page.goto(f"{live_url}/login/forgot/")
+    page.wait_for_load_state("networkidle")
+    _assert_no_blocking_a11y(page, f"/login/forgot/ [{color_scheme}]")
+
+
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+def test_dashboard_accessibility(page, live_url, e2e_admin, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
     _login_no_mfa(page, live_url, e2e_admin)
     page.goto(f"{live_url}/")
     page.wait_for_load_state("networkidle")
-    _assert_no_blocking_a11y(page, "/ (dashboard)")
+    _assert_no_blocking_a11y(page, f"/ (dashboard) [{color_scheme}]")
 
 
-def test_profile_page_accessibility(page, live_url, e2e_admin):
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+def test_profile_page_accessibility(page, live_url, e2e_admin, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
     _login_no_mfa(page, live_url, e2e_admin)
     page.goto(f"{live_url}/profile/")
     page.wait_for_load_state("networkidle")
-    _assert_no_blocking_a11y(page, "/profile/")
+    _assert_no_blocking_a11y(page, f"/profile/ [{color_scheme}]")
 
 
-def test_admin_panel_accessibility(page, live_url, e2e_admin):
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+def test_admin_panel_accessibility(page, live_url, e2e_admin, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
     _login_no_mfa(page, live_url, e2e_admin)
     page.goto(f"{live_url}/admin/")
     page.wait_for_load_state("networkidle")
-    _assert_no_blocking_a11y(page, "/admin/")
+    _assert_no_blocking_a11y(page, f"/admin/ [{color_scheme}]")
+
+
+# ---------------------------------------------------------------------------
+# Keyboard navigation — axe can't test this; drive the keyboard directly.
+# ---------------------------------------------------------------------------
+
+def test_skip_link_is_first_tab_stop(page, live_url):
+    """A keyboard user's first Tab must land on the skip link, which
+    jumps to <main> — the standard bypass-block (WCAG 2.4.1)."""
+    page.goto(f"{live_url}/login/")
+    page.wait_for_load_state("networkidle")
+
+    page.keyboard.press("Tab")
+    first = page.evaluate(
+        """() => {
+            const el = document.activeElement;
+            return { cls: el.className, href: el.getAttribute('href') };
+        }"""
+    )
+    assert first["cls"] == "skip-link", f"first Tab stop was not the skip link: {first}"
+    assert first["href"] == "#main-content", first
+
+    # <main> must be focusable (tabindex=-1) so activating the link lands there.
+    main_tabindex = page.get_attribute("#main-content", "tabindex")
+    assert main_tabindex == "-1", f"#main-content tabindex is {main_tabindex!r}, expected -1"
+
+
+def test_login_form_reachable_by_keyboard(page, live_url):
+    """Tabbing through the login page must reach the username, password
+    and submit control — no keyboard trap before the form."""
+    page.goto(f"{live_url}/login/")
+    page.wait_for_load_state("networkidle")
+
+    reached = set()
+    for _ in range(15):
+        page.keyboard.press("Tab")
+        info = page.evaluate(
+            """() => {
+                const el = document.activeElement;
+                return { name: el.getAttribute('name'), type: el.getAttribute('type'), tag: el.tagName };
+            }"""
+        )
+        if info.get("name") == "username":
+            reached.add("username")
+        elif info.get("name") == "password":
+            reached.add("password")
+        elif info.get("type") == "submit" or info.get("tag") == "BUTTON":
+            reached.add("submit")
+        if {"username", "password", "submit"} <= reached:
+            break
+    assert {"username", "password", "submit"} <= reached, f"keyboard did not reach the form: {reached}"

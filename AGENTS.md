@@ -211,10 +211,12 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 ### Testing gaps
 - JS unit tests exist for the pure helpers (D-4, node:test); the DOM-wiring
   paths (cropper drag/zoom, pagination swap) are still e2e-only
-- Accessibility smoke exists (axe-core WCAG 2.1 A/AA via Playwright,
-  `tests/e2e/test_accessibility.py`, gating critical+serious on the key
-  pages); deeper coverage (all admin sub-views, dark theme, keyboard-nav
-  flows) is still open
+- Accessibility smoke covers axe-core WCAG 2.1 A/AA (critical+serious) on
+  login / forgot-password / dashboard / profile / admin in **both light
+  and dark themes**, plus keyboard checks (skip-link is the first Tab
+  stop; login form is reachable) — `tests/e2e/test_accessibility.py`.
+  Still open: admin sub-view modals (sudo, MFA enrol), focus-trap in
+  modals, screen-reader announcement audits
 - No migration tests (alembic upgrade/downgrade)
 - No visual regression tests
 
