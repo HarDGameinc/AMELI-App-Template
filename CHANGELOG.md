@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.0-django — 2026-07-07 (hito: promoción dev → main)
+
+Primer release en `main` desde el arranque del template. Marca el hito de
+**identidad visual (D-1) completa** más toda la base acumulada en `dev`:
+cuentas/perfil/administración, MFA (TOTP+email), auditoría encadenada,
+sesiones con revocación, endurecimiento de seguridad (CSP+nonce, Trusted
+Types, SRI, throttling), pipeline de avatares, CI matriz 3.11-3.14 +
+Postgres + e2e + a11y (axe) + js-unit + pip-audit, y docs para agentes.
+
+No hay cambios de código respecto a `v0.4.16-django`; es el bump de
+promoción (`main` estuvo congelado hasta este hito). El detalle por versión
+está en las entradas siguientes.
+
 ## v0.4.16-django — 2026-07-07 (D-1 Fase D: motion — cierra D-1)
 
 Última fase de D-1, palette-aware y reduced-motion-safe. **Cierra D-1
