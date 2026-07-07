@@ -52,10 +52,13 @@
         <div class="metric-label">{% block header_subtitle %}Base comun para apps AMELI con usuarios reales{% endblock %}</div>
         {# Signature element (D-1 Fase C): a telemetry "pulse" sparkline. A #}
         {# bright segment scans the waveform (CSS), colored by the active #}
-        {# palette (--accent), flipping to --bad when app.js's /health probe #}
-        {# reports degraded (sets data-health). Decorative → aria-hidden; the #}
-        {# real status lives in the dashboard cards + footer /health link. #}
-        <div class="brand-pulse" data-health-spark aria-hidden="true">
+        {# palette (--accent). Decorative by design → aria-hidden; the real #}
+        {# status lives in the dashboard cards + the /health endpoint. #}
+        {# ``/health`` is IP-allowlisted (HEALTH_METRICS_ALLOWLIST) so a #}
+        {# browser probe 403s on secured deploys — the pulse therefore does #}
+        {# NOT fetch it. To reflect live health on an open deployment, set #}
+        {# ``data-health="degraded"`` on this node from your own JS. #}
+        <div class="brand-pulse" aria-hidden="true">
           <svg viewBox="0 0 168 26" role="presentation">
             <polyline class="brand-pulse-base" points="0,16 12,16 22,14 34,17 46,15 58,16 70,16 78,16 84,5 90,23 96,13 106,16 118,15 130,17 142,15 154,16 168,16"/>
             <polyline class="brand-pulse-scan" pathLength="100" points="0,16 12,16 22,14 34,17 46,15 58,16 70,16 78,16 84,5 90,23 96,13 106,16 118,15 130,17 142,15 154,16 168,16"/>
