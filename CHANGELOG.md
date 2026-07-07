@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.14-django — 2026-07-07 (D-1 Fase B: jerarquía + layout)
+
+Jerarquía visual sobre la base de paletas (v0.4.13), todo palette-aware vía
+tokens (sin colores hardcodeados). Validado en server (`ha-report2`) en las
+4 paletas y CI (21 axe verdes).
+
+### D-1 Fase B (commit `19a2b0f`)
+
+- **Hero**: la tarjeta superior de cada página (dashboard/perfil/admin)
+  ahora lee como hero de marca — wash de acento (radial `color-mix`), borde
+  teñido, barra de 2px `accent → brand` arriba y sombra suave teñida. En
+  modo oscuro esto **hace visible el color de la paleta** (antes los fondos
+  oscuros se veían casi iguales entre paletas).
+- **Alineación**: el header envuelve su contenido en `.header-inner` con el
+  mismo `max-width` que `<main>` / `.footer-inner` (1320) — la app bar deja
+  de sangrar hasta el borde de la ventana.
+- **Paneles**: radio 8→12 y algo más de padding; ancho del shell 1280→1320
+  con más aire vertical.
+
 ## v0.4.13-django — 2026-07-07 (D-1: identidad visual + paletas de color)
 
 Cierra la base de D-1 (identidad visual). Paleta navy+teal + tipografía
