@@ -122,13 +122,17 @@
       letter-spacing:-0.015em; }
     main { flex:1 0 auto; }
     header { background:var(--surface); border-bottom:1px solid var(--line);
-             padding:18px 24px; display:flex; align-items:center;
-             justify-content:space-between; gap:16px; position:sticky; top:0; z-index:2; }
+             position:sticky; top:0; z-index:2; }
+    /* Header content is constrained to the same max-width as <main> and the
+       footer (.footer-inner) so the app bar, page body and footer share one
+       vertical alignment instead of the bar bleeding to the window edges. */
+    .header-inner { max-width:1320px; margin:0 auto; padding:16px 24px;
+             display:flex; align-items:center; justify-content:space-between; gap:16px; }
     h1 { font-size:22px; margin:0; font-weight:650; }
-    main { padding:22px 24px 32px; max-width:1280px; margin:0 auto; width:100%; }
+    main { padding:26px 24px 44px; max-width:1320px; margin:0 auto; width:100%; }
     footer { border-top:1px solid var(--line); background:var(--surface);
              color:var(--muted); padding:14px 24px; font-size:13px; }
-    .footer-inner { max-width:1220px; margin:0 auto; display:flex;
+    .footer-inner { max-width:1320px; margin:0 auto; display:flex;
              justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
     .footer-links { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
     .footer-links a { color:var(--accent); text-decoration:none; font-weight:600; }
@@ -434,7 +438,7 @@
              text-transform:uppercase; font-size:12px; letter-spacing:.04em;
              color:var(--muted); }
     .panel { background:var(--surface); border:1px solid var(--line);
-             border-radius:8px; padding:16px; }
+             border-radius:12px; padding:18px; }
     .login-shell { display:grid; grid-template-columns:minmax(320px, 520px) minmax(260px, 1fr); gap:16px; align-items:start; }
     .login-panel { max-width:520px; }
     .login-panel .modal-copy { max-width:46ch; }
@@ -450,7 +454,22 @@
     .warning-panel { border-color:#f59e0b; }
     .profile-hero { display:grid;
              grid-template-columns:minmax(0, 1fr);
-             gap:18px; align-items:start; margin-bottom:16px; }
+             gap:18px; align-items:start; margin-bottom:20px; }
+    /* Hero treatment (D-1 Fase B): the top card of each page reads as a
+       branded hero, not a flat panel — a palette-aware accent wash from the
+       top-left, a tinted border, and a 2px accent bar across the top. All
+       driven by --accent/--brand so it follows the active palette. The wash
+       is a low % tint so text contrast is unaffected (verified by the a11y
+       gate across all palettes x modes). */
+    .panel.profile-hero { position:relative; overflow:hidden;
+             padding:22px 22px 20px;
+             border-color:color-mix(in srgb, var(--accent) 20%, var(--line));
+             background:radial-gradient(135% 150% at 0% 0%,
+                       color-mix(in srgb, var(--accent) 12%, var(--surface)),
+                       var(--surface) 58%);
+             box-shadow:0 8px 26px -16px color-mix(in srgb, var(--accent) 45%, transparent); }
+    .panel.profile-hero::before { content:""; position:absolute; top:0; left:0; right:0;
+             height:2px; background:linear-gradient(90deg, var(--accent), var(--brand)); }
     @media (min-width:900px) { .profile-hero { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto; } }
     .hero-stats { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
     .hero-stat { display:grid; gap:2px; border:1px solid var(--line);
@@ -779,8 +798,8 @@
     .profile-option-head strong { font-size:14px; }
     .profile-option p { margin:0; }
     @media (max-width:880px) {
-      header { align-items:flex-start; flex-direction:column;
-             position:static; }
+      header { position:static; }
+      .header-inner { align-items:flex-start; flex-direction:column; }
       h1 { font-size:20px; }
       main { padding:16px; } footer { padding:14px 16px; }
       .login-shell { grid-template-columns:1fr; }

@@ -46,6 +46,7 @@
     </div>
     {% endif %}
     <header>
+      <div class="header-inner">
       <div>
         <h1>{% block header_title %}{{ app_name }}{% endblock %}</h1>
         <div class="metric-label">{% block header_subtitle %}Base comun para apps AMELI con usuarios reales{% endblock %}</div>
@@ -107,6 +108,7 @@
         {% else %}
         <a class="primary account-login-link" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Ingresar</a>
         {% endif %}
+      </div>
       </div>
     </header>
 
