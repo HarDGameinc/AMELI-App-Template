@@ -183,7 +183,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.12-django, 2026-07-06)
+## State of the project (v0.4.12-django, 2026-07-07)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -191,8 +191,12 @@ Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 on Django 5.2 LTS (D-6'), JS unit tests via `node:test` (D-4), and D-2
 inline password re-auth for the MFA panel (replacing native
 `prompt`/`confirm`/`alert`) plus a secure-context-gated clipboard
-fallback for the recovery-code tools. All validated on the dev server /
-CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+fallback for the recovery-code tools. Since v0.4.10: agent docs
+(CONTRIBUTING/RELEASE/DECISIONS), Postgres-in-CI, an axe-core a11y gate
+(light+dark, keyboard, and modal focus-trap — a11y++, `v0.4.12`), and D-1
+Phase A (navy+teal identity palette + DM Sans/IBM Plex typography,
+committed but pending server smoke + bump). All validated on the dev
+server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -201,11 +205,11 @@ CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 4. **`settings/` (PC-4 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` orquesta imports en orden crítico
 5. **Inline JS in templates (CLOSED, 2026-07-03)** — extracted to external SRI-protected `static/js/profile.js` + `static/js/admin-panel.js`; templates inject server values via `data-*` on a hidden config element
 
-### Frontend design gaps
-- No signature visual element (generic admin panel look)
-- System-default typography (no typeface pairing)
-- Palette is the AI-generic blue-on-white default
-- No visual hierarchy beyond identical grey panels
+### Frontend design gaps (D-1 in progress — Phase A addresses palette + type)
+- No signature visual element (generic admin panel look) — D-1 Phase C
+- ~~System-default typography~~ → DM Sans + IBM Plex Sans (D-1 Phase A, pending smoke)
+- ~~AI-generic blue-on-white palette~~ → navy+teal identity (D-1 Phase A, pending smoke)
+- No visual hierarchy beyond identical grey panels — D-1 Phase B
 - Inline styles in templates instead of utility classes
 
 ### Testing gaps
