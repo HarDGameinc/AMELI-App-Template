@@ -28,6 +28,19 @@ class User(AbstractUser):
         (THEME_LIGHT, "Claro"),
         (THEME_DARK, "Oscuro"),
     ]
+    # Color palette (D-1). Orthogonal to THEME (light/dark/auto): the theme
+    # picks the mode, the palette picks the neutrals + accent. ``teal`` is
+    # the default identity; the CSS resolves the rest via ``data-palette``.
+    PALETTE_TEAL = "teal"
+    PALETTE_INDIGO = "indigo"
+    PALETTE_AMBER = "amber"
+    PALETTE_VIOLET = "violet"
+    PALETTE_CHOICES = [
+        (PALETTE_TEAL, "Teal"),
+        (PALETTE_INDIGO, "Índigo"),
+        (PALETTE_AMBER, "Ámbar"),
+        (PALETTE_VIOLET, "Violeta"),
+    ]
     # Semantic constants kept for service / view code that needs to refer
     # to method "kinds" symbolically. Actual storage is now the
     # mfa_totp_enabled / mfa_email_enabled booleans below so both methods
@@ -38,6 +51,7 @@ class User(AbstractUser):
     display_name = models.CharField(max_length=80, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_PUBLIC)
     theme_preference = models.CharField(max_length=10, choices=THEME_CHOICES, default=THEME_AUTO)
+    color_theme = models.CharField(max_length=16, choices=PALETTE_CHOICES, default=PALETTE_TEAL)
     avatar = models.ImageField(upload_to=avatar_upload_to, blank=True, null=True)
     must_change_password = models.BooleanField(default=False)
     # Hard lock applied by ``check_login_throttle`` after too many
@@ -110,6 +124,10 @@ class User(AbstractUser):
             self.THEME_LIGHT: "Claro",
             self.THEME_DARK: "Oscuro",
         }.get(self.theme_preference, "Auto")
+
+    @property
+    def display_palette_label(self) -> str:
+        return dict(self.PALETTE_CHOICES).get(self.color_theme, "Teal")
 
 
 class UserSession(models.Model):

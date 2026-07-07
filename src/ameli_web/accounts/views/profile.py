@@ -173,12 +173,20 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
         theme_preference = str(payload.get("theme_preference") or request.user.theme_preference).strip()
         if theme_preference in {"auto", "light", "dark"}:
             request.user.theme_preference = theme_preference
-        request.user.save(update_fields=["display_name", "theme_preference", "updated_at"])
+        color_theme = str(payload.get("color_theme") or request.user.color_theme).strip()
+        if color_theme in {"teal", "indigo", "amber", "violet"}:
+            request.user.color_theme = color_theme
+        request.user.save(
+            update_fields=["display_name", "theme_preference", "color_theme", "updated_at"]
+        )
         record_audit(
             "update_my_preferences",
             actor=request.user,
             target_username=request.user.username,
-            payload={"theme_preference": request.user.theme_preference},
+            payload={
+                "theme_preference": request.user.theme_preference,
+                "color_theme": request.user.color_theme,
+            },
         )
         return JsonResponse({"ok": True, "status": "updated", "user": serialize_user(request.user)})
 
@@ -186,12 +194,18 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
     if form.is_valid():
         request.user.display_name = form.cleaned_data["display_name"]
         request.user.theme_preference = form.cleaned_data["theme_preference"]
-        request.user.save(update_fields=["display_name", "theme_preference", "updated_at"])
+        request.user.color_theme = form.cleaned_data["color_theme"]
+        request.user.save(
+            update_fields=["display_name", "theme_preference", "color_theme", "updated_at"]
+        )
         record_audit(
             "update_my_preferences",
             actor=request.user,
             target_username=request.user.username,
-            payload={"theme_preference": request.user.theme_preference},
+            payload={
+                "theme_preference": request.user.theme_preference,
+                "color_theme": request.user.color_theme,
+            },
         )
         messages.success(request, _("Perfil actualizado."))
     else:

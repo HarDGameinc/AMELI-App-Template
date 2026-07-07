@@ -59,6 +59,7 @@
           {% if current_user.enabled %}Activo{% else %}Deshabilitado{% endif %}
         </span>
         <span class="profile-meta-chip">Tema: {{ current_user.display_theme_label }}</span>
+        <span class="profile-meta-chip">Color: {{ current_user.display_palette_label }}</span>
         <span class="profile-meta-chip">{% if current_user.must_change_password %}Cambio obligatorio{% else %}Clave vigente{% endif %}</span>
       </div>
     </div>
@@ -124,6 +125,14 @@
         <div class="modal-form-row">
           <label class="modal-form-label" for="{{ preferences_form.theme_preference.id_for_label }}">Tema preferido</label>
           {{ preferences_form.theme_preference }}
+        </div>
+        <div class="modal-form-row">
+          <span class="modal-form-label">Color de la interfaz</span>
+          {# RadioSelect styled as color swatches (.palette-swatches in app.css). #}
+          {# The mode (claro/oscuro/auto) above and the palette here are #}
+          {# independent axes; both apply on save + reload. #}
+          <div class="palette-swatches">{{ preferences_form.color_theme }}</div>
+          <div class="modal-form-help">Cambia fondos, bordes y acentos. Se combina con el tema claro/oscuro/auto.</div>
         </div>
         <div class="modal-form-help">
           El email se gestiona en su propia tarjeta de Seguridad — necesita contrasena y confirmacion en la nueva direccion.

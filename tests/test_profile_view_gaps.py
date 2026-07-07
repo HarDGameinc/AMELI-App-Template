@@ -111,12 +111,49 @@ def test_update_preferences_form_post_valid_updates_user(client, user):
     client.force_login(user)
     response = client.post(
         "/profile/preferences/",
-        data={"display_name": "Probe User", "theme_preference": "dark"},
+        # A real browser always submits the checked ``color_theme`` radio;
+        # the form field is required, so exercise the full valid payload.
+        data={"display_name": "Probe User", "theme_preference": "dark", "color_theme": "indigo"},
     )
     assert response.status_code == 302
     user.refresh_from_db()
     assert user.display_name == "Probe User"
     assert user.theme_preference == "dark"
+    assert user.color_theme == "indigo"
+
+
+@pytest.mark.django_db
+def test_update_preferences_json_updates_color_theme(client, user):
+    """The JSON/PATCH branch persists a valid palette and ignores junk."""
+    client.force_login(user)
+    ok = client.patch(
+        "/profile/preferences/",
+        data={"display_name": "P", "theme_preference": "auto", "color_theme": "violet"},
+        content_type="application/json",
+    )
+    assert ok.status_code == 200
+    user.refresh_from_db()
+    assert user.color_theme == "violet"
+
+    # An out-of-range palette leaves the stored value untouched.
+    bad = client.patch(
+        "/profile/preferences/",
+        data={"display_name": "P", "color_theme": "chartreuse"},
+        content_type="application/json",
+    )
+    assert bad.status_code == 200
+    user.refresh_from_db()
+    assert user.color_theme == "violet"
+
+
+@pytest.mark.django_db
+def test_default_palette_is_teal_and_context_exposes_it(client, user):
+    """New users default to the Teal palette, and the nav context
+    processor surfaces it as ``active_palette`` for ``data-palette``."""
+    assert user.color_theme == "teal"
+    client.force_login(user)
+    response = client.get("/profile/")
+    assert response.context["active_palette"] == "teal"
 
 
 # ---------------------------------------------------------------------------

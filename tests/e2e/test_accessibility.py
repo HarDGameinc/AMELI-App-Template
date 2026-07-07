@@ -141,6 +141,30 @@ def test_admin_panel_accessibility(page, live_url, e2e_admin, color_scheme):
 
 
 # ---------------------------------------------------------------------------
+# Color palettes (D-1). Each ``data-palette`` swaps the neutrals + accent;
+# the status colors fall through from the base. A palette can only regress
+# a11y via contrast, so we exercise every palette x mode on the dashboard —
+# the richest page for palette tokens (pills, badges, buttons, muted text,
+# borders). The palette is forced via ``data-palette`` on <html> (the same
+# attribute the context processor sets from ``User.color_theme``) so one
+# logged-in session covers all four without touching the DB per case.
+# ---------------------------------------------------------------------------
+
+_PALETTES = ["teal", "indigo", "amber", "violet"]
+
+
+@pytest.mark.parametrize("color_scheme", _SCHEMES)
+@pytest.mark.parametrize("palette", _PALETTES)
+def test_palette_accessibility(page, live_url, e2e_admin, palette, color_scheme):
+    page.emulate_media(color_scheme=color_scheme)
+    _login_no_mfa(page, live_url, e2e_admin)
+    page.goto(f"{live_url}/")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("(p) => document.documentElement.setAttribute('data-palette', p)", palette)
+    _assert_no_blocking_a11y(page, f"/ (dashboard) palette={palette} [{color_scheme}]")
+
+
+# ---------------------------------------------------------------------------
 # Keyboard navigation — axe can't test this; drive the keyboard directly.
 # ---------------------------------------------------------------------------
 
