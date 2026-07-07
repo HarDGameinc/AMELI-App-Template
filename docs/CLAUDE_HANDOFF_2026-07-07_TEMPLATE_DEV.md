@@ -2,16 +2,17 @@
 
 Fecha: `2026-07-07`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (version final `v0.4.13-django`)
+Rama de trabajo: `dev` (version final `v0.4.16-django`)
 Rama estable: `main` (default en GitHub; congelado hasta v0.5.0/v1.0.0)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md)
 
 > **Nota**: sesion continuada tras compactacion de contexto. Cubre lo que
 > quedo fuera del handoff 2026-07-06: **a11y++** (focus-trap de modales,
-> `v0.4.12`) y **D-1 identidad visual** (`v0.4.13`) — Fase A (paleta +
-> tipografia), verde menos fluorescente, y **paletas de color** completas
-> (Teal/Índigo/Ámbar/Violeta) seleccionables por usuario. Todo validado en
-> server (`ha-report2`) y CI. §9 al final resume la extension de paletas.
+> `v0.4.12`) y **D-1 identidad visual COMPLETA** (`v0.4.13`→`v0.4.16`):
+> Fase A (paleta+tipografia) + paletas de color seleccionables, Fase B
+> (jerarquia/layout, hero), Fase C (elemento signature), Fase D (motion).
+> Todo validado en server (`ha-report2`) y CI. §9 detalla las paletas; §10
+> el arco B/C/D + el hallazgo del allowlist de `/health`.
 
 ## §1. Snapshot al inicio
 
@@ -108,7 +109,7 @@ identidad del review: **superficies navy + acento teal-verde**.
 | Node JS tests | 13 pass |
 | Ruff | 0 errores |
 | CI (dev) | verde: matriz 3.11-3.14 + test-postgres + e2e + js-unit + pip-audit |
-| Version | **`v0.4.13-django`** (D-1 identidad visual + paletas; ver §9) |
+| Version | **`v0.4.16-django`** (D-1 completo A+B+C+D; ver §9 paletas, §10 B/C/D) |
 
 ## §6. Hallazgos / findings
 
@@ -130,17 +131,16 @@ contraste con texto blanco encima.
 ## §7. Roadmap actualizado
 
 **a11y cerrado por completo** (base + claro/oscuro + teclado + modales).
-**D-1 base cerrada** (`v0.4.13`): Fase A (paleta+tipografia) + paletas de
-color seleccionables (§9), smokeadas en server y bumpeadas.
+**D-1 COMPLETO** (`v0.4.13`→`v0.4.16`): Fase A (paleta+tipografia) + paletas
+de color (§9), Fase B (jerarquia/layout, hero), Fase C (signature pulse),
+Fase D (motion). Todo smokeado en server y bumpeado. Ver §10.
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| **D-1 Fase B** | Jerarquia + layout (hero gradient, bordes de acento en cards primarias, max-width 1440, escala de spacing) | ~2h | **SIGUIENTE** — sobre la base v0.4.13 |
-| D-1 Fase C | Elemento signature (el review propone un sparkline de salud animado en el header) | ~1-2h | — |
-| D-1 Fase D | Motion (reveal escalonado al cargar, hover states) | ~1h | — |
-| Promote | `dev → main` v0.5.0 | — | `main` congelado; requiere instruccion explicita |
+| Promote | `dev → main` v0.5.0 | — | `main` congelado; requiere instruccion explicita. Candidato natural tras D-1 |
+| Refactor opt | Inline styles → utility classes en templates | ~2h | Cosmetico, no bloqueante (unico gap de front que queda) |
 | Low/opt | `django-csp`, Prometheus lib, Ansible, jsdom | — | Ninguno urgente (`TECH_EVOLUTION.md`) |
 
 ### OPS — branch protection (latente, no accionable)
@@ -153,26 +153,26 @@ haga publico. No es olvido.
 
 ### 8.0. Snapshot al cierre
 
-- Rama **`dev`**, version **`v0.4.13-django`**, todo pusheado. `main`
+- Rama **`dev`**, version **`v0.4.16-django`**, todo pusheado. `main`
   congelado.
 - Sesion: a11y++ (focus-trap de modales, `v0.4.12`) + **D-1 identidad
-  visual** (`v0.4.13`): Fase A (navy+teal + DM Sans/IBM Plex), verde menos
-  fluorescente, y **paletas de color** Teal/Índigo/Ámbar/Violeta
-  seleccionables por usuario (§9).
+  visual COMPLETA** (`v0.4.13`→`v0.4.16`): A (navy+teal + DM Sans/IBM Plex +
+  4 paletas seleccionables), B (jerarquia/layout, hero palette-aware), C
+  (signature "telemetry pulse"), D (motion: reveal + hover). Ver §9 (paletas)
+  y §10 (B/C/D + hallazgo `/health`).
 - Validado: unit **1074** verde, **21/21 a11y** (4 paletas × claro/oscuro +
-  teclado + modal). CI dev verde. Smokeado en server (`ha-report2`) en las 4
-  paletas × claro/oscuro.
+  teclado + modal). CI dev verde. Cada fase smokeada en server (`ha-report2`).
 - Entorno dev = Windows nativo. `gh` CLI en `C:\Program Files\GitHub CLI\`
   (no en PATH — invocar por ruta).
 
 ### 8.1. Primer paso (siguiente agente)
 
-**D-1 Fase B** (jerarquia + layout) sobre la base `v0.4.13`: hero con
-gradiente sutil (usa `--accent`/`--brand` para que respete la paleta
-activa), bordes de acento en las cards primarias, `max-width` del shell
-(~1440), y una escala de spacing consistente. Recordar: cualquier color
-nuevo debe salir de los tokens (`var(--accent)` etc.) para no romper las
-4 paletas — nada hardcodeado.
+**D-1 esta completo** — no hay fase de diseño pendiente. Elegir del roadmap
+§7. El candidato natural es **promover `dev → main` para `v0.5.0`** (requiere
+instruccion explicita del operador; `main` congelado, via PR). Si se sigue
+en front, lo unico que queda es el refactor opcional de inline-styles →
+utility classes (cosmetico). Regla al tocar cualquier color: sale de los
+tokens (`var(--accent)` etc.) — nada hardcodeado, o se rompen las 4 paletas.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
@@ -255,3 +255,54 @@ modo, cambiar **los tres** bloques (light / dark explícito / auto-media).
 3. Un swatch: `.palette-swatches label:has(input[value="X"])::before`.
 4. Correr el gate a11y (`DJANGO_ALLOW_ASYNC_UNSAFE=true pytest
    tests/e2e/test_accessibility.py`).
+
+## §10. D-1 Fases B / C / D (`v0.4.14`→`v0.4.16`)
+
+Todo palette-aware (colores desde tokens) y reduced-motion-safe. Cada fase
+smokeada en server antes del bump.
+
+### 10.1. Fase B — jerarquia + layout (`v0.4.14`, commit `19a2b0f`)
+
+- **Hero** (`.panel.profile-hero`): wash de acento (`radial-gradient` con
+  `color-mix`), borde teñido, barra de 2px `accent→brand` arriba, sombra
+  suave teñida. En **oscuro esto hace visible el color de la paleta** — sin
+  esto los dark bg se veian casi iguales entre paletas (feedback del
+  operador). Es el mayor win de jerarquia.
+- **Header alineado**: se envolvio el contenido del header en `.header-inner`
+  con el mismo `max-width` que `<main>`/`.footer-inner` (1320). Antes la app
+  bar sangraba al borde de la ventana. El media query `<=880px` ahora apunta
+  a `.header-inner`, no a `header`.
+- Paneles: radio 8→12, mas padding; shell 1280→1320.
+
+### 10.2. Fase C — signature "telemetry pulse" (`v0.4.15`)
+
+Sparkline en el header (2 polilineas SVG: base tenue + segmento de barrido
+con `stroke-dasharray` + `pathLength=100` para bucle perfecto), color =
+`--accent`, `aria-hidden` (decorativo). `prefers-reduced-motion` lo congela.
+
+**Hallazgo importante — `/health` es 403 para el navegador** (commits
+`31a9684`→`ed36889`→`c5ec17d`): la sonda inicial hacia `fetch('/health')`
+para reflejar salud en vivo, pero `/health` pasa por
+`_operational_allowlist_block` (`HEALTH_METRICS_ALLOWLIST`, allowlist por IP
+en `dashboard/views.py`). En deploys asegurados el navegador **no** esta en
+la lista → **403 "forbidden"** (body texto plano → `.json()` lanzaba). Un
+probe fallido + `403` en consola por pagina es mal default para un template,
+asi que el pulso quedo **puramente decorativo** (no consulta `/health`). El
+hook CSS `[data-health="degraded"]` queda documentado para deploys abiertos.
+Se quito ademas el link `/health` del footer (daba "forbidden" a usuarios).
+
+> Gotcha para el proximo agente: **no agregar features de salud que dependan
+> de un `fetch('/health')` desde el navegador** — 403 en cualquier deploy con
+> el allowlist. La salud del lado del cliente hay que resolverla server-side
+> (las cards del dashboard ya lo hacen, renderizadas con el estado).
+
+### 10.3. Fase D — motion (`v0.4.16`, commit `648923e`)
+
+- **Reveal escalonado**: `main > *` hace `ameliReveal` (fade + slide-up) con
+  `animation-delay` por `nth-child` (cap en el 5+). `fill-mode:both` evita
+  flash a opacidad plena. El reduced-motion global colapsa la duracion →
+  aparece instantaneo.
+- **Hover**: `.summary-card-compact` / `.hero-stat` se elevan con borde de
+  acento (`color-mix`) + sombra; `a.icon-action` gana transicion + wash.
+- No rompe a11y: el reveal usa opacity/transform (el contraste que mide axe
+  no cambia). 21/21 verde.

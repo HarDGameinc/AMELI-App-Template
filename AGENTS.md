@@ -183,7 +183,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.4.15-django, 2026-07-07)
+## State of the project (v0.4.16-django, 2026-07-07)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -202,8 +202,9 @@ light/dark/auto; status colors stay constant across palettes). D-1 Phase B
 header aligned to the content max-width, panel radius/spacing polish. D-1
 Phase C (`v0.4.15`): signature "telemetry pulse" sparkline in the header
 (decorative, palette-colored; /health is IP-allowlisted so the pulse does
-not probe it). All validated on the dev server / CI; see the latest
-`docs/CLAUDE_HANDOFF_*`.
+not probe it). Phase D (`v0.4.16`): motion — staggered reveal on load +
+hover states, reduced-motion-safe. **D-1 complete.** All validated on the
+dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -212,12 +213,13 @@ not probe it). All validated on the dev server / CI; see the latest
 4. **`settings/` (PC-4 CLOSED, 2026-07-01)** — 10 domain modules; `__init__.py` orquesta imports en orden crítico
 5. **Inline JS in templates (CLOSED, 2026-07-03)** — extracted to external SRI-protected `static/js/profile.js` + `static/js/admin-panel.js`; templates inject server values via `data-*` on a hidden config element
 
-### Frontend design gaps (D-1 A+B+C CLOSED v0.4.15 — Phase D pending)
+### Frontend design (D-1 COMPLETE — A+B+C+D, v0.4.16)
 - ~~No signature visual element~~ → header telemetry-pulse sparkline (D-1 Phase C ✓)
 - ~~System-default typography~~ → DM Sans + IBM Plex Sans (D-1 Phase A ✓)
 - ~~AI-generic blue-on-white palette~~ → navy+teal + 4 selectable palettes (D-1 Phase A ✓)
 - ~~No visual hierarchy beyond identical grey panels~~ → palette hero + aligned layout (D-1 Phase B ✓)
-- Inline styles in templates instead of utility classes (motion/hover = D-1 Phase D, next)
+- ~~No motion~~ → staggered reveal + hover states, reduced-motion-safe (D-1 Phase D ✓)
+- Remaining: inline styles in a few templates (utility-class refactor is optional, not D-1)
 
 ### Testing gaps
 - JS unit tests exist for the pure helpers (D-4, node:test); the DOM-wiring

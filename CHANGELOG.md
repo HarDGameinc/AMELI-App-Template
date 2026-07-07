@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.16-django — 2026-07-07 (D-1 Fase D: motion — cierra D-1)
+
+Última fase de D-1, palette-aware y reduced-motion-safe. **Cierra D-1
+completo** (A paleta+tipografía · B jerarquía+layout · C signature · D
+motion). Validado en server (`ha-report2`) y CI.
+
+### D-1 Fase D (commit `648923e`)
+
+- **Reveal escalonado al cargar**: los bloques de nivel superior de
+  `<main>` hacen fade + slide-up en cascada (`ameliReveal`, `fill-mode
+  both`) — la página "se arma" en vez de aparecer de golpe. La regla global
+  `prefers-reduced-motion` colapsa la duración → cada bloque cae a su estado
+  final al instante.
+- **Hover states**: las cards de estado (summary/hero-stat) se elevan con
+  borde de acento + sombra suave (`color-mix` sobre `--accent`); los links
+  `icon-action` ganan transición + wash de acento al hover.
+
 ## v0.4.15-django — 2026-07-07 (D-1 Fase C: elemento signature)
 
 Elemento signature de D-1: un **pulso de telemetría** en el header. Sparkline
