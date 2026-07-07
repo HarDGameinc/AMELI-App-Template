@@ -25,7 +25,7 @@
     :root, :root[data-theme="light"] {
       --bg:#f3f6fb; --surface:#ffffff; --ink:#0e1726; --muted:#566274;
       --line:#dce3ec; --ok:#0f6d3e; --warn:#b45309; --bad:#c0362c;
-      --unknown:#5a6b85; --closed:#4f6177; --accent:#0f766e; --brand:#00c9a7;
+      --unknown:#5a6b85; --closed:#4f6177; --accent:#0f766e; --brand:#0d9488;
       /* ``-fill`` = the semantic color when used as a FILLED background
          under white text. In light theme the base colors are already
          dark enough, so fill == base. Dark theme overrides with darker
@@ -36,8 +36,8 @@
     /* Oscuro explicito */
     :root[data-theme="dark"] {
       --bg:#0b1420; --surface:#141d2e; --ink:#e8edf5; --muted:#8b99b3;
-      --line:#26314a; --ok:#34d399; --warn:#f59e0b; --bad:#f87171;
-      --unknown:#7a89a5; --closed:#4f6177; --accent:#22c9ac; --brand:#00c9a7;
+      --line:#26314a; --ok:#3fae7a; --warn:#f59e0b; --bad:#f87171;
+      --unknown:#7a89a5; --closed:#4f6177; --accent:#33a894; --brand:#0d9488;
       --accent-fill:#0f766e; --ok-fill:#157f4b; --warn-fill:#b45309; --bad-fill:#b91c1c;
     }
     :root[data-theme="dark"] .error {
