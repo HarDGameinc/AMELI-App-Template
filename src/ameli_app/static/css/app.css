@@ -129,6 +129,26 @@
     .header-inner { max-width:1320px; margin:0 auto; padding:16px 24px;
              display:flex; align-items:center; justify-content:space-between; gap:16px; }
     h1 { font-size:22px; margin:0; font-weight:650; }
+    /* Signature "telemetry pulse" sparkline (D-1 Fase C). Two stacked
+       polylines: a faint baseline waveform + a bright scan segment that
+       sweeps the path via an animated dash. ``pathLength=100`` normalises
+       the geometry so the 7/93 dash + 0→-100 offset loops seamlessly
+       regardless of the actual point coordinates. Palette-aware (--accent),
+       flips to --bad when [data-health="degraded"]. The global
+       prefers-reduced-motion rule freezes the sweep. */
+    .brand-pulse { margin-top:9px; width:168px; max-width:100%; height:26px; }
+    .brand-pulse svg { display:block; width:100%; height:100%; overflow:visible; }
+    .brand-pulse-base { fill:none; stroke:var(--accent); stroke-width:1.6;
+             stroke-linecap:round; stroke-linejoin:round; opacity:.25; }
+    .brand-pulse-scan { fill:none; stroke:var(--accent); stroke-width:2;
+             stroke-linecap:round; stroke-linejoin:round;
+             stroke-dasharray:7 93; stroke-dashoffset:0;
+             filter:drop-shadow(0 0 3px var(--accent));
+             animation:brandPulseScan 3.4s linear infinite; }
+    @keyframes brandPulseScan { from { stroke-dashoffset:0; } to { stroke-dashoffset:-100; } }
+    .brand-pulse[data-health="degraded"] .brand-pulse-base,
+    .brand-pulse[data-health="degraded"] .brand-pulse-scan { stroke:var(--bad); }
+    .brand-pulse[data-health="degraded"] .brand-pulse-scan { filter:drop-shadow(0 0 3px var(--bad)); }
     main { padding:26px 24px 44px; max-width:1320px; margin:0 auto; width:100%; }
     footer { border-top:1px solid var(--line); background:var(--surface);
              color:var(--muted); padding:14px 24px; font-size:13px; }

@@ -1,15 +1,27 @@
 async function refreshHealthBadge() {
   const badge = document.querySelector(".status");
-  if (!badge) return;
+  // Signature pulse (D-1 Fase C): the same probe colors the header
+  // sparkline — `ok` keeps the palette accent, anything else flips it to
+  // the danger token. One /health fetch drives both, so adding the pulse
+  // costs no extra request.
+  const spark = document.querySelector("[data-health-spark]");
+  if (!badge && !spark) return;
 
   try {
     const response = await fetch("/health", { cache: "no-store" });
     const payload = await response.json();
-    if (payload.ok && payload.version) {
+    if (badge && payload.ok && payload.version) {
       badge.textContent = payload.version;
     }
+    if (spark) {
+      spark.dataset.health = payload.ok ? "ok" : "degraded";
+    }
   } catch {
-    // Keep the existing label when health cannot be fetched.
+    // Keep the existing label when health cannot be fetched; surface the
+    // failed probe on the pulse so a dead backend reads as degraded.
+    if (spark) {
+      spark.dataset.health = "degraded";
+    }
   }
 }
 
