@@ -20,6 +20,9 @@
     {# scrollbar / native button. #}
     <meta name="color-scheme" content="{% if active_theme %}{{ active_theme }}{% else %}light dark{% endif %}">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    {# Branded SVG favicon (the header pulse motif) — served from 'self' #}
+    {# under img-src; kills the per-page /favicon.ico 404. #}
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,500;9..40,600;9..40,700&family=IBM+Plex+Sans:wght@400;500;600&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,600,0,0" rel="stylesheet">
