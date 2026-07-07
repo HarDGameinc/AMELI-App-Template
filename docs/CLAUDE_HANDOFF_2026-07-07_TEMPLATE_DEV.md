@@ -2,17 +2,19 @@
 
 Fecha: `2026-07-07`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (version final `v0.4.16-django`)
-Rama estable: `main` (default en GitHub; congelado hasta v0.5.0/v1.0.0)
+Rama de trabajo: `dev` (version final `v0.5.0-django`)
+Rama estable: **`main` — YA PROMOVIDO a `v0.5.0-django`** (ya no congelado)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md)
 
 > **Nota**: sesion continuada tras compactacion de contexto. Cubre lo que
 > quedo fuera del handoff 2026-07-06: **a11y++** (focus-trap de modales,
-> `v0.4.12`) y **D-1 identidad visual COMPLETA** (`v0.4.13`→`v0.4.16`):
+> `v0.4.12`), **D-1 identidad visual COMPLETA** (`v0.4.13`→`v0.4.16`):
 > Fase A (paleta+tipografia) + paletas de color seleccionables, Fase B
-> (jerarquia/layout, hero), Fase C (elemento signature), Fase D (motion).
-> Todo validado en server (`ha-report2`) y CI. §9 detalla las paletas; §10
-> el arco B/C/D + el hallazgo del allowlist de `/health`.
+> (jerarquia/layout, hero), Fase C (elemento signature), Fase D (motion);
+> la **promocion `dev → main` a `v0.5.0`** (PR #1), un **favicon de marca** y
+> la **atribucion de fuentes web** en el doc de licencias. Todo validado en
+> server (`ha-report2`) y CI. §9 paletas; §10 arco B/C/D + hallazgo
+> `/health`; §11 promocion + cierre (favicon, licencias).
 
 ## §1. Snapshot al inicio
 
@@ -109,7 +111,7 @@ identidad del review: **superficies navy + acento teal-verde**.
 | Node JS tests | 13 pass |
 | Ruff | 0 errores |
 | CI (dev) | verde: matriz 3.11-3.14 + test-postgres + e2e + js-unit + pip-audit |
-| Version | **`v0.4.16-django`** (D-1 completo A+B+C+D; ver §9 paletas, §10 B/C/D) |
+| Version | **`v0.5.0-django`** (D-1 completo + promocion a `main`; §9-§11) |
 
 ## §6. Hallazgos / findings
 
@@ -130,49 +132,55 @@ contraste con texto blanco encima.
 
 ## §7. Roadmap actualizado
 
-**a11y cerrado por completo** (base + claro/oscuro + teclado + modales).
-**D-1 COMPLETO** (`v0.4.13`→`v0.4.16`): Fase A (paleta+tipografia) + paletas
-de color (§9), Fase B (jerarquia/layout, hero), Fase C (signature pulse),
-Fase D (motion). Todo smokeado en server y bumpeado. Ver §10.
+**a11y cerrado.** **D-1 COMPLETO** (`v0.4.13`→`v0.4.16`, §9-§10).
+**Promocion `dev → main` HECHA** (`v0.5.0`, §11): `main` ya no esta
+congelado — es el primer release del template, con tag/release publicado.
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| Promote | `dev → main` v0.5.0 | — | `main` congelado; requiere instruccion explicita. Candidato natural tras D-1 |
 | Refactor opt | Inline styles → utility classes en templates | ~2h | Cosmetico, no bloqueante (unico gap de front que queda) |
 | Low/opt | `django-csp`, Prometheus lib, Ansible, jsdom | — | Ninguno urgente (`TECH_EVOLUTION.md`) |
+| (sin bump) favicon + doc licencias | — | En `dev` sin bumpear (`0dc0294`, `2e0a386`); entran en el proximo `v0.5.1` |
 
-### OPS — branch protection (latente, no accionable)
+### OPS — branch protection (ahora SÍ relevante)
 
-Sin cambios: bloqueado por el plan Free privado (`gh api .../protection` →
-403). Payload listo en `OPERATIONS.md` para cuando se suba a Pro/Team o se
-haga publico. No es olvido.
+`main` ya esta vivo con releases. Sigue **sin proteccion enforced** por el
+plan Free privado (`gh api .../protection` → 403). Ahora que hay releases en
+`main`, subir a Pro/Team (o hacer publico) y aplicar el payload de
+`OPERATIONS.md` protege el branch de release. La disciplina actual (PR + CI
+verde antes de merge) se mantiene por convencion, no por enforcement.
 
 ## §8. Continuidad — para el proximo agente
 
 ### 8.0. Snapshot al cierre
 
-- Rama **`dev`**, version **`v0.4.16-django`**, todo pusheado. `main`
-  congelado.
-- Sesion: a11y++ (focus-trap de modales, `v0.4.12`) + **D-1 identidad
-  visual COMPLETA** (`v0.4.13`→`v0.4.16`): A (navy+teal + DM Sans/IBM Plex +
-  4 paletas seleccionables), B (jerarquia/layout, hero palette-aware), C
-  (signature "telemetry pulse"), D (motion: reveal + hover). Ver §9 (paletas)
-  y §10 (B/C/D + hallazgo `/health`).
+- **`dev` y `main` en `v0.5.0-django`** (sincronizados), todo pusheado.
+  `main` **promovido** (ya no congelado); tag/release `v0.5.0-django`
+  publicado. Server `ha-report2` corriendo `v0.5.0` OPERATIVO.
+- Sesion: a11y++ (`v0.4.12`) + **D-1 identidad visual COMPLETA**
+  (`v0.4.13`→`v0.4.16`): A (navy+teal + DM Sans/IBM Plex + 4 paletas), B
+  (jerarquia/hero), C (signature pulse), D (motion) + **promocion a `main`
+  v0.5.0** (§11) + favicon de marca + atribucion de fuentes en licencias.
 - Validado: unit **1074** verde, **21/21 a11y** (4 paletas × claro/oscuro +
-  teclado + modal). CI dev verde. Cada fase smokeada en server (`ha-report2`).
+  teclado + modal), node 13, ruff/check limpios. CI verde en el PR #1. Cada
+  fase smokeada en server.
+- En `dev` **sin bumpear** (para el proximo `v0.5.1`): favicon (`0dc0294`) +
+  actualizacion del doc de licencias (`2e0a386`).
 - Entorno dev = Windows nativo. `gh` CLI en `C:\Program Files\GitHub CLI\`
   (no en PATH — invocar por ruta).
 
 ### 8.1. Primer paso (siguiente agente)
 
-**D-1 esta completo** — no hay fase de diseño pendiente. Elegir del roadmap
-§7. El candidato natural es **promover `dev → main` para `v0.5.0`** (requiere
-instruccion explicita del operador; `main` congelado, via PR). Si se sigue
-en front, lo unico que queda es el refactor opcional de inline-styles →
-utility classes (cosmetico). Regla al tocar cualquier color: sale de los
-tokens (`var(--accent)` etc.) — nada hardcodeado, o se rompen las 4 paletas.
+**D-1 completo y `main` promovido** — no hay nada obligatorio pendiente. La
+deuda tecnica y de docs esta al dia. Candidatos (todos opcionales, elegir
+del roadmap §7): refactor inline-styles → utility classes (cosmetico),
+o items Low/opt de `TECH_EVOLUTION.md`. El proximo cambio en `main` va por
+PR con CI verde (ver §11). Nota: hay 2 commits en `dev` sin bumpear (favicon
++ licencias) que entran en el proximo `v0.5.1`. Regla al tocar cualquier
+color: sale de los tokens (`var(--accent)` etc.) — nada hardcodeado, o se
+rompen las 4 paletas.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
@@ -306,3 +314,53 @@ Se quito ademas el link `/health` del footer (daba "forbidden" a usuarios).
   acento (`color-mix`) + sombra; `a.icon-action` gana transicion + wash.
 - No rompe a11y: el reveal usa opacity/transform (el contraste que mide axe
   no cambia). 21/21 verde.
+
+## §11. Promocion a `main` (`v0.5.0`) + cierre
+
+### 11.1. `dev → main` (`v0.5.0-django`)
+
+Primer release en `main` desde el arranque del template (`main` estuvo
+congelado). Proceso ejecutado:
+
+1. Bump `dev` a `v0.5.0-django` (4 archivos; commit `05267a7`). Sin cambios
+   de codigo vs `v0.4.16` — es el bump de promocion/hito.
+2. **PR #1** `dev → main` via `gh` (invocado por ruta:
+   `"C:\Program Files\GitHub CLI\gh.exe"`). Body con highlights + validacion.
+3. **CI verde en el PR**: matriz 3.11-3.14 + Postgres + e2e (Playwright) +
+   js-unit + pip-audit (los dos runs, push + pull_request). Esperado con
+   `gh pr checks 1 --watch`.
+4. **Merge commit** (`--merge`, NO squash) → preserva los 120 commits de
+   historia en `main`. Merge `e4f27b6`.
+5. **Tag + release** `v0.5.0-django` en `main` (`gh release create`, target
+   `main`). Era el **primer tag/release** del repo (no habia convencion; se
+   creo con OK explicito del operador).
+6. Server sincronizado (trackea `dev`): `/health` → `v0.5.0-django`
+   OPERATIVO.
+
+Regla de release de aqui en adelante: cambios a `main` **via PR con CI
+verde** (la proteccion no esta enforced en el plan Free, es disciplina).
+
+### 11.2. Favicon de marca (`0dc0294`, en `dev` sin bump)
+
+Cada pagina daba `GET /favicon.ico → 404`. Se agrego
+`src/ameli_app/static/favicon.svg` (el motivo del pulso del header sobre un
+cuadro teal) enlazado con `<link rel="icon" type="image/svg+xml">`, servido
+desde static (`'self'` bajo `img-src`). 404 eliminado, ícono en la pestaña.
+
+### 11.3. Atribucion de fuentes web en licencias (`2e0a386`, en `dev` sin bump)
+
+Review de licencias a pedido del operador. `docs/THIRD_PARTY_LICENSES.md`
+cubria deps pip + axe-core (MPL-2.0) pero **no las 3 fuentes de Google
+Fonts** que carga la UI (D-1 agrego DM Sans + IBM Plex Sans; Material
+Symbols ya estaba). Se agrego seccion "Web fonts":
+
+- **DM Sans, IBM Plex Sans** → SIL OFL 1.1.
+- **Material Symbols Rounded** → Apache-2.0.
+
+Nota: son **CDN-referenced** (no redistribuidas por defecto) → sin
+obligacion legal de notice salvo self-hosting (documentado). Se extendio la
+seccion Apache NOTICE + la matriz de compatibilidad, y se aclaro que
+`requirements.lock` es la fuente exacta de versiones (los pins `~=` del doc
+eran indicativos). El proyecto sigue **MIT © 2026 HarDGame inc.**, cero
+GPL/AGPL. `pyotp`/`qrcode` confirmados como runtime deps (en
+`requirements.txt`), atribucion correcta.
