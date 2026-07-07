@@ -148,7 +148,10 @@
       <div class="footer-inner">
         <div>{{ app_name }} <span id="footerVersion">{{ version|default:"" }}</span></div>
         <div class="footer-links">
-          <a href="/health" target="_blank" rel="noopener">health</a>
+          {# ``/health`` is IP-allowlisted (HEALTH_METRICS_ALLOWLIST): a #}
+          {# browser hit from a non-allowlisted client renders a raw #}
+          {# "forbidden", so it is not linked here. Monitors probe the #}
+          {# endpoint directly; operators can still reach it by URL. #}
           {% if docs_enabled %}<a href="/docs">docs</a>{% endif %}
           {% if redoc_enabled %}<a href="/redoc">redoc</a>{% endif %}
         </div>

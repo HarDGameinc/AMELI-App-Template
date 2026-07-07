@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.15-django — 2026-07-07 (D-1 Fase C: elemento signature)
+
+Elemento signature de D-1: un **pulso de telemetría** en el header. Sparkline
+con un segmento que recorre la onda (CSS, `pathLength=100` para bucle
+perfecto), coloreado por la paleta activa (`--accent`). Decorativo
+(`aria-hidden`) — la salud real vive en las cards del dashboard y el endpoint
+`/health`.
+
+### D-1 Fase C (commits `31a9684`, `ed36889`, `c5ec17d`)
+
+- Sparkline SVG en el header (dos polilíneas: base tenue + segmento de
+  barrido); keyframes `brandPulseScan`; `prefers-reduced-motion` lo congela.
+- **Hallazgo**: `/health` está protegido por `HEALTH_METRICS_ALLOWLIST`
+  (allowlist por IP) → un probe del navegador da **403** en deployments
+  asegurados. Por eso el pulso es **puramente decorativo** (no consulta
+  `/health`) — evita una petición fallida + `403` en consola por página. El
+  hook CSS `[data-health="degraded"]` queda documentado para reflejar salud
+  en vivo en deployments abiertos.
+- Se quitó el link `/health` del footer (daba un "forbidden" crudo a
+  usuarios fuera del allowlist); los monitores lo consultan directo.
+
 ## v0.4.14-django — 2026-07-07 (D-1 Fase B: jerarquía + layout)
 
 Jerarquía visual sobre la base de paletas (v0.4.13), todo palette-aware vía
