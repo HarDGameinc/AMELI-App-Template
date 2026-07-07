@@ -17,10 +17,12 @@ async function refreshHealthBadge() {
       spark.dataset.health = payload.ok ? "ok" : "degraded";
     }
   } catch {
-    // Keep the existing label when health cannot be fetched; surface the
-    // failed probe on the pulse so a dead backend reads as degraded.
-    if (spark) {
-      spark.dataset.health = "degraded";
+    // Keep the existing label when health cannot be fetched. The pulse is
+    // decorative, so a transient client-side probe failure must NOT scream
+    // red — only an explicit ``ok:false`` above flips it to danger. Leave
+    // the pulse on the palette accent (its default) on error.
+    if (spark && !spark.dataset.health) {
+      spark.dataset.health = "ok";
     }
   }
 }
