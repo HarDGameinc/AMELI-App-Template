@@ -19,7 +19,18 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+# Every test here runs ``scripts/_common.sh`` through a real ``bash``
+# subprocess (POSIX shell + ``sed``). None of that exists on Windows, so
+# skip the whole module there; the Linux CI matrix still exercises it.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="sources _common.sh via a bash subprocess; POSIX-only",
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = ROOT / "scripts" / "_common.sh"

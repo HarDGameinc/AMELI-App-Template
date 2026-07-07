@@ -4,21 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ameli-app-template"
-version = "0.4.0"
+version = "0.5.0"
 description = "AMELI Django-first operational app template"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "HarDGame inc." }]
 dependencies = [
-  "alembic>=1.13.0",
   "argon2-cffi>=23.1.0",
   "Django>=5.2.0",
   "Pillow>=11.0.0",
   "psycopg[binary]>=3.1.0",
   "python-dateutil>=2.9.0",
   "PyYAML>=6.0.1",
-  "SQLAlchemy>=2.0.0",
   "uvicorn[standard]>=0.30.0",
 ]
 
@@ -109,7 +107,12 @@ ignore_missing_imports = true
 # tests/test_permissions.py + tests/test_account_guards.py).
 # Narrowing per-view with ``cast()`` would be cleaner long-term;
 # tracked as a follow-up.
-module = ["ameli_web.accounts.views", "ameli_web.admin_views"]
+module = [
+    "ameli_web.accounts.views",
+    "ameli_web.accounts.views.*",
+    "ameli_web.admin_views",
+    "ameli_web.admin_views.*",
+]
 disable_error_code = ["union-attr", "call-arg", "misc", "arg-type", "return-value"]
 
 [tool.django-stubs]

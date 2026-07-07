@@ -12,7 +12,7 @@ class="panel" id="admin-sessions-panel">`` lives in ``admin/panel.html``.
     <input type="search" name="admin_sessions_search" class="users-toolbar-input"
            placeholder="Buscar usuario..." autocomplete="off"
            value="{{ sessions_filters.search }}">
-    <select name="admin_sessions_status" class="users-toolbar-input">
+    <select name="admin_sessions_status" class="users-toolbar-input" aria-label="Filtrar por estado de sesion">
       <option value="">Todos los estados</option>
       <option value="active" {% if sessions_filters.status == "active" %}selected{% endif %}>Activas</option>
       <option value="revoked" {% if sessions_filters.status == "revoked" %}selected{% endif %}>Revocadas</option>

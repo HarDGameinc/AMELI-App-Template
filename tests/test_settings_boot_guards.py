@@ -55,8 +55,15 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
         monkeypatch.setenv("AMELI_APP_DATA_DIR", "/tmp/test-data")  # noqa: S108
 
     # Drop any cached settings module so the module-level guards re-run.
-    for cached in ("ameli_web.settings",):
-        sys.modules.pop(cached, None)
+    # After PC-4 (2026-07-01) ``ameli_web.settings`` is a package whose
+    # submodules cache their own module-level guards. Popping the top-level
+    # alone would re-import the package but reuse the cached submodules, so
+    # the guards would not re-fire. Wipe every ``ameli_web.settings*`` entry.
+    for cached_name in [
+        name for name in sys.modules
+        if name == "ameli_web.settings" or name.startswith("ameli_web.settings.")
+    ]:
+        sys.modules.pop(cached_name, None)
     return importlib.import_module("ameli_web.settings")
 
 

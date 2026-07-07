@@ -27,7 +27,7 @@ class ProfilePreferencesForm(forms.ModelForm):
     # 'Perfil actualizado.' while their address never moved.
     class Meta:
         model = User
-        fields = ["display_name", "theme_preference"]
+        fields = ["display_name", "theme_preference", "color_theme"]
         widgets = {
             "display_name": forms.TextInput(
                 attrs={
@@ -38,11 +38,28 @@ class ProfilePreferencesForm(forms.ModelForm):
                 }
             ),
             "theme_preference": forms.Select(attrs={"class": "modal-input"}),
+            # Rendered as color swatches (radios styled in app.css via the
+            # per-value ``input[value=...]`` selectors under .palette-swatches).
+            "color_theme": forms.RadioSelect(attrs={"class": "palette-radio"}),
         }
         labels = {
             "display_name": "Alias visible",
             "theme_preference": "Tema preferido",
+            "color_theme": "Color de la interfaz",
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The real form always submits the palette (a radio group is always
+        # checked), but keep it optional so a partial/legacy POST that omits
+        # it still saves the other prefs and simply keeps the current
+        # palette — instead of failing validation and dropping the edit.
+        self.fields["color_theme"].required = False
+
+    def clean_color_theme(self):
+        # Empty (omitted) falls back to the stored palette; an out-of-range
+        # value still fails the ChoiceField validation above this method.
+        return self.cleaned_data.get("color_theme") or self.instance.color_theme or User.PALETTE_TEAL
 
 
 class AvatarUploadForm(forms.Form):

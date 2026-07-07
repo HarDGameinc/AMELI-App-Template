@@ -24,7 +24,7 @@ def admin_user(db):
 
 @pytest.fixture()
 def admin_with_mfa(db, admin_user):
-    start = start_mfa_enrollment("admin")
+    start = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start["secret"]).now()
     result = confirm_mfa_enrollment("admin", code)
     return {
@@ -175,7 +175,7 @@ def admin_with_email_mfa(db):
     user.mfa_email_enabled = True
     user.save(update_fields=["email", "mfa_email_enabled"])
 
-    start = start_mfa_enrollment("admin")
+    start = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start["secret"]).now()
     confirm_mfa_enrollment("admin", code)
     return User.objects.get(username="admin")

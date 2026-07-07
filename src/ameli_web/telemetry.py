@@ -207,7 +207,7 @@ def wrap_asgi_application(app: Any) -> Any:
 
 
 class _NoopSpan:
-    def __enter__(self) -> "_NoopSpan":
+    def __enter__(self) -> _NoopSpan:
         return self
 
     def __exit__(self, *_a: Any) -> None:

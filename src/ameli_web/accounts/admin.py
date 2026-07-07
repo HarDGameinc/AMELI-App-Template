@@ -22,6 +22,7 @@ class UserAdmin(DjangoUserAdmin):
                     "display_name",
                     "role",
                     "theme_preference",
+                    "color_theme",
                     "avatar",
                     "must_change_password",
                     "created_at",

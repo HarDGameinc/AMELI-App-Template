@@ -17,3 +17,6 @@ data/
 logs/
 backups/
 *.egg-info/
+# Local dev / e2e SQLite databases (AMELI_APP_SQLITE_PATH fallback,
+# pytest-django test DBs). Never committed — Postgres is the real DB.
+*.sqlite3

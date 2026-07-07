@@ -14,7 +14,6 @@
 # from this file) is the hash-verified source of truth for CI and
 # the deploy (ASVS V14.2.3). Bumping a range here without
 # regenerating the lock will fail CI on the hash mismatch.
-alembic>=1.13,<3
 # argon2-cffi provides ``ConfigurableArgon2Hasher`` (Django password
 # hasher); missing it causes the entire test suite to fail at import.
 # Listed both here and in ``pyproject.toml`` `[project].dependencies`
@@ -41,7 +40,6 @@ pyotp>=2.9,<3
 python-dateutil>=2.9,<3
 PyYAML>=6.0,<7
 qrcode>=7.4,<9
-SQLAlchemy>=2.0,<3
 uvicorn[standard]>=0.30,<2
 
 # OpenTelemetry — mini-roadmap #7 (2026-06-22). Opt-in tracing

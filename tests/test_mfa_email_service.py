@@ -95,7 +95,7 @@ def test_email_codes_match_constant_time():
 def test_start_mfa_email_enrollment_sends_code(public_user_with_email):
     mail.outbox.clear()
 
-    result = start_mfa_email_enrollment("viewer")
+    result = start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
     assert result["status"] == "sent"
     assert result["email"] == "viewer@example.com"
@@ -108,24 +108,24 @@ def test_start_mfa_email_enrollment_sends_code(public_user_with_email):
 def test_start_mfa_email_enrollment_requires_email_on_file(admin_user):
     # admin was bootstrapped without an email
     with pytest.raises(ValueError, match="email on your account"):
-        start_mfa_email_enrollment("admin")
+        start_mfa_email_enrollment("admin", current_password=ADMIN_PASSWORD)
 
 
 @pytest.mark.django_db
 def test_start_mfa_email_enrollment_rejects_when_already_enabled(public_user_with_email):
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     # Simulate a completed email enrollment from another flow.
     public_user_with_email.mfa_email_enabled = True
     public_user_with_email.mfa_enabled = True
     public_user_with_email.save()
 
     with pytest.raises(ValueError, match="already enabled"):
-        start_mfa_email_enrollment("viewer")
+        start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
 
 @pytest.mark.django_db
 def test_start_mfa_email_enrollment_burns_old_email_challenges(public_user_with_email):
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     first = MFAEmailChallenge.objects.get(user=public_user_with_email)
     assert first.used_at is None
 
@@ -133,7 +133,7 @@ def test_start_mfa_email_enrollment_burns_old_email_challenges(public_user_with_
     first.created_at = timezone.now() - timedelta(minutes=2)
     first.save(update_fields=["created_at"])
 
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     first.refresh_from_db()
     assert first.used_at is not None  # invalidated when new one was issued
 
@@ -148,7 +148,7 @@ def test_start_mfa_email_enrollment_preserves_totp_secret(public_user_with_email
     public_user_with_email.mfa_secret = "FAKETOTPSECRET12345"
     public_user_with_email.save()
 
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
     refreshed = _refresh(public_user_with_email)
     assert refreshed.mfa_secret == "FAKETOTPSECRET12345"
@@ -162,7 +162,7 @@ def _send_and_get_plaintext(public_user_with_email):
     Reads the email body sent via the locmem backend.
     """
     mail.outbox.clear()
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     body = mail.outbox[0].body
     # The template prints the code on its own line surrounded by blank lines.
     for line in body.splitlines():
@@ -244,10 +244,10 @@ def test_consume_email_mfa_code_rejects_wrong_format(public_user_with_email):
 
 @pytest.mark.django_db
 def test_email_mfa_rate_limit_blocks_resend_within_one_minute(public_user_with_email):
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
     with pytest.raises(ValueError, match="Espera"):
-        start_mfa_email_enrollment("viewer")
+        start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
 
 @pytest.mark.django_db
@@ -265,7 +265,7 @@ def test_email_mfa_rate_limit_blocks_after_five_in_one_hour(public_user_with_ema
         challenge.save(update_fields=["created_at"])
 
     with pytest.raises(ValueError, match="ultima hora"):
-        start_mfa_email_enrollment("viewer")
+        start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
 
 
 # ---- send_mfa_email_login_code ----

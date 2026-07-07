@@ -14,9 +14,17 @@ def account_navigation(request):
         if current_user and current_user.get("theme_preference") in {"light", "dark"}
         else ""
     )
+    # Palette is orthogonal to theme and always resolved (default "teal"),
+    # so ``data-palette`` is present for anonymous visitors too.
+    active_palette = (
+        str(current_user.get("color_theme"))
+        if current_user and current_user.get("color_theme") in {"teal", "indigo", "amber", "violet"}
+        else "teal"
+    )
     return {
         "current_user": current_user,
         "active_theme": active_theme,
+        "active_palette": active_palette,
         "can_access_admin": can_access_admin_panel(user),
         "app_name": settings.CFG.app_name,
         "docs_enabled": settings.CFG.docs_enabled,

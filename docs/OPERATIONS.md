@@ -70,7 +70,7 @@ database is available yet, SQLite can be used temporarily through
 ## Linux install
 
 ```bash
-sudo APP_ENV=dev APP_SLUG=ameli-new-app APP_PACKAGE=ameli_new_app bash scripts/install.sh
+APP_ENV=dev APP_SLUG=ameli-new-app APP_PACKAGE=ameli_new_app bash scripts/install.sh
 ```
 
 The installer preserves `/etc/<instance>/app.env` and `/etc/<instance>/app.yaml`
@@ -158,8 +158,8 @@ Repo policy (applied 2026-06-18, roadmap #23):
 * `main` is protected: **no force-push, no deletion, no bypass**.
 * Pushes to `main` are blocked — every change goes through a PR.
 * A PR can merge only when:
-    - the CI workflow (`Lint + Test` matrix on 3.11 and 3.12) reports
-      `success` on the head SHA, AND
+    - the CI workflow (`Lint + Test` matrix on 3.11 · 3.12 · 3.13 · 3.14)
+      reports `success` on the head SHA, AND
     - the `Supply chain audit (pip-audit)` job reports `success`.
 * PR review is NOT required (single-operator template), but the
   status checks must be green and up-to-date with `main`.
@@ -239,7 +239,15 @@ Branches → Branch protection rules → Add rule:
     - Require branches to be up to date before merging: ON
     - Status checks: `Lint + Test (Python 3.11)`,
       `Lint + Test (Python 3.12)`,
+      `Lint + Test (Python 3.13)`,
+      `Lint + Test (Python 3.14)`,
       `Supply chain audit (pip-audit)`
+    - **OPS (2026-07-02)**: the matrix grew from 3.11/3.12 to
+      3.11-3.14. The two new contexts (`Python 3.13`, `Python 3.14`)
+      must be added to the required set here — the pre-existing
+      3.11/3.12 checks keep passing, so protection does not break if
+      you forget, but the new Pythons would not gate a merge until
+      added.
 * Restrict who can push to matching branches: ON (empty allowlist
   — nobody pushes directly)
 * Allow force pushes: OFF
@@ -259,6 +267,8 @@ gh api -X PUT "/repos/HarDGameinc/AMELI-App-Template/branches/main/protection" \
     "contexts": [
       "Lint + Test (Python 3.11)",
       "Lint + Test (Python 3.12)",
+      "Lint + Test (Python 3.13)",
+      "Lint + Test (Python 3.14)",
       "Supply chain audit (pip-audit)"
     ]
   },
@@ -339,13 +349,13 @@ Use the full first-install walkthrough in:
 
 ```bash
 # create an archive
-sudo APP_ENV=prod bash scripts/backup.sh
+APP_ENV=prod bash scripts/backup.sh
 
 # verify an archive without touching the live deploy (cron-friendly)
-sudo APP_ENV=prod bash scripts/restore.sh verify /var/backups/<archive>.tar.gz
+APP_ENV=prod bash scripts/restore.sh verify /var/backups/<archive>.tar.gz
 
 # restore (destructive)
-sudo APP_ENV=prod bash scripts/restore.sh restore /var/backups/<archive>.tar.gz --yes
+APP_ENV=prod bash scripts/restore.sh restore /var/backups/<archive>.tar.gz --yes
 ```
 
 `backup.sh` bundles:
@@ -1104,6 +1114,79 @@ Or just accept the transient — the surfaced UI message offers
 the user a TOTP / "Reenviar codigo" fallback that resolves
 within the window.
 
+## End-to-end tests (Playwright)
+
+Mini-roadmap #12 (2026-06-23) ships a small Playwright suite at
+``tests/e2e/`` that drives a headless Chromium against the live
+Django app to cover the auth + avatar + password-change happy
+paths. Pure Python — ``pytest-playwright`` integrates with the
+existing pytest pipeline.
+
+### Running locally
+
+```bash
+# Install browser (one-time per machine; ~140 MB chromium binary)
+python -m playwright install chromium --with-deps
+
+# Run only the e2e suite
+python -m pytest tests/e2e/
+
+# Or every test including e2e
+python -m pytest --run-e2e
+```
+
+The default ``python -m pytest`` invocation **skips** e2e to keep
+the unit suite fast (~100s). The skip is driven by a hook in
+``tests/conftest.py`` + ``tests/e2e/conftest.py`` that detects
+either the path or the ``--run-e2e`` flag as the explicit opt-in.
+
+### Covered flows
+
+- **Login + MFA email + dashboard** — exercise the full auth
+  pipeline, captures the MFA code from the in-memory mail
+  outbox, verifies redirect to the dashboard.
+- **Wrong-password rejection** — ensures the login view re-renders
+  with the generic error (no user-existence oracle).
+- **Avatar upload** — uploads a tiny PNG, verifies the hero on
+  both ``/profile/`` and ``/`` swaps to ``<img>``, plus the
+  top-right menu chip.
+- **Password change + re-login** — full rotation: change via the
+  security tab, old password fails, new password works.
+
+### Test isolation
+
+- Each test gets a fresh Django user via the ``e2e_admin`` fixture.
+- ``pytest-playwright`` opens a clean browser context per test
+  (no cookie / localStorage leak).
+- Email backend is switched to ``locmem`` per test via
+  ``captured_emails`` fixture; no real SMTP traffic.
+- ``pytest-django`` rolls back the DB after each test.
+
+### CI
+
+The ``e2e`` job in ``.github/workflows/ci.yml`` runs on every push
+and PR. It downloads chromium (~30 s on GitHub runners), runs
+migrations, then invokes ``pytest tests/e2e/ -v``. Independent
+from the unit-test matrix job so unit failures don't gate the e2e
+signal (and vice versa).
+
+### Extending
+
+Add a new test file under ``tests/e2e/``. The conftest provides
+``page`` (function-scoped Playwright Page), ``live_url`` (str),
+``e2e_admin`` (User), ``captured_emails`` (list[EmailMessage]).
+Mark with ``pytestmark = pytest.mark.django_db`` if the test
+touches the ORM.
+
+Avoid:
+- Screenshot diff tests without baseline management — the value
+  is real but the operational cost (baselines per platform /
+  browser, churn on every CSS tweak) is high. Document a
+  rationale before adding.
+- Cross-browser sweeps in CI — chromium-only keeps the job
+  under 2 min. Operators that need Firefox / WebKit coverage
+  add ``--browser firefox`` locally.
+
 ## OpenAPI docs panel SRI (ASVS V10.3.x)
 
 The `/docs` (Swagger UI) and `/redoc` views load JavaScript bundles
@@ -1231,14 +1314,14 @@ exact failure mode the #6 verification hit on dev.
    file (or worse, a blanked env file from a typo'd `sed`). Then
    restart the service.
    ```bash
-   sudo -E .venv/bin/ameli-app rotate-audit-key \
+   .venv/bin/ameli-app rotate-audit-key \
      --from-key-env OLD_KEY \
      --to-key-env NEW_KEY \
      --apply-env /etc/ameli-app-template-<env>/app.env || {
        echo "ABORT: rotation failed; env file untouched"
        return 1 2>/dev/null || exit 1
    }
-   sudo systemctl restart ameli-app-template-<env>-api.service
+   systemctl restart ameli-app-template-<env>-api.service
    unset OLD_KEY NEW_KEY   # keep them out of the shell after rotation
    ```
    Exit codes: `0` = full success, `2` = rotation refused (chain
@@ -1252,7 +1335,7 @@ exact failure mode the #6 verification hit on dev.
    **stdin variant** (when you cannot or don't want to export the
    keys): pipe two lines, from-key first.
    ```bash
-   { printf '%s\n%s\n' "$OLD_KEY" "$NEW_KEY"; } | sudo .venv/bin/ameli-app \
+   { printf '%s\n%s\n' "$OLD_KEY" "$NEW_KEY"; } | .venv/bin/ameli-app \
      rotate-audit-key --from-key-stdin --to-key-stdin \
      --apply-env /etc/ameli-app-template-<env>/app.env
    ```
@@ -1262,14 +1345,14 @@ exact failure mode the #6 verification hit on dev.
    `ps`/history:
    ```bash
    # NOT RECOMMENDED: keys land in /proc/<pid>/cmdline
-   sudo .venv/bin/ameli-app rotate-audit-key \
+   .venv/bin/ameli-app rotate-audit-key \
      --from-key "$OLD_KEY" --to-key "$NEW_KEY" || {
        echo "ABORT: rotation failed; do NOT touch the env file"
        return 1 2>/dev/null || exit 1
    }
-   sudo sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
+   sed -i "s|^AMELI_APP_AUDIT_HMAC_KEY=.*|AMELI_APP_AUDIT_HMAC_KEY=$NEW_KEY|" \
      /etc/ameli-app-template-<env>/app.env
-   sudo systemctl restart ameli-app-template-<env>-api.service
+   systemctl restart ameli-app-template-<env>-api.service
    ```
 
 4. **Sanity-check the post-rotation chain.**

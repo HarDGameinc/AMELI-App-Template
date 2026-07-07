@@ -54,7 +54,7 @@ def public_user(db, admin_user):
 def user_with_email_mfa(public_user):
     """User enrolled with email-based MFA (10 recovery codes)."""
     mail.outbox.clear()
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     code = _extract_code_from_outbox()
     result = confirm_mfa_email_enrollment("viewer", code)
     return {
@@ -65,7 +65,7 @@ def user_with_email_mfa(public_user):
 
 @pytest.fixture()
 def user_with_totp_mfa(public_user):
-    start = start_mfa_enrollment("viewer")
+    start = start_mfa_enrollment("viewer", current_password=USER_PASSWORD)
     code = pyotp.TOTP(start["secret"]).now()
     confirm_mfa_enrollment("viewer", code)
     return {
@@ -112,7 +112,11 @@ def test_profile_mfa_email_start_sends_code_for_authenticated_user(client, publi
     client.force_login(public_user)
     mail.outbox.clear()
 
-    response = client.post("/profile/mfa/email/start/")
+    response = client.post(
+        "/profile/mfa/email/start/",
+        data=json.dumps({"current_password": USER_PASSWORD}),
+        content_type="application/json",
+    )
     data = response.json()
 
     assert response.status_code == 200
@@ -126,7 +130,11 @@ def test_profile_mfa_email_start_rejects_user_without_email(client, admin_user):
     # admin was bootstrapped without an email
     client.force_login(admin_user)
 
-    response = client.post("/profile/mfa/email/start/")
+    response = client.post(
+        "/profile/mfa/email/start/",
+        data=json.dumps({"current_password": ADMIN_PASSWORD}),
+        content_type="application/json",
+    )
 
     assert response.status_code == 400
     assert "email" in response.json()["error"].lower()
@@ -136,7 +144,11 @@ def test_profile_mfa_email_start_rejects_user_without_email(client, admin_user):
 def test_profile_mfa_email_confirm_completes_enrollment(client, public_user):
     client.force_login(public_user)
     mail.outbox.clear()
-    client.post("/profile/mfa/email/start/")
+    client.post(
+        "/profile/mfa/email/start/",
+        data=json.dumps({"current_password": USER_PASSWORD}),
+        content_type="application/json",
+    )
     code = _extract_code_from_outbox()
 
     response = client.post(
@@ -158,7 +170,11 @@ def test_profile_mfa_email_confirm_completes_enrollment(client, public_user):
 @pytest.mark.django_db
 def test_profile_mfa_email_confirm_rejects_invalid_code(client, public_user):
     client.force_login(public_user)
-    client.post("/profile/mfa/email/start/")
+    client.post(
+        "/profile/mfa/email/start/",
+        data=json.dumps({"current_password": USER_PASSWORD}),
+        content_type="application/json",
+    )
 
     response = client.post(
         "/profile/mfa/email/confirm/",

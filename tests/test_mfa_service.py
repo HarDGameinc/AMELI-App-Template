@@ -35,7 +35,7 @@ def _refresh(user):
 
 @pytest.mark.django_db
 def test_start_mfa_enrollment_generates_secret_and_returns_qr(admin_user):
-    result = start_mfa_enrollment("admin")
+    result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
 
     assert result["ok"] is True
     assert result["status"] == "pending"
@@ -51,8 +51,8 @@ def test_start_mfa_enrollment_generates_secret_and_returns_qr(admin_user):
 
 @pytest.mark.django_db
 def test_start_mfa_enrollment_replaces_existing_pending(admin_user):
-    first = start_mfa_enrollment("admin")
-    second = start_mfa_enrollment("admin")
+    first = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
+    second = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
 
     assert first["secret"] != second["secret"]
     refreshed = _refresh(admin_user)
@@ -61,17 +61,17 @@ def test_start_mfa_enrollment_replaces_existing_pending(admin_user):
 
 @pytest.mark.django_db
 def test_start_mfa_enrollment_rejects_already_enabled_user(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     confirm_mfa_enrollment("admin", code)
 
     with pytest.raises(ValueError, match="already enabled"):
-        start_mfa_enrollment("admin")
+        start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
 
 
 @pytest.mark.django_db
 def test_start_mfa_enrollment_clears_old_recovery_codes(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     confirm_mfa_enrollment("admin", code)
     assert MFARecoveryCode.objects.filter(user=admin_user).count() == 10
@@ -79,7 +79,7 @@ def test_start_mfa_enrollment_clears_old_recovery_codes(admin_user):
     disable_mfa_for_self("admin", current_password=ADMIN_PASSWORD)
     assert MFARecoveryCode.objects.filter(user=admin_user).count() == 0
 
-    start_mfa_enrollment("admin")
+    start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     assert MFARecoveryCode.objects.filter(user=admin_user).count() == 0
 
 
@@ -88,7 +88,7 @@ def test_start_mfa_enrollment_clears_old_recovery_codes(admin_user):
 
 @pytest.mark.django_db
 def test_confirm_mfa_enrollment_with_valid_code_enables_and_returns_recovery(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
 
     confirmed = confirm_mfa_enrollment("admin", code)
@@ -105,7 +105,7 @@ def test_confirm_mfa_enrollment_with_valid_code_enables_and_returns_recovery(adm
 
 @pytest.mark.django_db
 def test_confirm_mfa_enrollment_rejects_invalid_code(admin_user):
-    start_mfa_enrollment("admin")
+    start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
 
     with pytest.raises(ValueError, match="invalid verification code"):
         confirm_mfa_enrollment("admin", "000000")
@@ -125,7 +125,7 @@ def test_confirm_mfa_enrollment_without_pending_secret_rejects(admin_user):
 def test_confirm_mfa_enrollment_clears_admin_requirement(admin_user):
     admin_user.mfa_required = True
     admin_user.save()
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
 
     confirm_mfa_enrollment("admin", code)
@@ -139,7 +139,7 @@ def test_confirm_mfa_enrollment_clears_admin_requirement(admin_user):
 
 @pytest.mark.django_db
 def test_disable_mfa_for_self_clears_state_and_recovery_codes(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     confirm_mfa_enrollment("admin", code)
 
@@ -154,7 +154,7 @@ def test_disable_mfa_for_self_clears_state_and_recovery_codes(admin_user):
 
 @pytest.mark.django_db
 def test_disable_mfa_for_self_rejects_wrong_password(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     confirm_mfa_enrollment("admin", code)
 
@@ -189,7 +189,7 @@ def test_serialize_mfa_status_for_disabled_user(admin_user):
 
 @pytest.mark.django_db
 def test_serialize_mfa_status_for_pending_user(admin_user):
-    start_mfa_enrollment("admin")
+    start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     status = serialize_mfa_status(_refresh(admin_user))
 
     assert status["enabled"] is False
@@ -199,7 +199,7 @@ def test_serialize_mfa_status_for_pending_user(admin_user):
 
 @pytest.mark.django_db
 def test_serialize_mfa_status_for_enabled_user(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     confirm_mfa_enrollment("admin", code)
 
@@ -217,12 +217,12 @@ def test_serialize_mfa_status_for_enabled_user(admin_user):
 
 @pytest.mark.django_db
 def test_regenerate_recovery_codes_invalidates_old_and_returns_fresh_ones(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     enrolled = confirm_mfa_enrollment("admin", code)
     old_codes = set(enrolled["recovery_codes"])
 
-    result = regenerate_recovery_codes("admin")
+    result = regenerate_recovery_codes("admin", current_password=ADMIN_PASSWORD)
 
     assert result["status"] == "regenerated"
     new_codes = set(result["recovery_codes"])
@@ -236,12 +236,12 @@ def test_regenerate_recovery_codes_invalidates_old_and_returns_fresh_ones(admin_
 
 @pytest.mark.django_db
 def test_regenerate_recovery_codes_burns_old_codes(admin_user):
-    start_result = start_mfa_enrollment("admin")
+    start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
     code = pyotp.TOTP(start_result["secret"]).now()
     enrolled = confirm_mfa_enrollment("admin", code)
     old_code = enrolled["recovery_codes"][0]
 
-    regenerate_recovery_codes("admin")
+    regenerate_recovery_codes("admin", current_password=ADMIN_PASSWORD)
 
     # The previously valid recovery code must no longer match anything.
     assert consume_recovery_code(_refresh(admin_user), old_code) is False
@@ -250,10 +250,10 @@ def test_regenerate_recovery_codes_burns_old_codes(admin_user):
 @pytest.mark.django_db
 def test_regenerate_recovery_codes_rejects_when_mfa_disabled(admin_user):
     with pytest.raises(ValueError, match="mfa is not enabled"):
-        regenerate_recovery_codes("admin")
+        regenerate_recovery_codes("admin", current_password=ADMIN_PASSWORD)
 
 
 @pytest.mark.django_db
 def test_regenerate_recovery_codes_rejects_when_user_missing(db):
     with pytest.raises(ValueError, match="user not found"):
-        regenerate_recovery_codes("nobody")
+        regenerate_recovery_codes("nobody", current_password=ADMIN_PASSWORD)

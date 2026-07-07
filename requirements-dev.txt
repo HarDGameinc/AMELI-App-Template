@@ -42,3 +42,14 @@ django-stubs>=6.0,<7
 # patched version. detect-secrets and cyclonedx pull msgpack as
 # a dep.
 msgpack>=1.2.1,<2
+
+# Playwright e2e — mini-roadmap #12 (2026-06-23). pytest-playwright
+# is the Python-side wrapper that integrates browser-driven tests
+# with pytest fixtures. The ``playwright`` package itself bundles
+# the CDP client; the actual browser binaries (chromium, firefox,
+# webkit) are downloaded out-of-band by ``playwright install
+# chromium --with-deps``. CI installs them in the e2e job; local
+# devs run the same command on first use. NOT in runtime
+# requirements — these are test-only.
+pytest-playwright>=0.5,<1
+playwright>=1.47,<2

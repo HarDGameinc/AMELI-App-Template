@@ -42,7 +42,7 @@ camino oficial es `PostgreSQL`.
 
 ### Local
 
-- Python `3.11+`
+- Python `3.11+` (CI prueba 3.11 · 3.12 · 3.13 · 3.14)
 - `pip`
 - Git
 
@@ -177,7 +177,7 @@ cd /opt/ameli-app-dev
 ### 2. Crear base y usuario PostgreSQL
 
 ```bash
-sudo -u postgres psql
+su - postgres -c psql
 ```
 
 Dentro de `psql`:
@@ -240,9 +240,14 @@ la base esperada para una instalación Debian real.
 
 ### 6. Validar instalación
 
+`validate_installation.sh` **defaultea a `APP_ENV=prod`**. En una
+instalación `dev` hay que pasarle `APP_ENV=dev`, si no chequea la
+instancia prod (paths y units `*-prod-*` que no existen) y reporta FAIL
+espurios:
+
 ```bash
 cd /opt/ameli-app-dev
-bash scripts/validate_installation.sh
+APP_ENV=dev bash scripts/validate_installation.sh
 ```
 
 Revisión manual recomendada:

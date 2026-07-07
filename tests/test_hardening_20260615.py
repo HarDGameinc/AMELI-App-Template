@@ -17,6 +17,7 @@ prior commit:
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -225,13 +226,84 @@ def test_delete_my_account_endpoint_logs_user_out(client, public_user):
     # Subsequent request should be anonymous.
     follow = client.get("/profile/")
     assert follow.status_code == 302
-    assert "/login/" in follow["Location"]
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_rejects_malformed_json(client, public_user):
+    client.force_login(public_user)
+    response = client.post(
+        "/profile/delete-account/",
+        data=b"not-json{{{",
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert User.objects.filter(username=public_user.username).exists()
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_rejects_empty_password_json(client, public_user):
+    client.force_login(public_user)
+    response = client.post(
+        "/profile/delete-account/",
+        data=json.dumps({"password": ""}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert User.objects.filter(username=public_user.username).exists()
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_rejects_wrong_password_json(client, public_user):
+    client.force_login(public_user)
+    response = client.post(
+        "/profile/delete-account/",
+        data=json.dumps({"password": "not-the-password"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert User.objects.filter(username=public_user.username).exists()
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_form_post_empty_password_redirects(client, public_user):
+    """Non-JSON (form) submission with no password bounces back to
+    /profile/ with a flash message instead of a JSON error body."""
+    client.force_login(public_user)
+    response = client.post("/profile/delete-account/", data={})
+    assert response.status_code == 302
+    assert response["Location"].endswith("/profile/")
+    assert User.objects.filter(username=public_user.username).exists()
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_form_post_wrong_password_redirects(client, public_user):
+    client.force_login(public_user)
+    response = client.post("/profile/delete-account/", data={"password": "wrong"})
+    assert response.status_code == 302
+    assert response["Location"].endswith("/profile/")
+    assert User.objects.filter(username=public_user.username).exists()
+
+
+@pytest.mark.django_db
+def test_delete_my_account_endpoint_form_post_success_redirects_to_login(client, public_user):
+    client.force_login(public_user)
+    response = client.post("/profile/delete-account/", data={"password": USER_PASSWORD})
+    assert response.status_code == 302
+    assert response["Location"] == "/login/"
+    assert not User.objects.filter(username=public_user.username).exists()
 
 
 # ---------------------------------------------------------------------------
 # LOW code-review A2 — backup.sh exit-2 contract
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bash script + POSIX shell required; unavailable on Windows",
+)
 def test_backup_fail_helper_honours_explicit_exit_code(tmp_path):
     """Calling ``fail 2 "pg_dump failed"`` must exit with code 2; the
     legacy single-arg form still exits 1 so existing callers keep

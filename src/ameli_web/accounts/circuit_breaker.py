@@ -99,7 +99,7 @@ class CircuitBreaker:
                     transition = ""
         if transition:
             logger.warning(
-                "circuit_breaker.%s name=%s failures=%d cooldown_s=%.0f",
+                "circuit_breaker.%s name=%s failures=%d cooldown_s=%.1f",
                 transition, self.name, self._failure_count, self.cooldown_seconds,
             )
 

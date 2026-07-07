@@ -9,9 +9,17 @@ OutboundEmail retry queue actually drains without an operator running
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+# All tests source _common.sh through a real ``bash`` subprocess (POSIX
+# shell). Skip on Windows; the Linux CI matrix still runs them.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="sources _common.sh via a bash subprocess; POSIX-only",
+)
 
 COMMON_SH = Path(__file__).resolve().parents[1] / "scripts" / "_common.sh"
 

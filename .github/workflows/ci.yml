@@ -19,7 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        # Django 5.2 LTS supports Python 3.10-3.14. We test 3.11 (floor)
+        # through 3.14 — 3.13 is what the dev server runs, 3.14 what the
+        # dev workstation runs. The hash-locked requirements.lock already
+        # carries cp313/cp314 manylinux wheel hashes, so --require-hashes
+        # installs cleanly across the whole matrix without a lock regen.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     # Sensible default env so the test suite + management commands
     # boot without manual export. Mirrors the minimum the boot
@@ -164,3 +169,162 @@ jobs:
         run: |
           pip-audit --strict -r requirements.lock
           pip-audit --strict -r requirements-dev.lock
+
+  e2e:
+    # Mini-roadmap #12 (2026-06-23). Playwright + chromium drives a
+    # headless browser against pytest-django's live_server. Runs on
+    # push to dev/main and on PRs — separate from the matrix job so
+    # the unit suite stays under 2 min even when the e2e takes
+    # longer. The job downloads chromium on every run (no cache);
+    # the binary is ~140 MB but the install is fast on GitHub
+    # runners (~30 s).
+    name: E2E (Playwright + Chromium)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+
+      - name: Install dependencies (lockfiles, hash-verified)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+          pip install --require-hashes -r requirements-dev.lock
+          pip install -e . --no-deps
+
+      - name: Install Chromium for Playwright
+        # ``--with-deps`` pulls the OS libs chromium needs (libnss3,
+        # libxkbcommon, etc.). On GitHub's ubuntu-latest runner most
+        # of these are already present, but the flag makes the
+        # invocation idempotent across runner image refreshes.
+        run: |
+          python -m playwright install chromium --with-deps
+
+      - name: Apply migrations (clean DB for live_server)
+        env:
+          AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+          DJANGO_SETTINGS_MODULE: ameli_web.settings
+          # Force SQLite at a writable, predictable path. The runner
+          # has no Postgres; pytest-django builds its own ``test_*`` DB
+          # in the same dir at suite startup.
+          AMELI_APP_SQLITE_PATH: /tmp/ameli-e2e.sqlite3
+        working-directory: src
+        run: python -m django migrate --noinput
+
+      - name: Pytest (e2e suite only)
+        env:
+          AMELI_APP_DJANGO_SECRET_KEY: ci-e2e-secret-key
+          DJANGO_SETTINGS_MODULE: ameli_web.settings
+          AMELI_APP_SQLITE_PATH: /tmp/ameli-e2e.sqlite3
+          # pytest-playwright initialises an event loop in the main
+          # thread to back its sync API (the python ``page.click()``
+          # calls). Django's async-safety check then rejects ORM ops
+          # like ``connection.close()`` during ``create_test_db`` with
+          # SynchronousOnlyOperation. The escape hatch is documented
+          # by Django for exactly this scenario (sync ORM calls from
+          # a thread that happens to have a loop in the callstack).
+          # Scope is narrow: only applied inside the e2e job, never
+          # in the runtime image.
+          DJANGO_ALLOW_ASYNC_UNSAFE: "true"
+        run: |
+          python -m pytest tests/e2e/ -v --tb=short
+
+  js-unit:
+    # D-4 (2026-07-02). Unit tests for the pure JS helpers in app.js
+    # (password generator, strength evaluator, debounce) using Node's
+    # built-in test runner + mock timers — zero npm dependencies, no
+    # package.json, no build step. app.js guards its DOM bootstrap on
+    # ``typeof document`` so it is ``require``-able under node:test.
+    name: JS unit tests (node:test)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        # v6 runs on the node24 action runtime — v4 targeted the
+        # deprecated node20 (GitHub forces it onto node24 with a
+        # warning). checkout@v5 / setup-python@v6 are already on node24.
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Run JS unit tests
+        run: node --test tests/js/*.test.js
+
+  test-postgres:
+    # TECH_EVOLUTION.md top pick (2026-07-03). The matrix above runs the
+    # suite on SQLite, but production is PostgreSQL — and behaviours
+    # diverge: ``select_for_update()`` (the throttling gate) is a real row
+    # lock on Postgres and a near-no-op on SQLite; transaction / constraint
+    # / isolation semantics differ. This job runs the same unit suite
+    # against a real Postgres so the gate is exercised the way it ships.
+    # One Python version (3.13 = what the dev server runs) is enough — the
+    # matrix already covers Python-version spread on SQLite.
+    name: Test (PostgreSQL)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ameli
+          POSTGRES_PASSWORD: ameli
+          POSTGRES_DB: ameli_ci
+        ports:
+          - 5432:5432
+        # Wait for the container to accept connections before the steps run.
+        options: >-
+          --health-cmd "pg_isready -U ameli"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SETTINGS_MODULE: ameli_web.settings
+      AMELI_APP_SECRET_KEY: ci-secret-key-not-for-production-xxxxxxxxxxxxxxx
+      AMELI_APP_ALLOWED_HOSTS: "*"
+      AMELI_APP_TRUSTED_PROXIES: "127.0.0.1,::1"
+      AMELI_APP_DEBUG: "false"
+      # Selects the Postgres backend (settings/database.py reads
+      # ``DATABASE_URL``); when set, the SQLite fallback is not used.
+      # pytest-django builds its own ``test_ameli_ci`` DB from migrations.
+      DATABASE_URL: "postgresql://ameli:ameli@localhost:5432/ameli_ci"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+          pip install -e . --no-deps
+
+      - name: Migrations apply cleanly on Postgres
+        working-directory: src
+        run: python -m django migrate --noinput
+
+      - name: Pytest (against Postgres)
+        # No coverage gate here — the SQLite matrix owns the coverage floor.
+        # This job's job is backend fidelity, not coverage.
+        run: pytest -q --tb=short

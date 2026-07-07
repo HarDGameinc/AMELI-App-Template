@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,14 @@ def test_restore_script_supports_verify_mode():
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "restore.sh passes the archive to tar with a Windows drive-letter "
+        "path (C:\\...), which GNU tar misreads as a remote host:path "
+        "(`Cannot connect to C:`). POSIX-only; validated on the Linux CI."
+    ),
+)
 def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
     """Manually craft a fake archive with a mismatching checksum and
     confirm verify mode fails loudly."""
@@ -152,7 +161,7 @@ def test_restore_verify_rejects_corrupted_manifest(stage, tmp_path):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
 @pytest.mark.skipif(
-    os.geteuid() != 0,
+    not hasattr(os, "geteuid") or os.geteuid() != 0,
     reason="backup.sh::require_root refuses non-root callers; CI runners are non-root by default",
 )
 def test_backup_restore_sqlite_round_trip(stage, tmp_path):
@@ -211,7 +220,7 @@ def test_backup_restore_sqlite_round_trip(stage, tmp_path):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash unavailable")
 @pytest.mark.skipif(
-    os.geteuid() != 0,
+    not hasattr(os, "geteuid") or os.geteuid() != 0,
     reason="backup.sh::require_root refuses non-root callers",
 )
 def test_backup_restore_round_trip_preserves_data_dir(stage, tmp_path):

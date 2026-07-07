@@ -32,8 +32,14 @@ def _reload_settings(monkeypatch, *, env: str = "dev", **env_vars: str | None):
             "AMELI_APP_MFA_ENCRYPTION_KEY",
             "kj9_Vh-rExdXrPm7TZWQ8a9oU8gPpYHN-mDz2LfqHy0=",
         )
-    if "ameli_web.settings" in sys.modules:
-        del sys.modules["ameli_web.settings"]
+    # After PC-4 (2026-07-01) ``ameli_web.settings`` is a package whose
+    # submodules cache their own module-level guards. Wipe every
+    # ``ameli_web.settings*`` entry so guards re-fire on every reload.
+    for cached_name in [
+        name for name in sys.modules
+        if name == "ameli_web.settings" or name.startswith("ameli_web.settings.")
+    ]:
+        sys.modules.pop(cached_name, None)
     return importlib.import_module("ameli_web.settings")
 
 

@@ -222,7 +222,7 @@ def test_throttle_sliding_window_folds_in_previous_bucket(settings):
     )
 
     with patch(
-        "ameli_web.accounts.services.timezone.now",
+        "ameli_web.accounts.services.throttle.timezone.now",
         return_value=fixed_now,
     ):
         sliding = _read_throttle_counter_sliding(
@@ -284,7 +284,7 @@ def test_throttle_sliding_window_rounds_prev_contribution_up(settings):
     # Pin "now" to 1ms into the new bucket -> prev_weight ~ 0.99999
     now_at_boundary = cur_bucket + timedelta(milliseconds=1)
     with patch(
-        "ameli_web.accounts.services.timezone.now",
+        "ameli_web.accounts.services.throttle.timezone.now",
         return_value=now_at_boundary,
     ):
         sliding = _read_throttle_counter_sliding(

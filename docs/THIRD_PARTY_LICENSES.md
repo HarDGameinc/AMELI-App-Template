@@ -12,8 +12,8 @@ Regenerate after a dependency bump:
 pip install pip-licenses
 pip-licenses --from=mixed --order=license \
     --format=markdown \
-    --packages alembic argon2-cffi Django Pillow psycopg pyotp \
-               python-dateutil PyYAML qrcode SQLAlchemy uvicorn \
+    --packages argon2-cffi Django Pillow psycopg pyotp \
+               python-dateutil PyYAML qrcode uvicorn \
     > docs/THIRD_PARTY_LICENSES.generated.md
 ```
 
@@ -25,7 +25,6 @@ notes (e.g. LGPL implications for psycopg).
 
 | Package | Version pin | License | Notes |
 | --- | --- | --- | --- |
-| alembic | ~=1.13 | MIT | Migration tooling; only used by the optional SQLAlchemy path. |
 | argon2-cffi | ~=23.1 | MIT | Argon2id password hashing backend. |
 | Django | ~=5.2 | BSD-3-Clause | Web framework. Copyright (c) Django Software Foundation. |
 | Pillow | ~=11.0 | MIT-CMU (HPND) | Avatar pipeline (decode + Lanczos resize + re-encode). |
@@ -34,7 +33,6 @@ notes (e.g. LGPL implications for psycopg).
 | python-dateutil | ~=2.9 | Apache-2.0 / BSD-3 dual | Used by Django; we link the Apache-2.0 NOTICE here. |
 | PyYAML | ~=6.0 | MIT | Config + handoff parser. |
 | qrcode | ~=7.4 | BSD-3-Clause | TOTP enrollment QR. |
-| SQLAlchemy | ~=2.0 | MIT | Optional async/raw SQL surface. |
 | uvicorn[standard] | ~=0.30 | BSD-3-Clause | ASGI server. |
 
 ## Development / test dependencies
@@ -49,6 +47,7 @@ These are NOT shipped in the runtime artifact but appear in
 | pytest-django | ~=4.9 | BSD-3-Clause |
 | ruff | ~=0.6 | MIT |
 | pip-audit | ~=2.7 | Apache-2.0 |
+| axe-core (vendored) | 4.10.2 | **MPL-2.0** | Vendored at `tests/e2e/vendor/axe.min.js` for the Playwright accessibility smoke. Test-only (not shipped in the runtime artifact), unmodified, MPL header preserved. File-level copyleft applies only to `axe.min.js` itself, which we do not modify — no effect on the template's MIT license. Not a pip dependency (kept out of the hash-locked `requirements*.lock`). |
 
 ## LGPL note (psycopg)
 

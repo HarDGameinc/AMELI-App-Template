@@ -151,7 +151,7 @@ def test_messages_region_has_aria_live():
 # ---------------------------------------------------------------------------
 
 def test_css_has_skip_link_styles():
-    css = CSS.read_text()
+    css = CSS.read_text(encoding="utf-8")
     assert ".skip-link" in css
     assert ".skip-link:focus" in css
 
@@ -160,11 +160,11 @@ def test_css_has_focus_visible_rule():
     """Without an explicit :focus-visible rule, a custom outline:none
     deeper in the cascade can defeat keyboard navigation.
     """
-    css = CSS.read_text()
+    css = CSS.read_text(encoding="utf-8")
     assert ":focus-visible" in css
     assert "outline:2px solid" in css or "outline: 2px solid" in css
 
 
 def test_css_honors_prefers_reduced_motion():
-    css = CSS.read_text()
+    css = CSS.read_text(encoding="utf-8")
     assert "@media (prefers-reduced-motion: reduce)" in css

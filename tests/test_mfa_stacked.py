@@ -60,15 +60,15 @@ def _refresh(user):
     return User.objects.get(pk=user.pk)
 
 
-def _enroll_totp(username: str) -> str:
-    start = start_mfa_enrollment(username)
+def _enroll_totp(username: str, password: str = USER_PASSWORD) -> str:
+    start = start_mfa_enrollment(username, current_password=password)
     confirm_mfa_enrollment(username, pyotp.TOTP(start["secret"]).now())
     return start["secret"]
 
 
-def _enroll_email(username: str) -> None:
+def _enroll_email(username: str, password: str = USER_PASSWORD) -> None:
     mail.outbox.clear()
-    start_mfa_email_enrollment(username)
+    start_mfa_email_enrollment(username, current_password=password)
     code = None
     for line in mail.outbox[-1].body.splitlines():
         if line.strip().isdigit() and len(line.strip()) == 6:
@@ -149,7 +149,7 @@ def test_confirm_second_method_returns_empty_recovery_codes_payload(viewer):
 
     user = _refresh(viewer)
     _stale_last_challenge(user)
-    start_mfa_email_enrollment("viewer")
+    start_mfa_email_enrollment("viewer", current_password=USER_PASSWORD)
     code = None
     for line in mail.outbox[-1].body.splitlines():
         if line.strip().isdigit() and len(line.strip()) == 6:

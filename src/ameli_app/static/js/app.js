@@ -13,8 +13,6 @@ async function refreshHealthBadge() {
   }
 }
 
-refreshHealthBadge();
-
 function setupUserMenu() {
   const toggle = document.querySelector("[data-user-menu-toggle]");
   const panel = document.querySelector("[data-user-menu-panel]");
@@ -46,17 +44,28 @@ function setupUserMenu() {
   });
 }
 
-setupUserMenu();
-
 const AMELI_PASSWORD_SYMBOLS = "!@#$%^&*()-_=+?";
 
 function ameliRandomIndex(max) {
-  if (window.crypto?.getRandomValues) {
-    const values = new Uint32Array(1);
-    window.crypto.getRandomValues(values);
-    return values[0] % max;
+  // Cryptographic randomness is REQUIRED. ``Math.random`` is a PRNG
+  // (seeded once per browsing context, no entropy injection) so the
+  // output is predictable to anyone who can observe the sequence.
+  // Falling back silently would let a TLS-stripping intermediary or
+  // a forensic adversary regenerate the password offline. Refuse
+  // instead of producing a weak credential.
+  // (SKILLS_REVIEW §4 Security MEDIUM, 2026-06-25.)
+  // ``globalThis.crypto`` is the Web Crypto API in browsers AND in
+  // Node (global since Node 20) — using it instead of ``window.crypto``
+  // lets the pure helpers run under node:test without a DOM.
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
+    throw new Error(
+      "crypto.getRandomValues is unavailable; refusing to generate a password with non-cryptographic randomness."
+    );
   }
-  return Math.floor(Math.random() * max);
+  const values = new Uint32Array(1);
+  cryptoObj.getRandomValues(values);
+  return values[0] % max;
 }
 
 function ameliGeneratePassword(length = 18) {
@@ -64,20 +73,27 @@ function ameliGeneratePassword(length = 18) {
   const lower = "abcdefghijkmnopqrstuvwxyz";
   const digits = "23456789";
   const all = upper + lower + digits + AMELI_PASSWORD_SYMBOLS;
-  const chars = [
-    upper[ameliRandomIndex(upper.length)],
-    lower[ameliRandomIndex(lower.length)],
-    digits[ameliRandomIndex(digits.length)],
-    AMELI_PASSWORD_SYMBOLS[ameliRandomIndex(AMELI_PASSWORD_SYMBOLS.length)],
-  ];
-  while (chars.length < length) {
-    chars.push(all[ameliRandomIndex(all.length)]);
+  try {
+    const chars = [
+      upper[ameliRandomIndex(upper.length)],
+      lower[ameliRandomIndex(lower.length)],
+      digits[ameliRandomIndex(digits.length)],
+      AMELI_PASSWORD_SYMBOLS[ameliRandomIndex(AMELI_PASSWORD_SYMBOLS.length)],
+    ];
+    while (chars.length < length) {
+      chars.push(all[ameliRandomIndex(all.length)]);
+    }
+    for (let index = chars.length - 1; index > 0; index -= 1) {
+      const swapIndex = ameliRandomIndex(index + 1);
+      [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
+    }
+    return chars.join("");
+  } catch (error) {
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("Password generator unavailable:", error);
+    }
+    return "";
   }
-  for (let index = chars.length - 1; index > 0; index -= 1) {
-    const swapIndex = ameliRandomIndex(index + 1);
-    [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
-  }
-  return chars.join("");
 }
 
 function ameliEvaluatePasswordStrength(value) {
@@ -111,8 +127,6 @@ function setupGlobalPasswordVisibilityToggle() {
     if (icon) icon.textContent = nextType === "password" ? "visibility" : "visibility_off";
   });
 }
-
-setupGlobalPasswordVisibilityToggle();
 
 function setupPasswordForm(container, options = {}) {
   if (!(container instanceof Element)) return null;
@@ -198,6 +212,15 @@ function setupPasswordForm(container, options = {}) {
 
   generateButton?.addEventListener("click", () => {
     const value = ameliGeneratePassword();
+    if (!value) {
+      // ``ameliGeneratePassword`` returns "" when crypto.getRandomValues
+      // is unavailable. Surface the error and DO NOT touch the inputs
+      // so the user is not silently handed a weak / blank credential.
+      if (feedback instanceof HTMLElement) {
+        feedback.textContent = "No pudimos generar la clave: tu navegador no expone una fuente segura de aleatoriedad.";
+      }
+      return;
+    }
     newInput.value = value;
     reveal(newInput);
     if (confirmInput instanceof HTMLInputElement) {
@@ -220,12 +243,14 @@ function setupPasswordForm(container, options = {}) {
   };
 }
 
-window.AmeliPassword = {
-  SYMBOLS: AMELI_PASSWORD_SYMBOLS,
-  generate: ameliGeneratePassword,
-  evaluate: ameliEvaluatePasswordStrength,
-  setupForm: setupPasswordForm,
-};
+if (typeof window !== "undefined") {
+  window.AmeliPassword = {
+    SYMBOLS: AMELI_PASSWORD_SYMBOLS,
+    generate: ameliGeneratePassword,
+    evaluate: ameliEvaluatePasswordStrength,
+    setupForm: setupPasswordForm,
+  };
+}
 
 
 // ---- Pagination AJAX swap ----
@@ -294,10 +319,12 @@ function buildFilterFormUrl(form, panel) {
 }
 
 function debounce(fn, delay) {
+  // Bare ``setTimeout`` / ``clearTimeout`` (not ``window.``-prefixed) so
+  // the helper works both in the browser and under node:test.
   let timer;
   return (...args) => {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => fn(...args), delay);
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
   };
 }
 
@@ -374,9 +401,6 @@ function setupPaginationSwap() {
   });
 }
 
-setupPaginationSwap();
-
-
 // ---- Audit date range presets ----
 //
 // Buttons inside ``[data-audit-date-presets]`` set the ``audit_date_from``
@@ -431,9 +455,6 @@ function setupAuditDatePresets() {
   });
 }
 
-setupAuditDatePresets();
-
-
 // ---- Back to top button ----
 //
 // Injects a single floating button bottom-right that appears once the
@@ -477,4 +498,258 @@ function setupBackToTop() {
   });
 }
 
-setupBackToTop();
+// ---- Avatar cropper (progressive enhancement) ----
+//
+// When the user picks an image in the avatar form we reveal a square
+// canvas viewport they can pan (drag / arrow keys) and zoom (slider) to
+// choose the framing. On submit we render the visible square to an
+// offscreen canvas, export it to a Blob, and swap it into the file input
+// via ``DataTransfer`` so the NATIVE form submit carries the cropped
+// image — the D-5 server pipeline (resize + WebP + strip EXIF) then does
+// the rest. No fetch, no CSRF handling: the existing hidden token rides
+// along.
+//
+// The source image is read with ``FileReader.readAsDataURL`` (a ``data:``
+// URL) NOT ``URL.createObjectURL`` (a ``blob:`` URL) so it loads under the
+// app CSP ``img-src 'self' data:`` without relaxing the policy.
+//
+// Everything is feature-gated: a browser missing canvas 2D, FileReader or
+// DataTransfer keeps the plain file input, which submits the raw file and
+// lets the server pipeline handle it. No JS, no cropper, still works.
+function setupAvatarCropper() {
+  const form = document.querySelector("[data-avatar-crop-form]");
+  const input = document.querySelector("[data-avatar-crop-input]");
+  const cropper = document.querySelector("[data-avatar-cropper]");
+  const canvas = document.querySelector("[data-avatar-crop-canvas]");
+  const zoom = document.querySelector("[data-avatar-crop-zoom]");
+  if (!form || !input || !cropper || !(canvas instanceof HTMLCanvasElement) || !zoom) return;
+
+  const ctx = canvas.getContext("2d");
+  const supported =
+    ctx &&
+    typeof window.FileReader === "function" &&
+    typeof window.DataTransfer === "function" &&
+    typeof canvas.toBlob === "function";
+  if (!supported) return;
+
+  const EXPORT_SIZE = 512;       // matches the server AVATAR_MAX_DIMENSION default
+  const KEY_PAN_STEP = 12;       // px per arrow-key press
+  const view = canvas.width;     // drawing-buffer is square (240)
+
+  const state = { image: null, baseScale: 1, scale: 1, offsetX: 0, offsetY: 0 };
+
+  function clampOffsets(drawW, drawH) {
+    // Keep the image covering the viewport — never expose empty gaps.
+    state.offsetX = Math.min(0, Math.max(view - drawW, state.offsetX));
+    state.offsetY = Math.min(0, Math.max(view - drawH, state.offsetY));
+  }
+
+  function effScale() {
+    return state.baseScale * state.scale;
+  }
+
+  function draw() {
+    if (!state.image) return;
+    const s = effScale();
+    const drawW = state.image.naturalWidth * s;
+    const drawH = state.image.naturalHeight * s;
+    clampOffsets(drawW, drawH);
+    ctx.clearRect(0, 0, view, view);
+    ctx.drawImage(state.image, state.offsetX, state.offsetY, drawW, drawH);
+  }
+
+  function loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const iw = image.naturalWidth;
+        const ih = image.naturalHeight;
+        if (!iw || !ih) {
+          cropper.hidden = true;
+          return;
+        }
+        state.image = image;
+        // "cover" fit: smallest scale that fills the square viewport.
+        state.baseScale = Math.max(view / iw, view / ih);
+        state.scale = 1;
+        zoom.value = "1";
+        const drawW = iw * state.baseScale;
+        const drawH = ih * state.baseScale;
+        state.offsetX = (view - drawW) / 2;
+        state.offsetY = (view - drawH) / 2;
+        cropper.hidden = false;
+        draw();
+      };
+      image.onerror = () => {
+        // Not a decodable image — let the native submit + server form
+        // validation reject it with a proper message.
+        state.image = null;
+        cropper.hidden = true;
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.onerror = () => {
+      state.image = null;
+      cropper.hidden = true;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (!file || !String(file.type || "").startsWith("image/")) {
+      state.image = null;
+      cropper.hidden = true;
+      return;
+    }
+    loadImage(file);
+  });
+
+  zoom.addEventListener("input", () => {
+    if (!state.image) return;
+    const prev = effScale();
+    state.scale = Number(zoom.value) || 1;
+    const next = effScale();
+    // Zoom around the viewport centre so the framing stays put.
+    const centre = view / 2;
+    const ratio = next / prev;
+    state.offsetX = centre - (centre - state.offsetX) * ratio;
+    state.offsetY = centre - (centre - state.offsetY) * ratio;
+    draw();
+  });
+
+  // Pointer drag to pan.
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startOffsetX = 0;
+  let startOffsetY = 0;
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!state.image) return;
+    dragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    startOffsetX = state.offsetX;
+    startOffsetY = state.offsetY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragging || !state.image) return;
+    // Canvas CSS size may differ from its drawing buffer; scale the
+    // pointer delta into buffer coordinates.
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? view / rect.width : 1;
+    const scaleY = rect.height ? view / rect.height : 1;
+    state.offsetX = startOffsetX + (event.clientX - startX) * scaleX;
+    state.offsetY = startOffsetY + (event.clientY - startY) * scaleY;
+    draw();
+  });
+  function endDrag(event) {
+    if (!dragging) return;
+    dragging = false;
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+
+  // Keyboard pan for accessibility.
+  canvas.addEventListener("keydown", (event) => {
+    if (!state.image) return;
+    const moves = {
+      ArrowLeft: [KEY_PAN_STEP, 0],
+      ArrowRight: [-KEY_PAN_STEP, 0],
+      ArrowUp: [0, KEY_PAN_STEP],
+      ArrowDown: [0, -KEY_PAN_STEP],
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    state.offsetX += move[0];
+    state.offsetY += move[1];
+    draw();
+  });
+
+  function dataUrlToBlob(dataUrl) {
+    const comma = dataUrl.indexOf(",");
+    const header = dataUrl.slice(0, comma);
+    const mime = (header.match(/data:([^;]+)/) || [])[1] || "image/png";
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  function buildCroppedFile() {
+    const out = document.createElement("canvas");
+    out.width = EXPORT_SIZE;
+    out.height = EXPORT_SIZE;
+    const outCtx = out.getContext("2d");
+    if (!outCtx) return null;
+    const s = effScale();
+    // Source rectangle under the viewport, mapped back to image pixels.
+    const sx = -state.offsetX / s;
+    const sy = -state.offsetY / s;
+    const sSize = view / s;
+    outCtx.drawImage(state.image, sx, sy, sSize, sSize, 0, 0, EXPORT_SIZE, EXPORT_SIZE);
+    // ``toDataURL`` is SYNCHRONOUS (unlike ``toBlob``), so the file swap
+    // in the submit handler happens inside the submit event's own tick —
+    // the native submission then serialises the cropped file with no
+    // preventDefault and no deferred re-submit. Keeping the
+    // click -> navigation chain synchronous is what the browser AND
+    // Playwright's auto-wait expect (the async path broke the e2e).
+    // Prefer WebP; fall back to PNG if the encoder declined.
+    let ext = "webp";
+    let dataUrl = out.toDataURL("image/webp", 0.9);
+    if (dataUrl.indexOf("data:image/webp") !== 0) {
+      dataUrl = out.toDataURL("image/png");
+      ext = "png";
+    }
+    return new File([dataUrlToBlob(dataUrl)], `avatar.${ext}`, { type: `image/${ext}` });
+  }
+
+  form.addEventListener("submit", () => {
+    // No image staged (a non-image was picked, or it hasn't decoded yet)
+    // -> let the native submit carry whatever the input holds.
+    if (!state.image || cropper.hidden) return;
+    const file = buildCroppedFile();
+    if (!file) return; // ctx unavailable -> native submit with the raw file
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    // Swap the cropped image into the file input synchronously. We do NOT
+    // preventDefault: the browser serialises the form (with the updated
+    // files) after this handler returns, so the submission stays native
+    // and the click -> redirect chain is synchronous.
+    input.files = transfer.files;
+  });
+}
+
+// ---- Bootstrap (browser only) ----
+//
+// Guard on ``document`` so this file can be ``require``d in Node for unit
+// tests (node:test, see tests/js/) WITHOUT a DOM. The DOM wiring only
+// runs in a browser; the pure helpers are exported for Node below. In
+// the browser this runs at load (the <script> sits at the end of <body>),
+// identical to the previous scattered invocations.
+if (typeof document !== "undefined") {
+  refreshHealthBadge();
+  setupUserMenu();
+  setupGlobalPasswordVisibilityToggle();
+  setupPaginationSwap();
+  setupAuditDatePresets();
+  setupBackToTop();
+  setupAvatarCropper();
+}
+
+// CommonJS export surface for node:test. ``module`` is undefined in the
+// browser, so this is a no-op there.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    PASSWORD_SYMBOLS: AMELI_PASSWORD_SYMBOLS,
+    generatePassword: ameliGeneratePassword,
+    evaluatePasswordStrength: ameliEvaluatePasswordStrength,
+    debounce,
+  };
+}

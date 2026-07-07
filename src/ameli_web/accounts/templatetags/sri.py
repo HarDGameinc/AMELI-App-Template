@@ -73,9 +73,9 @@ def sri_for(relative_path: str) -> SafeString:
     """
     absolute_path = finders.find(relative_path)
     if not absolute_path or not isinstance(absolute_path, str):
-        return mark_safe("")  # noqa: S308 - empty literal, no user input
+        return mark_safe("")  # noqa: S308  # nosec B308 B703 - empty literal, no user input
     try:
         digest = _compute_sri(absolute_path)
     except OSError:
-        return mark_safe("")  # noqa: S308 - empty literal, no user input
-    return mark_safe(f' integrity="{digest}"')  # noqa: S308 - SRI digest is base64
+        return mark_safe("")  # noqa: S308  # nosec B308 B703 - empty literal, no user input
+    return mark_safe(f' integrity="{digest}"')  # noqa: S308  # nosec B308 B703 - SRI digest is base64 sha384 + leading attribute markup, no operator input

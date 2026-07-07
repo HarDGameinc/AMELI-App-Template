@@ -67,16 +67,16 @@ def _age_last_challenge(user, *, minutes: int = 2) -> None:
     challenge.save(update_fields=["created_at"])
 
 
-def _enroll_totp(username: str) -> str:
-    start = start_mfa_enrollment(username)
+def _enroll_totp(username: str, password: str = USER_PASSWORD) -> str:
+    start = start_mfa_enrollment(username, current_password=password)
     code = pyotp.TOTP(start["secret"]).now()
     confirm_mfa_enrollment(username, code)
     return start["secret"]
 
 
-def _enroll_email(user) -> None:
+def _enroll_email(user, password: str = USER_PASSWORD) -> None:
     mail.outbox.clear()
-    start_mfa_email_enrollment(user.username)
+    start_mfa_email_enrollment(user.username, current_password=password)
     code = _extract_code_from_outbox()
     confirm_mfa_email_enrollment(user.username, code)
     _age_last_challenge(user)
@@ -102,6 +102,55 @@ def test_profile_renders_two_inactive_cards_when_no_mfa(client, public_user):
     assert 'data-mfa-active="0"' in body
     assert 'id="profile-mfa-activate"' in body
     assert 'id="profile-mfa-email-activate"' in body
+
+
+@pytest.mark.django_db
+def test_profile_activate_cards_use_inline_password_not_prompt(client, public_user):
+    # D-2: MFA re-auth moved from native window.prompt() to inline
+    # password fields (matching the disable flow). Assert the inline
+    # inputs render and no native prompt survives in the shipped JS.
+    client.force_login(public_user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-totp-activate-password"' in body
+    assert 'id="profile-mfa-email-activate-password"' in body
+    assert "window.prompt(" not in body
+
+
+@pytest.mark.django_db
+def test_profile_regenerate_uses_inline_password(client, public_user):
+    # D-2: regenerating recovery codes now re-auths via an inline
+    # password field instead of confirm() + window.prompt().
+    _enroll_totp("viewer")
+    client.force_login(public_user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-regenerate-password"' in body
+    assert 'id="profile-mfa-regenerate"' in body
+    assert "window.prompt(" not in body
+
+
+@pytest.mark.django_db
+def test_profile_email_activate_password_hidden_without_email(client, admin_user):
+    # Without a registered email, the email-activate button is disabled
+    # and its inline password field is not rendered (nothing to submit).
+    create_user_account(
+        actor_username="admin",
+        username="noemail",
+        password=USER_PASSWORD,
+        role="public",
+    )
+    user = User.objects.get(username="noemail")
+    client.force_login(user)
+
+    response = client.get("/profile/")
+
+    body = _body(response)
+    assert 'id="profile-mfa-email-activate-password"' not in body
 
 
 @pytest.mark.django_db
@@ -369,3 +418,20 @@ def test_admin_panel_renders_2fa_off_for_unenrolled_user(client, admin_user, pub
 
     body = _body(response)
     assert "2FA off" in body
+
+
+@pytest.mark.django_db
+def test_admin_panel_loads_external_js_with_sri(client, admin_user):
+    # Frontend-debt split: the panel behaviour lives in the external,
+    # SRI-protected admin-panel.js. The page must reference it and inject
+    # the CSRF token via the #admin-js-config data element, not inline JS.
+    client.force_login(admin_user)
+
+    response = client.get("/admin/")
+
+    body = _body(response)
+    assert "js/admin-panel.js" in body
+    assert 'integrity="sha384-' in body
+    assert 'id="admin-js-config"' in body
+    assert "data-csrf-token" in body
+    assert "DOMContentLoaded" not in body  # no inline script left behind

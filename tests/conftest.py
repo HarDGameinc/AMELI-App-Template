@@ -24,3 +24,17 @@ def config_path() -> Path:
 def app_settings(config_path: Path):
     return load_settings(config_path=config_path)
 
+
+def pytest_addoption(parser):
+    """Global pytest CLI option declared at the root conftest as
+    pytest requires (subdirectory conftests cannot register
+    ``pytest_addoption``). The flag is consumed by
+    ``tests/e2e/conftest.py:pytest_collection_modifyitems`` to opt
+    into the Playwright e2e suite."""
+    parser.addoption(
+        "--run-e2e",
+        action="store_true",
+        default=False,
+        help="run the Playwright e2e tests in tests/e2e/",
+    )
+

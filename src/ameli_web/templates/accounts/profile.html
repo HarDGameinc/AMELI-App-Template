@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% load static %}
+{% load sri %}
 
 {% block title %}Mi perfil - {{ app_name }}{% endblock %}
 {% block header_title %}Mi perfil{% endblock %}
@@ -57,6 +59,7 @@
           {% if current_user.enabled %}Activo{% else %}Deshabilitado{% endif %}
         </span>
         <span class="profile-meta-chip">Tema: {{ current_user.display_theme_label }}</span>
+        <span class="profile-meta-chip">Color: {{ current_user.display_palette_label }}</span>
         <span class="profile-meta-chip">{% if current_user.must_change_password %}Cambio obligatorio{% else %}Clave vigente{% endif %}</span>
       </div>
     </div>
@@ -123,6 +126,14 @@
           <label class="modal-form-label" for="{{ preferences_form.theme_preference.id_for_label }}">Tema preferido</label>
           {{ preferences_form.theme_preference }}
         </div>
+        <div class="modal-form-row">
+          <span class="modal-form-label">Color de la interfaz</span>
+          {# RadioSelect styled as color swatches (.palette-swatches in app.css). #}
+          {# The mode (claro/oscuro/auto) above and the palette here are #}
+          {# independent axes; both apply on save + reload. #}
+          <div class="palette-swatches">{{ preferences_form.color_theme }}</div>
+          <div class="modal-form-help">Cambia fondos, bordes y acentos. Se combina con el tema claro/oscuro/auto.</div>
+        </div>
         <div class="modal-form-help">
           El email se gestiona en su propia tarjeta de Seguridad — necesita contrasena y confirmacion en la nueva direccion.
         </div>
@@ -143,11 +154,32 @@
         <div class="metric-label">Imagen de perfil</div>
         <p class="muted panel-copy">JPEG, PNG, WebP o GIF. Maximo 3 MB. Se valida y se escanea por antivirus antes de guardar.</p>
       </div>
-      <form id="avatar-form" class="form-card" method="post" enctype="multipart/form-data" action="{% url 'accounts:profile-avatar' %}">
+      <form id="avatar-form" class="form-card" method="post" enctype="multipart/form-data" action="{% url 'accounts:profile-avatar' %}" data-avatar-crop-form>
         {% csrf_token %}
         <div class="modal-form-row">
           <label class="modal-form-label" for="avatar-file-input">Nueva imagen</label>
-          <input id="avatar-file-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required>
+          <input id="avatar-file-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required data-avatar-crop-input>
+        </div>
+        {% comment %}
+          Cropper opcional (progressive enhancement). Oculto por defecto:
+          setupAvatarCropper() en app.js lo revela solo si el navegador
+          soporta canvas + FileReader + DataTransfer. Sin JS, el <input>
+          de arriba sube el archivo tal cual y el pipeline D-5 lo procesa.
+          La imagen se lee como data: URL (no blob:) para respetar la CSP
+          ``img-src 'self' data:`` sin relajarla.
+        {% endcomment %}
+        <div class="avatar-cropper" data-avatar-cropper hidden>
+          <div class="avatar-crop-preview-shell avatar-crop-stage">
+            <canvas class="avatar-crop-canvas" data-avatar-crop-canvas width="240" height="240"
+                    tabindex="0" role="img"
+                    aria-label="Previsualizacion recortable del avatar. Arrastra o usa las flechas para reencuadrar."></canvas>
+          </div>
+          <div class="avatar-crop-controls">
+            <label class="modal-form-label" for="avatar-crop-zoom">Zoom</label>
+            <input id="avatar-crop-zoom" class="avatar-crop-zoom" type="range" min="1" max="3" step="0.01" value="1"
+                   data-avatar-crop-zoom aria-label="Zoom del recorte">
+            <p class="modal-form-help">Arrastra la imagen (o usa las flechas) para elegir que se muestra. Se guarda el area cuadrada visible.</p>
+          </div>
         </div>
         <div class="modal-actions-row">
           <button class="primary" type="submit">Subir avatar</button>
@@ -340,6 +372,15 @@
           </div>
           <p class="muted" id="profile-mfa-totp-disable-feedback"></p>
           {% else %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-totp-activate-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-totp-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-totp-activate-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-activate" type="button">
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">smartphone</span>
@@ -372,6 +413,17 @@
           </div>
           <p class="muted" id="profile-mfa-email-disable-feedback"></p>
           {% else %}
+          {% if mfa_status.has_email %}
+          <div class="modal-form-row" style="margin-top:8px;">
+            <label class="modal-form-label" for="profile-mfa-email-activate-password">Contrasena actual</label>
+            <div class="modal-input-with-action">
+              <input id="profile-mfa-email-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
+              <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-email-activate-password" aria-label="Mostrar u ocultar contrasena">
+                <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
+          {% endif %}
           <div class="modal-actions-row">
             <button class="primary" id="profile-mfa-email-activate" type="button"{% if not mfa_status.has_email %} disabled{% endif %}>
               <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
@@ -387,11 +439,24 @@
       <p class="muted" id="profile-mfa-activate-feedback"></p>
 
       {% if mfa_status.enabled %}
-      <div class="modal-actions-row" style="margin-top:14px;">
-        <button class="icon-action" type="button" id="profile-mfa-regenerate">
-          <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
-          <span>Regenerar codigos de recuperacion</span>
-        </button>
+      <div class="form-card" style="margin-top:14px;">
+        <p class="muted panel-copy warn-text"><strong>Regenerar reemplaza todos tus codigos actuales:</strong> los que tengas guardados dejaran de funcionar. Confirma con tu contrasena.</p>
+        <div class="modal-form-row">
+          <label class="modal-form-label" for="profile-mfa-regenerate-password">Contrasena actual</label>
+          <div class="modal-input-with-action">
+            <input id="profile-mfa-regenerate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para regenerar">
+            <button class="icon-button password-visibility-toggle" type="button" data-password-toggle="profile-mfa-regenerate-password" aria-label="Mostrar u ocultar contrasena">
+              <span class="material-symbols-rounded icon-glyph" aria-hidden="true">visibility</span>
+            </button>
+          </div>
+        </div>
+        <div class="modal-actions-row">
+          <button class="icon-action" type="button" id="profile-mfa-regenerate">
+            <span class="material-symbols-rounded icon-glyph" aria-hidden="true">replay</span>
+            <span>Regenerar codigos de recuperacion</span>
+          </button>
+        </div>
+        <p class="muted" id="profile-mfa-regenerate-feedback" aria-live="polite"></p>
       </div>
       {% endif %}
     </div>
@@ -526,456 +591,21 @@
   </div>
 </section>
 
-<script nonce="{{ csp_nonce }}">
-document.addEventListener("DOMContentLoaded", () => {
-  const passwordForm = document.getElementById("profile-password-form");
-  const passwordCurrentInput = document.getElementById("profile-cp-current");
-  const passwordFeedback = document.getElementById("profile-password-feedback");
-  const passwordExperience = passwordForm && window.AmeliPassword
-    ? window.AmeliPassword.setupForm(passwordForm)
-    : null;
+<div id="profile-js-config" hidden
+     data-url-mfa-start="{% url 'accounts:profile-mfa-start' %}"
+     data-url-mfa-confirm="{% url 'accounts:profile-mfa-confirm' %}"
+     data-url-mfa-disable="{% url 'accounts:profile-mfa-disable' %}"
+     data-url-mfa-totp-disable="{% url 'accounts:profile-mfa-totp-disable' %}"
+     data-url-mfa-email-disable="{% url 'accounts:profile-mfa-email-disable' %}"
+     data-url-mfa-email-start="{% url 'accounts:profile-mfa-email-start' %}"
+     data-url-mfa-email-confirm="{% url 'accounts:profile-mfa-email-confirm' %}"
+     data-url-mfa-regenerate="{% url 'accounts:profile-mfa-regenerate' %}"
+     data-url-password="{% url 'accounts:profile-password' %}"></div>
+{% endif %}
+{% endblock %}
 
-  function activateTabById(tabId, options = {}) {
-    const updateHash = options.updateHash !== false;
-    let activated = false;
-    document.querySelectorAll(".tab-nav").forEach((nav) => {
-      const btn = nav.querySelector(`button[data-tab="${tabId}"]`);
-      if (!btn) return;
-      nav.querySelectorAll("button[data-tab]").forEach((b) => {
-        b.classList.remove("active");
-        b.setAttribute("aria-selected", "false");
-      });
-      btn.classList.add("active");
-      btn.setAttribute("aria-selected", "true");
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-      const target = document.getElementById(tabId);
-      if (target) target.classList.add("active");
-      activated = true;
-    });
-    if (activated && updateHash) {
-      history.replaceState(null, "", `#${tabId}`);
-    }
-    return activated;
-  }
-
-  document.querySelectorAll(".tab-nav").forEach((nav) => {
-    nav.querySelectorAll("button[data-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activateTabById(btn.dataset.tab);
-      });
-    });
-  });
-
-  // Restore the active tab from the URL hash so Prev/Next links in
-  // paginated panels stay on the same tab they were navigated from.
-  const initialHash = (window.location.hash || "").replace(/^#/, "");
-  if (initialHash) {
-    activateTabById(initialHash, { updateHash: false });
-  }
-  window.addEventListener("hashchange", () => {
-    const hash = (window.location.hash || "").replace(/^#/, "");
-    if (hash) activateTabById(hash, { updateHash: false });
-  });
-
-  document.querySelectorAll("[data-tab-trigger]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const targetId = button.dataset.tabTrigger;
-      const trigger = document.querySelector(`.tab-nav button[data-tab="${targetId}"]`);
-      trigger?.click();
-    });
-  });
-
-  passwordForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!passwordExperience) return;
-    const state = passwordExperience.sync();
-    if (!state.matches) {
-      if (passwordFeedback) passwordFeedback.textContent = "Confirma la nueva contrasena antes de guardar.";
-      return;
-    }
-    if (state.strength.level === "weak") {
-      if (passwordFeedback) passwordFeedback.textContent = "La nueva contrasena aun es debil. Refuerzala antes de guardar.";
-      return;
-    }
-    if (passwordFeedback) passwordFeedback.textContent = "Guardando...";
-    try {
-      const payload = {
-        current_password: String(passwordCurrentInput?.value || ""),
-        new_password: passwordExperience.getValue(),
-      };
-      const response = await fetch("{% url 'accounts:profile-password' %}", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-csrf-token": document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "",
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "No se pudo actualizar la contrasena.");
-      }
-      if (passwordFeedback) {
-        passwordFeedback.textContent = data.status
-          ? `OK: ${data.status}. Otras sesiones revocadas: ${Number(data.revoked_sessions || 0)}. Recargando perfil...`
-          : "Contrasena actualizada. Recargando perfil...";
-      }
-      window.setTimeout(() => window.location.reload(), 450);
-    } catch (error) {
-      if (passwordFeedback) {
-        passwordFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-      }
-    }
-  });
-
-  // ``profile-email-test`` button used to live in the General tab; it
-  // moved out when the email field migrated to the double-opt-in card.
-  // The handler stays no-op-safe via ``?.`` in case a future iteration
-  // brings the button back.
-
-  // ---- MFA enrollment / disable ----
-  const csrfTokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
-  const mfaPanel = document.getElementById("profile-mfa-panel");
-  const mfaSections = {
-    stacked: document.getElementById("profile-mfa-stacked"),
-    pending: document.getElementById("profile-mfa-pending"),
-    emailPending: document.getElementById("profile-mfa-email-pending"),
-    recovery: document.getElementById("profile-mfa-recovery"),
-  };
-
-  function showMfaSection(name) {
-    Object.entries(mfaSections).forEach(([key, node]) => {
-      if (node) node.hidden = key !== name;
-    });
-  }
-
-  async function postJson(url, payload = null) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-csrf-token": csrfTokenInput,
-      },
-      body: payload === null ? "" : JSON.stringify(payload),
-    });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Operacion no completada.");
-    }
-    return data;
-  }
-
-  const activateBtn = document.getElementById("profile-mfa-activate");
-  const activateFeedback = document.getElementById("profile-mfa-activate-feedback");
-  const verifyBtn = document.getElementById("profile-mfa-verify");
-  const cancelBtn = document.getElementById("profile-mfa-cancel");
-  const verifyFeedback = document.getElementById("profile-mfa-verify-feedback");
-  const codeInput = document.getElementById("profile-mfa-code");
-  const qrSlot = document.getElementById("profile-mfa-qr");
-  const secretText = document.getElementById("profile-mfa-secret-text");
-  const recoveryAck = document.getElementById("profile-mfa-recovery-ack");
-  const recoveryList = document.getElementById("profile-mfa-recovery-list");
-  const totpDisableBtn = document.getElementById("profile-mfa-totp-disable");
-  const totpDisablePassword = document.getElementById("profile-mfa-totp-disable-password");
-  const totpDisableFeedback = document.getElementById("profile-mfa-totp-disable-feedback");
-  const emailDisableBtn = document.getElementById("profile-mfa-email-disable");
-  const emailDisablePassword = document.getElementById("profile-mfa-email-disable-password");
-  const emailDisableFeedback = document.getElementById("profile-mfa-email-disable-feedback");
-  const regenerateBtn = document.getElementById("profile-mfa-regenerate");
-  const emailActivateBtn = document.getElementById("profile-mfa-email-activate");
-  const emailVerifyBtn = document.getElementById("profile-mfa-email-verify");
-  const emailCancelBtn = document.getElementById("profile-mfa-email-cancel");
-  const emailCodeInput = document.getElementById("profile-mfa-email-code");
-  const emailVerifyFeedback = document.getElementById("profile-mfa-email-verify-feedback");
-
-  activateBtn?.addEventListener("click", async () => {
-    activateBtn.disabled = true;
-    if (activateFeedback) activateFeedback.textContent = "Generando codigo QR...";
-    try {
-      const data = await postJson("{% url 'accounts:profile-mfa-start' %}");
-      if (qrSlot) qrSlot.innerHTML = window.ameliTrusted.createHTML(data.qr_svg || "");
-      if (secretText) secretText.textContent = data.secret || "-";
-      if (codeInput) codeInput.value = "";
-      if (verifyFeedback) verifyFeedback.textContent = "";
-      if (activateFeedback) activateFeedback.textContent = "";
-      showMfaSection("pending");
-      codeInput?.focus();
-    } catch (error) {
-      if (activateFeedback) activateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-    } finally {
-      activateBtn.disabled = false;
-    }
-  });
-
-  cancelBtn?.addEventListener("click", async () => {
-    try {
-      await postJson("{% url 'accounts:profile-mfa-disable' %}", { current_password: "" });
-    } catch {
-      // Even if the server rejects (no password), we just close the pending UI.
-    }
-    window.location.reload();
-  });
-
-  function showRecoveryOrReload(codes) {
-    if (!Array.isArray(codes) || codes.length === 0) {
-      window.location.reload();
-      return;
-    }
-    if (recoveryList) {
-      recoveryList.replaceChildren();
-      codes.forEach((codeValue) => {
-        const li = document.createElement("li");
-        li.textContent = codeValue;
-        recoveryList.appendChild(li);
-      });
-    }
-    showMfaSection("recovery");
-    setupRecoveryTools(codes);
-  }
-
-  function setupRecoveryTools(codes) {
-    const feedback = document.getElementById("profile-mfa-recovery-feedback");
-    const flash = (message) => {
-      if (!feedback) return;
-      feedback.textContent = message;
-      setTimeout(() => { if (feedback.textContent === message) feedback.textContent = ""; }, 3000);
-    };
-    const text = codes.join("\n") + "\n";
-
-    const copyBtn = document.getElementById("profile-mfa-recovery-copy");
-    if (copyBtn) {
-      copyBtn.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          flash("Copiados al portapapeles");
-        } catch (err) {
-          flash("No se pudo copiar — selecciona y copia manualmente");
-        }
-      };
-    }
-
-    const dlBtn = document.getElementById("profile-mfa-recovery-download");
-    if (dlBtn) {
-      dlBtn.onclick = () => {
-        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        const stamp = new Date().toISOString().slice(0, 10);
-        a.download = `ameli-recovery-codes-${stamp}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(a.href);
-        flash("Archivo descargado");
-      };
-    }
-
-    const printBtn = document.getElementById("profile-mfa-recovery-print");
-    if (printBtn) {
-      printBtn.onclick = () => {
-        const w = window.open("", "_blank");
-        if (!w) { flash("Habilita popups para imprimir"); return; }
-        const doc = w.document;
-        doc.title = "Codigos de recuperacion AMELI";
-        const style = doc.createElement("style");
-        style.textContent = "body{font-family:monospace;font-size:14pt;padding:24pt;}li{margin:6pt 0;}";
-        doc.head.appendChild(style);
-        const h2 = doc.createElement("h2");
-        h2.textContent = "Codigos de recuperacion";
-        const intro = doc.createElement("p");
-        const em = doc.createElement("em");
-        em.textContent = "Guarda esta hoja en un lugar seguro.";
-        intro.appendChild(em);
-        const ul = doc.createElement("ul");
-        codes.forEach((c) => {
-          const li = doc.createElement("li");
-          li.textContent = c;
-          ul.appendChild(li);
-        });
-        doc.body.append(h2, intro, ul);
-        w.focus();
-        w.print();
-      };
-    }
-  }
-
-  verifyBtn?.addEventListener("click", async () => {
-    const code = String(codeInput?.value || "").trim();
-    if (!code) {
-      if (verifyFeedback) verifyFeedback.textContent = "Tipeá el código de la app.";
-      return;
-    }
-    verifyBtn.disabled = true;
-    if (verifyFeedback) verifyFeedback.textContent = "Verificando...";
-    try {
-      const data = await postJson("{% url 'accounts:profile-mfa-confirm' %}", { code });
-      showRecoveryOrReload(data.recovery_codes);
-    } catch (error) {
-      if (verifyFeedback) verifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-    } finally {
-      verifyBtn.disabled = false;
-    }
-  });
-
-  recoveryAck?.addEventListener("click", () => {
-    window.location.reload();
-  });
-
-  function wireDisableButton(btn, passwordInput, feedback, url, label) {
-    btn?.addEventListener("click", async () => {
-      const password = String(passwordInput?.value || "").trim();
-      if (!password) {
-        if (feedback) feedback.textContent = "Confirma tu contrasena para desactivar.";
-        return;
-      }
-      btn.disabled = true;
-      if (feedback) feedback.textContent = "Desactivando...";
-      try {
-        await postJson(url, { current_password: password });
-        if (feedback) feedback.textContent = label + " desactivado. Recargando...";
-        window.setTimeout(() => window.location.reload(), 400);
-      } catch (error) {
-        if (feedback) feedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-        btn.disabled = false;
-      }
-    });
-  }
-
-  wireDisableButton(totpDisableBtn, totpDisablePassword, totpDisableFeedback,
-    "{% url 'accounts:profile-mfa-totp-disable' %}", "App de autenticacion");
-  wireDisableButton(emailDisableBtn, emailDisablePassword, emailDisableFeedback,
-    "{% url 'accounts:profile-mfa-email-disable' %}", "Email");
-
-  emailActivateBtn?.addEventListener("click", async () => {
-    emailActivateBtn.disabled = true;
-    if (activateFeedback) activateFeedback.textContent = "Enviando codigo...";
-    try {
-      await postJson("{% url 'accounts:profile-mfa-email-start' %}");
-      if (emailCodeInput) emailCodeInput.value = "";
-      if (emailVerifyFeedback) emailVerifyFeedback.textContent = "";
-      if (activateFeedback) activateFeedback.textContent = "";
-      showMfaSection("emailPending");
-      emailCodeInput?.focus();
-    } catch (error) {
-      if (activateFeedback) activateFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-    } finally {
-      emailActivateBtn.disabled = false;
-    }
-  });
-
-  emailCancelBtn?.addEventListener("click", () => {
-    window.location.reload();
-  });
-
-  emailVerifyBtn?.addEventListener("click", async () => {
-    const code = String(emailCodeInput?.value || "").trim();
-    if (!code) {
-      if (emailVerifyFeedback) emailVerifyFeedback.textContent = "Tipea el codigo recibido por email.";
-      return;
-    }
-    emailVerifyBtn.disabled = true;
-    if (emailVerifyFeedback) emailVerifyFeedback.textContent = "Verificando...";
-    try {
-      const data = await postJson("{% url 'accounts:profile-mfa-email-confirm' %}", { code });
-      showRecoveryOrReload(data.recovery_codes);
-    } catch (error) {
-      if (emailVerifyFeedback) emailVerifyFeedback.textContent = error instanceof Error ? error.message : "Error inesperado.";
-    } finally {
-      emailVerifyBtn.disabled = false;
-    }
-  });
-
-  regenerateBtn?.addEventListener("click", async () => {
-    if (!confirm("Confirmas regenerar tus codigos de recuperacion? Todos los codigos actuales dejaran de funcionar.")) {
-      return;
-    }
-    regenerateBtn.disabled = true;
-    try {
-      const data = await postJson("{% url 'accounts:profile-mfa-regenerate' %}");
-      if (recoveryList && Array.isArray(data.recovery_codes)) {
-        recoveryList.replaceChildren();
-        data.recovery_codes.forEach((codeValue) => {
-          const li = document.createElement("li");
-          li.textContent = codeValue;
-          recoveryList.appendChild(li);
-        });
-      }
-      showMfaSection("recovery");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Error inesperado.");
-      regenerateBtn.disabled = false;
-    }
-  });
-
-  // ---- Email change (double-opt-in) ----
-  const emailForm = document.getElementById("profile-email-change-form");
-  if (emailForm) {
-    const newEmailInput = document.getElementById("profile-email-new");
-    const passwordInput = document.getElementById("profile-email-password");
-    const feedback = document.getElementById("profile-email-change-feedback");
-    emailForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (feedback) feedback.textContent = "";
-      try {
-        const response = await fetch("/profile/email-change/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfTokenInput,
-          },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            new_email: (newEmailInput?.value || "").trim(),
-            current_password: passwordInput?.value || "",
-          }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) {
-          if (feedback) feedback.textContent = data.error || "No se pudo iniciar el cambio.";
-          return;
-        }
-        if (feedback) {
-          feedback.textContent = "Te mandamos un mail a " + data.new_email + ". Confirma desde el link.";
-        }
-        // Refresh so the form switches to the pending-state panel.
-        setTimeout(() => window.location.reload(), 1500);
-      } catch (err) {
-        if (feedback) feedback.textContent = "Error de red al iniciar el cambio.";
-      }
-    });
-  }
-
-  // ``emailCancelBtn`` is already taken further up by the MFA-email
-  // disable handler; use a different name here so both can coexist.
-  const emailChangeCancelBtn = document.getElementById("profile-email-cancel");
-  if (emailChangeCancelBtn) {
-    const feedback = document.getElementById("profile-email-cancel-feedback");
-    emailChangeCancelBtn.addEventListener("click", async () => {
-      if (!confirm("Cancelar el cambio pendiente?")) return;
-      emailChangeCancelBtn.disabled = true;
-      try {
-        const response = await fetch("/profile/email-change/cancel-pending/", {
-          method: "POST",
-          headers: { "X-CSRF-Token": csrfTokenInput },
-          credentials: "same-origin",
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) {
-          if (feedback) feedback.textContent = data.error || "No se pudo cancelar.";
-          emailChangeCancelBtn.disabled = false;
-          return;
-        }
-        if (feedback) feedback.textContent = "Cancelado. Refrescando...";
-        setTimeout(() => window.location.reload(), 800);
-      } catch (err) {
-        if (feedback) feedback.textContent = "Error de red al cancelar.";
-        emailChangeCancelBtn.disabled = false;
-      }
-    });
-  }
-
-});
-</script>
+{% block extra_scripts %}
+{% if not current_user.must_change_password %}
+<script src="{% static 'js/profile.js' %}"{% sri_for 'js/profile.js' %}></script>
 {% endif %}
 {% endblock %}
