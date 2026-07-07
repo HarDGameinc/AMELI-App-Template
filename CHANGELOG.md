@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.4.13-django — 2026-07-07 (D-1: identidad visual + paletas de color)
+
+Cierra la base de D-1 (identidad visual). Paleta navy+teal + tipografía
+DM Sans / IBM Plex Sans, y un segundo eje de theming: **paletas de color**
+completas (Teal / Índigo / Ámbar / Violeta) seleccionables por usuario,
+ortogonales al modo claro/oscuro/auto. Validado en server (`ha-report2`) y
+CI (21 checks axe en las 4 paletas × claro/oscuro).
+
+### D-1 Fase A — paleta + tipografía (commit `72470ee`)
+
+- Reemplazo del azul genérico (`#155eef`) por identidad navy + acento teal.
+  Cuerpo en IBM Plex Sans, títulos en DM Sans. Se conservó la estructura de
+  tokens `--*-fill` de v0.4.11 (contraste 4.5:1 bajo texto blanco).
+
+### Verde menos fluorescente (commit `506b677`)
+
+- El acento oscuro (`#22c9ac`) y `--ok` (`#34d399`, emerald) leían neón —
+  se apagaron a teal/verde más sobrios (`#33a894` / `#3fae7a`).
+
+### Paletas de color (commit `95b6c9e`)
+
+- Nuevo `User.color_theme` (choices, default `teal`) + migración `0014`.
+  Segundo eje `data-palette` en `<html>`; bloques CSS de override por paleta
+  (índigo/ámbar/violeta) × claro/oscuro/auto. Los estados (verde/ámbar/rojo)
+  se heredan del base → constantes entre paletas.
+- Selector de swatches en el perfil (RadioSelect estilado con `:has()`),
+  focuseable por teclado; campo opcional en el server (un POST parcial
+  conserva la paleta actual). Persistido en las rutas JSON y form; auditado.
+- **Bug corregido**: el bloque *Auto* (media query) aún tenía los verdes
+  neón — solo se había actualizado el oscuro explícito.
+- Gate a11y extendido a las 4 paletas × claro/oscuro (21 axe verdes). Los
+  smoke tests de CSS ahora leen `app.css` como UTF-8.
+
 ## v0.4.12-django — 2026-07-06 (a11y: focus management de modales)
 
 a11y++ — manejo de foco en los modales del admin (WCAG 2.1.2 / 2.4.3).

@@ -2,14 +2,16 @@
 
 Fecha: `2026-07-07`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (HEAD `72470ee` al cierre; version `v0.4.12-django`)
+Rama de trabajo: `dev` (version final `v0.4.13-django`)
 Rama estable: `main` (default en GitHub; congelado hasta v0.5.0/v1.0.0)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-06_TEMPLATE_DEV.md)
 
 > **Nota**: sesion continuada tras compactacion de contexto. Cubre lo que
 > quedo fuera del handoff 2026-07-06: **a11y++** (focus-trap de modales,
-> `v0.4.12`) y **D-1 Fase A** (identidad visual — paleta + tipografia),
-> esta ultima **commiteada pero sin bump, pendiente de smoke en server**.
+> `v0.4.12`) y **D-1 identidad visual** (`v0.4.13`) — Fase A (paleta +
+> tipografia), verde menos fluorescente, y **paletas de color** completas
+> (Teal/Índigo/Ámbar/Violeta) seleccionables por usuario. Todo validado en
+> server (`ha-report2`) y CI. §9 al final resume la extension de paletas.
 
 ## §1. Snapshot al inicio
 
@@ -106,8 +108,7 @@ identidad del review: **superficies navy + acento teal-verde**.
 | Node JS tests | 13 pass |
 | Ruff | 0 errores |
 | CI (dev) | verde: matriz 3.11-3.14 + test-postgres + e2e + js-unit + pip-audit |
-| Version | **`v0.4.12-django`** (a11y++); D-1 Fase A commiteada sin bump |
-| HEAD | `72470ee` |
+| Version | **`v0.4.13-django`** (D-1 identidad visual + paletas; ver §9) |
 
 ## §6. Hallazgos / findings
 
@@ -129,14 +130,14 @@ contraste con texto blanco encima.
 ## §7. Roadmap actualizado
 
 **a11y cerrado por completo** (base + claro/oscuro + teclado + modales).
-D-1 **en curso**: Fase A commiteada (pendiente smoke + bump).
+**D-1 base cerrada** (`v0.4.13`): Fase A (paleta+tipografia) + paletas de
+color seleccionables (§9), smokeadas en server y bumpeadas.
 
 ### Pendientes ordenados
 
 | # | Item | Costo | Notas |
 |---|---|---|---|
-| **D-1 Fase A** | Smoke visual en server + bump | — | **SIGUIENTE PASO** — commiteado en `72470ee`, sin bump |
-| D-1 Fase B | Jerarquia + layout (hero gradient, bordes de acento en cards primarias, max-width 1440, escala de spacing) | ~2h | Tras aprobar la paleta en server |
+| **D-1 Fase B** | Jerarquia + layout (hero gradient, bordes de acento en cards primarias, max-width 1440, escala de spacing) | ~2h | **SIGUIENTE** — sobre la base v0.4.13 |
 | D-1 Fase C | Elemento signature (el review propone un sparkline de salud animado en el header) | ~1-2h | — |
 | D-1 Fase D | Motion (reveal escalonado al cargar, hover states) | ~1h | — |
 | Promote | `dev → main` v0.5.0 | — | `main` congelado; requiere instruccion explicita |
@@ -152,23 +153,26 @@ haga publico. No es olvido.
 
 ### 8.0. Snapshot al cierre
 
-- Rama **`dev`**, version **`v0.4.12-django`**, todo pusheado (HEAD
-  `72470ee`). `main` congelado.
-- Sesion: a11y++ (focus-trap de modales, `v0.4.12`) + D-1 Fase A (identidad
-  navy+teal + DM Sans/IBM Plex, **commiteada sin bump**).
-- Validado: unit 1068 verde, 13/13 a11y (claro+oscuro+teclado+modal). CI dev
-  verde. a11y++ smokeado en server (`v0.4.12`). **D-1 Fase A NO smokeada en
-  server todavia** — es el proximo paso.
+- Rama **`dev`**, version **`v0.4.13-django`**, todo pusheado. `main`
+  congelado.
+- Sesion: a11y++ (focus-trap de modales, `v0.4.12`) + **D-1 identidad
+  visual** (`v0.4.13`): Fase A (navy+teal + DM Sans/IBM Plex), verde menos
+  fluorescente, y **paletas de color** Teal/Índigo/Ámbar/Violeta
+  seleccionables por usuario (§9).
+- Validado: unit **1074** verde, **21/21 a11y** (4 paletas × claro/oscuro +
+  teclado + modal). CI dev verde. Smokeado en server (`ha-report2`) en las 4
+  paletas × claro/oscuro.
 - Entorno dev = Windows nativo. `gh` CLI en `C:\Program Files\GitHub CLI\`
   (no en PATH — invocar por ruta).
 
 ### 8.1. Primer paso (siguiente agente)
 
-**Smokear D-1 Fase A en el server `ha-report2`** (sync a `72470ee`,
-`check`, restart, verificar `/health`), y pedir al operador aprobacion
-visual de la paleta teal + tipografia. **Si aprueba** → bump a `v0.4.13`
-(los 4 archivos) y seguir con **Fase B** (jerarquia/layout). **Si no** →
-ajustar el teal/tipografia antes de construir encima.
+**D-1 Fase B** (jerarquia + layout) sobre la base `v0.4.13`: hero con
+gradiente sutil (usa `--accent`/`--brand` para que respete la paleta
+activa), bordes de acento en las cards primarias, `max-width` del shell
+(~1440), y una escala de spacing consistente. Recordar: cualquier color
+nuevo debe salir de los tokens (`var(--accent)` etc.) para no romper las
+4 paletas — nada hardcodeado.
 
 ### 8.2. Restricciones criticas (siguen vigentes)
 
@@ -188,3 +192,66 @@ ajustar el teal/tipografia antes de construir encima.
 - Bump solo por cierre de fase validado en servidor.
 - No instalar Playwright/chromium en el servidor (a11y/e2e se validan en
   CI Linux).
+
+## §9. Extension: paletas de color (D-1, `v0.4.13`)
+
+Tras aprobar la Fase A en server, el operador pidió (a) bajar el verde
+fluorescente y (b) **varios temas** con cambio de fondo/bordes/acento. Se
+implementó como un **segundo eje ortogonal** al modo claro/oscuro/auto.
+
+### 9.1. Arquitectura
+
+- **Modelo**: `User.color_theme` (choices `teal`/`indigo`/`amber`/`violet`,
+  default `teal`) + migración `0014`. `display_palette_label` helper.
+- **CSS**: los bloques base (`:root` …) son el default **Teal**. Cada
+  `data-palette` añade bloques de override que cambian **solo** neutros +
+  acento (`--bg --surface --ink --muted --line --accent --accent-fill
+  --brand`) en claro / oscuro / auto. Los **estados** (`--ok/--warn/--bad`
+  + fills, `--unknown/--closed`) **caen del base** → constantes entre
+  paletas (verde=OK no cambia de significado). Light usa el selector
+  `[data-palette=X]` pelado; los bloques dark/prefers-dark tienen mayor
+  especificidad y ganan, igual que el base.
+- **Aplicacion**: el context processor resuelve `active_palette` (siempre,
+  default teal incluso anónimo) → `data-palette` en `<html>` en base.html.
+- **UI**: swatches en el perfil (Django `RadioSelect` estilado con `:has()`
+  + `input[value=...]::before` con degradado por paleta), focuseable por
+  teclado. El campo es **opcional en el form** (`required=False` +
+  `clean_color_theme` cae a la paleta actual) para que un POST parcial no
+  tire la edición — un detalle que evitó romper 1 test existente y es más
+  robusto. Persistido en las rutas JSON y form del `update_preferences`;
+  el audit payload registra `color_theme`.
+
+### 9.2. Decisiones
+
+1. **Acento variable + neutros con tinte sutil** (no fondos saturados) —
+   es el patrón de theming multi-marca de productos serios (GitHub/Linear).
+   El operador validó las 4 en claro y oscuro y aprobó cerrar así.
+2. **Estados constantes entre paletas** — evita que "verde/ámbar/rojo"
+   cambien de significado y reduce la superficie de contraste a probar.
+3. **Degradado de avatar/logo `accent → accent-fill`** (antes `accent →
+   ok`) — monocromático por paleta; evita el degradado azul→verde en
+   Índigo, etc. axe no evalúa degradados, así que no afecta el gate.
+4. **Gate a11y = red de seguridad de color**: se extendió a las 4 paletas ×
+   claro/oscuro sobre el dashboard (forzando `data-palette` por JS). 21 axe
+   verdes cubren el riesgo real (contraste) sin multiplicar todas las
+   páginas.
+
+### 9.3. Gotcha corregido
+
+El bloque **Auto** (`@media prefers-color-scheme: dark`) todavía tenía los
+verdes **neón** originales: el primer tone-down solo tocó el bloque de
+oscuro **explícito** (indentación distinta → el `replace_all` no lo pilló).
+Un usuario en tema Auto+oscuro seguía viendo el neón. Al tocar tokens de
+modo, cambiar **los tres** bloques (light / dark explícito / auto-media).
+
+### 9.4. Añadir una paleta nueva (receta)
+
+1. `User.PALETTE_CHOICES` + validar el valor en context processor, vista
+   (ambas ramas) y el set del test a11y `_PALETTES`.
+2. En `app.css`, 3 bloques `[data-palette="X"]` (light / dark / auto-media)
+   con los 8 tokens de neutros+acento. Asegurar `--accent` (texto) ≥4.5:1
+   sobre `--bg`/`--surface`, `--accent-fill` ≥4.5:1 bajo blanco, `--muted`
+   ≥4.5:1. El gate a11y lo verifica.
+3. Un swatch: `.palette-swatches label:has(input[value="X"])::before`.
+4. Correr el gate a11y (`DJANGO_ALLOW_ASYNC_UNSAFE=true pytest
+   tests/e2e/test_accessibility.py`).
