@@ -36,6 +36,7 @@ MIDDLEWARE = [
     "ameli_web.accounts.middleware.UserSessionMiddleware",
     "ameli_web.accounts.middleware.MaintenanceModeMiddleware",
     "ameli_web.accounts.middleware.MustChangePasswordMiddleware",
+    "ameli_web.accounts.middleware.MfaRequiredMiddleware",
     "ameli_web.accounts.middleware.AdminAccessAuditMiddleware",
     "ameli_web.accounts.middleware.DjangoAdminSudoGateMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

@@ -282,6 +282,64 @@ class MustChangePasswordMiddleware:
         return any(path.startswith(prefix) for prefix in cls._ALLOWED_PREFIXES)
 
 
+class MfaRequiredMiddleware:
+    """Force an admin-mandated user to enroll MFA before using the app.
+
+    When an admin sets ``mfa_required=True`` the flag used to be a pure UI
+    hint (M2 security review): nothing forced enrollment and nothing stopped
+    the user from ignoring it. This mirrors ``MustChangePasswordMiddleware``:
+    a flagged user with no active MFA (``mfa_required and not mfa_enabled``)
+    is redirected to the profile MFA section until they enroll. Enrolling
+    sets ``mfa_enabled=True`` (the flag itself stays set), which lets this
+    gate pass; self-disable is separately refused while ``mfa_required`` is
+    on (see ``services/mfa.py``), so the mandate cannot be shed.
+
+    Runs AFTER ``MustChangePasswordMiddleware`` so a temp-password rotation
+    (a harder block) takes priority; once the password is cleared this gate
+    engages.
+    """
+
+    _ALLOWED_EXACT = {
+        "/profile/",
+        "/profile",
+        "/logout/",
+        "/logout",
+        "/health",
+        "/api/health",
+        # Reachable so a user under BOTH mandates can still rotate the
+        # temp password before enrolling.
+        "/profile/password/",
+        "/profile/password",
+        "/profile/change-password",
+    }
+    _ALLOWED_PREFIXES = ("/static/", "/media/", "/profile/mfa/")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        if (
+            user is not None
+            and user.is_authenticated
+            and getattr(user, "mfa_required", False)
+            and not getattr(user, "mfa_enabled", False)
+            and not self._path_is_allowed(request.path)
+        ):
+            messages.warning(
+                request,
+                "Un administrador exige activar 2FA en tu cuenta antes de continuar.",
+            )
+            return redirect("/profile/")
+        return self.get_response(request)
+
+    @classmethod
+    def _path_is_allowed(cls, path: str) -> bool:
+        if path in cls._ALLOWED_EXACT:
+            return True
+        return any(path.startswith(prefix) for prefix in cls._ALLOWED_PREFIXES)
+
+
 class AdminAccessAuditMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
