@@ -215,7 +215,17 @@ def decrypt_secret(stored: str) -> str:
     fernet = _fernet()
     if fernet is None:
         return stored
+    from cryptography.fernet import InvalidToken
+
     try:
         return fernet.decrypt(stored.encode("ascii")).decode("utf-8")
-    except Exception:  # noqa: BLE001 — InvalidToken or any decode error
+    except InvalidToken:
+        # Legacy plaintext row (pre-encryption rollout) OR a ciphertext this
+        # key cannot open (e.g. a botched MFA_ENCRYPTION_KEY rotation —
+        # Fernet cannot distinguish the two). Treated as plaintext so the
+        # rollout seam keeps working; a wrong-key rotation therefore surfaces
+        # as users failing TOTP (verify TOTP after any key rotation), not as
+        # an exception. L2: narrowed from ``except Exception`` so a genuine
+        # non-crypto bug (bad config / encoding error) is NOT silently
+        # masked as "plaintext" — it now propagates loudly.
         return stored
