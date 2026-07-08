@@ -30,15 +30,17 @@ e.g. `ameli-app-template-dev`) — that isolation is why the app code is
 `root:root` (a compromised app process can't rewrite it) and why the
 sandbox below can safely drop all capabilities.
 
-> **Known deviation (dev box `ha-report2`, 2026-07-08): the service is
-> running as `root`.** That negates the isolation — a compromise of the
-> app process is a root compromise, and the read-only-code protection is
-> moot (root can rewrite anything). This is the **highest-priority host
-> fix**, above the sandbox tuning.
+> **Confirm the service `User=`.** On `ha-report2` the *operator* logs in
+> and runs deploys as `root` (SSH session) — that is an access-hygiene
+> item (§4), separate from the service account. What matters here is that
+> the **systemd service** runs as the dedicated non-root user, not root. If
+> `systemctl show -p User` returns `root`, migrate: root negates the
+> code-isolation the sandbox relies on (a compromised app process = root),
+> and the two aggressive sandbox directives assume non-root.
 
-Check + migrate:
+Check:
 ```bash
-systemctl show -p User ameli-app-template-dev-api.service    # currently User=root?
+systemctl show -p User ameli-app-template-dev-api.service    # expect the dedicated user, NOT root
 # migrate to the dedicated user (re-run install with the default RUN_USER,
 # or manually): create the system user, chown data/log/backup + the venv to
 # it, keep the app code root:root, then re-render the units (User=<slug>-<env>)
@@ -140,9 +142,13 @@ non-dev deploy:
 
 ## 4. SSH / OS ⚙️
 
-- **SSH**: key-only + no root login. In `/etc/ssh/sshd_config`:
-  `PasswordAuthentication no`, `PermitRootLogin no`, `KbdInteractive­Authentication no`,
-  optionally `AllowUsers <op>`. Then `sudo systemctl restart ssh`.
+- **SSH**: **key-only**. In `/etc/ssh/sshd_config`:
+  `PasswordAuthentication no`, `KbdInteractiveAuthentication no`. For root
+  login: the operator currently logs in as root, so at minimum use
+  `PermitRootLogin prohibit-password` (key-only root, **no** password);
+  ideally create a sudo user and set `PermitRootLogin no`. Then `sudo
+  systemctl restart ssh`. (Verify you can open a **second** session before
+  closing the first, so a misconfig can't lock you out.)
 - **fail2ban** for sshd (and optionally the web) to throttle brute force.
 - **Unattended security upgrades**: `sudo apt install unattended-upgrades`
   + enable, so kernel/openssl/etc. patches land automatically.
