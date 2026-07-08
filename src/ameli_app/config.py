@@ -162,7 +162,24 @@ def load_settings(
     docs = raw.get("docs", {})
     email = raw.get("email", {})
 
-    environment = os.getenv("APP_ENV") or str(app.get("environment", "dev"))
+    # Fail-closed on the environment. Defaulting an *unspecified* environment
+    # to "dev" silently disabled every production boot guard (SECRET_KEY /
+    # DEBUG / ALLOWED_HOSTS rejection, MFA-secret encryption, AUDIT_HMAC_KEY,
+    # TRUSTED_PROXIES, secure cookies, HSTS) whenever the operator simply
+    # forgot to declare it — a fail-open on the single most consequential
+    # switch. Require it to be explicit via APP_ENV or the config YAML's
+    # ``app.environment`` (the bundled ``app.yaml.example`` already sets it,
+    # CI sets ``APP_ENV=dev``, and the install scripts set ``APP_ENV``).
+    _declared_env = os.getenv("APP_ENV") or app.get("environment")
+    if not _declared_env or not str(_declared_env).strip():
+        raise RuntimeError(
+            "No environment declared. Set APP_ENV (or 'app.environment' in the "
+            "config YAML) explicitly — e.g. 'dev', 'prod', 'staging', 'qa'. It "
+            "is deliberately NOT defaulted: defaulting to 'dev' would disable "
+            "production hardening (SECRET_KEY/DEBUG/ALLOWED_HOSTS guards, "
+            "MFA-secret encryption, audit HMAC, secure cookies, HSTS)."
+        )
+    environment = str(_declared_env).strip()
     token_env = str(api.get("token_env", "AMELI_APP_API_TOKEN"))
     database_url_env = str(database.get("url_env", "DATABASE_URL"))
 
