@@ -16,6 +16,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.core.mail import EmailMessage
+from django.db import transaction
 from django.utils import timezone
 
 from ameli_app.password_policy import generate_compliant_password
@@ -265,19 +266,43 @@ def update_user_account(actor_username: str, username: str, *, password: str | N
     user = User.objects.filter(username__iexact=username).first()
     if user is None:
         raise ValueError("user not found")
-    if password:
-        _validate_password_value(password, user=user)
-        user.set_password(password)
-    if enabled is not None:
-        user.is_active = enabled
-    if must_change_password is not None:
-        user.must_change_password = must_change_password
-    if role in {User.ROLE_PUBLIC, User.ROLE_SUPERADMIN}:
-        user.role = role
-    if mfa_required is not None:
-        user.mfa_required = bool(mfa_required)
-    user.save()
-    sync_user_groups(user)
+    # L4: demoting (role→public) or disabling an ACTIVE superadmin must not
+    # remove the last one. The self-guards above stop you doing it to
+    # yourself, but two admins demoting each OTHER concurrently could each
+    # read "another admin still exists" and both commit, zeroing out every
+    # superadmin (recoverable only via the CLI bootstrap). Lock the active-
+    # superadmin set and re-check inside one transaction so the second
+    # concurrent demotion sees the first and is refused.
+    _reduces_admin = (
+        user.role == User.ROLE_SUPERADMIN
+        and user.is_active
+        and (role == User.ROLE_PUBLIC or enabled is False)
+    )
+    with transaction.atomic():
+        if _reduces_admin:
+            active_admin_pks = set(
+                User.objects.select_for_update()
+                .filter(role=User.ROLE_SUPERADMIN, is_active=True)
+                .values_list("pk", flat=True)
+            )
+            if not (active_admin_pks - {user.pk}):
+                raise ValueError(
+                    "no puedes remover al ultimo superadmin activo; debe quedar "
+                    "al menos uno con rol superadmin y habilitado."
+                )
+        if password:
+            _validate_password_value(password, user=user)
+            user.set_password(password)
+        if enabled is not None:
+            user.is_active = enabled
+        if must_change_password is not None:
+            user.must_change_password = must_change_password
+        if role in {User.ROLE_PUBLIC, User.ROLE_SUPERADMIN}:
+            user.role = role
+        if mfa_required is not None:
+            user.mfa_required = bool(mfa_required)
+        user.save()
+        sync_user_groups(user)
     actor = User.objects.filter(username__iexact=actor_username).first()
     record_audit(
         "update_user",
