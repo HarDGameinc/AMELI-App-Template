@@ -23,7 +23,39 @@ Legend: ✅ done in-repo · ⚙️ operator action on the box · 🔴 highest pr
 
 ---
 
+## 1.0 Run as a dedicated non-root user 🔴 ⚙️
+
+The install **defaults** to a dedicated system user (`RUN_USER=<slug>-<env>`,
+e.g. `ameli-app-template-dev`) — that isolation is why the app code is
+`root:root` (a compromised app process can't rewrite it) and why the
+sandbox below can safely drop all capabilities.
+
+> **Known deviation (dev box `ha-report2`, 2026-07-08): the service is
+> running as `root`.** That negates the isolation — a compromise of the
+> app process is a root compromise, and the read-only-code protection is
+> moot (root can rewrite anything). This is the **highest-priority host
+> fix**, above the sandbox tuning.
+
+Check + migrate:
+```bash
+systemctl show -p User ameli-app-template-dev-api.service    # currently User=root?
+# migrate to the dedicated user (re-run install with the default RUN_USER,
+# or manually): create the system user, chown data/log/backup + the venv to
+# it, keep the app code root:root, then re-render the units (User=<slug>-<env>)
+# and daemon-reload. See scripts/install.sh / _common.sh for the exact
+# ownership matrix (ETC 0750 root:grp, app.env 0640 root:grp, DATA/LOG 0750
+# run_user:grp).
+```
+
 ## 1. systemd sandbox ✅ (in-repo)
+
+> **If you must keep `User=root` temporarily**, the two aggressive
+> directives are calibrated for the non-root user and can break a root
+> service: relax `CapabilityBoundingSet=` (empty → drop the line, or list
+> only what's needed) and drop `SystemCallFilter=~@privileged @resources`.
+> Better: fix §1.0 and keep the full sandbox. `systemd-analyze security`
+> will flag the difference.
+
 
 `deploy/systemd/*.service` now ship a modern sandbox: `NoNewPrivileges`,
 `PrivateTmp`, `PrivateDevices`, `ProtectSystem=full`, `ProtectHome`,
