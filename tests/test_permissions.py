@@ -118,23 +118,22 @@ def test_can_access_admin_panel_rejects_anonymous():
 # ---------------------------------------------------------------------------
 
 def test_owner_can_view_own_avatar():
-    assert can_view_avatar(_PUBLIC, owner_slug="alice", requester_slug="alice") is True
+    # ``is_owner`` is decided by the caller via an exact avatar.name match.
+    assert can_view_avatar(_PUBLIC, is_owner=True) is True
 
 
 def test_other_public_user_cannot_view_someone_elses_avatar():
-    assert can_view_avatar(_PUBLIC, owner_slug="bob", requester_slug="alice") is False
+    assert can_view_avatar(_PUBLIC, is_owner=False) is False
 
 
 def test_superadmin_can_view_any_avatar():
-    assert can_view_avatar(_SUPER, owner_slug="bob", requester_slug="root") is True
+    assert can_view_avatar(_SUPER, is_owner=False) is True
 
 
-def test_anonymous_cannot_view_any_avatar_even_matching_slug():
-    """Anonymous request must fail even when slugs would match —
-    callers should have gated by authentication first; this is
-    defence in depth.
-    """
-    assert can_view_avatar(_ANON, owner_slug="", requester_slug="") is False
+def test_anonymous_cannot_view_any_avatar_even_as_owner():
+    """Anonymous request must fail even when flagged owner — callers should
+    have gated by authentication first; this is defence in depth."""
+    assert can_view_avatar(_ANON, is_owner=True) is False
 
 
 # ---------------------------------------------------------------------------
