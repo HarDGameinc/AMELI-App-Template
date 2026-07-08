@@ -274,6 +274,7 @@ server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/PHASE_A_PREPROD_AUDIT_*.md` | Pre-production audit report |
 | `docs/PHASE_B_SECURITY_REVIEW_*.md` | Security review report |
 | `docs/TLS_WITH_CADDY.md` | TLS/Caddy configuration |
+| `docs/SERVER_HARDENING.md` | Host/deployment hardening checklist (systemd sandbox, network, Postgres, SSH, secrets, backups) |
 | `docs/I18N.md` | Internationalization notes |
 | `docs/THIRD_PARTY_LICENSES.md` | Third-party license attributions |
 
