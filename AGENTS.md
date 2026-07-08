@@ -183,7 +183,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.0-django, 2026-07-07)
+## State of the project (v0.5.1-django, 2026-07-08)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -205,8 +205,14 @@ Phase C (`v0.4.15`): signature "telemetry pulse" sparkline in the header
 not probe it). Phase D (`v0.4.16`): motion — staggered reveal on load +
 hover states, reduced-motion-safe. **D-1 complete**, and `dev` was
 **promoted to `main` as `v0.5.0-django`** (2026-07-07, PR #1 — the first
-release; tag/release published, `main` is no longer frozen). All validated
-on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+release; tag/release published, `main` is no longer frozen). `v0.5.1`
+(2026-07-08): a defensive security review (3 agents by vuln class + manual
+verification) closed 7 logic/config findings — env fail-closed (M1),
+enforced `mfa_required` (M2), avatar-IDOR keyed on exact `avatar.name` (L1),
+narrowed `decrypt_secret` (L2), two-step email-cancel (L3), last-active-
+superadmin invariant (L4), honest throttle-atomicity docstring (M3); plus a
+branded favicon and web-font license attribution. All validated on the dev
+server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

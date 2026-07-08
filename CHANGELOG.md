@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.5.1-django — 2026-07-08 (hardening: revisión de seguridad multi-agente)
+
+Cierra 7 hallazgos de una revisión de seguridad defensiva (3 agentes por
+clase de vulnerabilidad + verificación manual). La postura ya era muy
+fuerte (cero inyección/SSRF/traversal/XSS/CSRF/open-redirect); estos son
+fallas de **lógica/config**. Suite 1086 verde, ruff limpio.
+
+### Fixes
+
+- **M1 — entorno fail-closed** (`config.py`): un entorno no declarado
+  rehusaba arrancar en vez de caer silenciosamente a "dev" (que desactivaba
+  todos los guards de prod: SECRET_KEY/DEBUG/ALLOWED_HOSTS, cifrado MFA,
+  audit HMAC, cookies Secure, HSTS).
+- **M2 — MFA obligatorio se aplica** (`MfaRequiredMiddleware` + `services/
+  mfa.py`): un `mfa_required` sin enrolar es redirigido a enrolamiento;
+  enrolar ya no limpia el flag; el self-disable queda bloqueado bajo
+  mandato (antes el flag era cosmético).
+- **M3 — docstring del throttle corregido** (`throttle.py`): la
+  comprobación es check-then-act (no atómica); documentado como soft-ceiling
+  acotado por el lockout permanente. Rediseño atómico diferido.
+- **L1 — IDOR de avatar** (`urls.py` / `permissions.py`): ownership por
+  `avatar.name` exacto (con token), no por slug lossy (colisión
+  `john.doe`/`john_doe`).
+- **L2 — `decrypt_secret`**: `except` estrechado a `InvalidToken` (no
+  enmascara fallos no-cripto como "plaintext").
+- **L3 — cancel de email two-step** (`email_change.py`): GET intersticial +
+  POST aplica, para que un mail-scanner no auto-cancele un cambio legítimo
+  (espeja el confirm de B5).
+- **L4 — invariante último-superadmin** (`services/user.py`): demote/disable
+  de un superadmin activo bajo `select_for_update` que rehúsa dejar cero
+  admins (race de demote mutuo concurrente).
+
 ## v0.5.0-django — 2026-07-07 (hito: promoción dev → main)
 
 Primer release en `main` desde el arranque del template. Marca el hito de
