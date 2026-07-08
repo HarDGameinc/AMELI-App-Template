@@ -47,9 +47,9 @@ get them reliably. Seed with:
 - **Commits**: Conventional Commits; footer
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. No
   `--no-verify` / hook skipping.
-- **Branches**: work on `dev`; the server always pulls `dev`; `main` is
-  frozen until the **v0.5.0 / v1.0.0** milestone and advances only by
-  explicit operator instruction, via PR.
+- **Branches**: work on `dev`; the server always pulls `dev`; `main` is the
+  release branch (promoted to `v0.5.0-django` on 2026-07-07) and advances
+  only by PR from `dev` with green CI, by explicit operator instruction.
 - **Pre-push checks**: `ruff check .` · `mypy src` · `pytest` ·
   `node --test tests/js/*.test.js`.
 - **Windows dev notes** (pointer): install from the ranges (not the

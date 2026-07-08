@@ -5,6 +5,15 @@
 **Version:** v0.4.0-django  
 **Lens:** frontend-design skill — distinctive visual identity, deliberate typography, structure as information, restraint
 
+> **STATUS: RESOLVED (2026-07-07).** This review is the source that spawned
+> the **D-1 visual-identity** work. All of its recommendations were
+> implemented in `v0.4.13`→`v0.4.16` and shipped in `v0.5.0-django`:
+> signature element (header "telemetry pulse"), brand palette + **4
+> selectable color palettes**, DM Sans / IBM Plex Sans typography, visual
+> hierarchy (palette-aware hero + aligned layout), `max-width` shell, and
+> a staggered-reveal + hover motion pass. This doc is kept as historical
+> rationale; the recommendations below are **done**, not open work.
+
 ---
 
 ## 1. Subject & Audience

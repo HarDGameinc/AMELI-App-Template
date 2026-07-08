@@ -177,6 +177,18 @@
 
 ## 6. SQLAlchemy / Alembic Expert
 
+> **CORRECTION (2026-07-07).** This section is **factually wrong** — it was
+> produced by a skill primed to look for SQLAlchemy/Alembic and hallucinated
+> a setup that does not exist. **The project has no SQLAlchemy and no
+> Alembic**: there is no `alembic.ini`, no `migrations/env.py`, no
+> SQLAlchemy dependency in `pyproject.toml` / `requirements*` / the lock,
+> and nothing imports either in `src/`. Persistence is **Django ORM +
+> Django migrations only** (verified 2026-07-06 — see `TECH_EVOLUTION.md`
+> and `DECISIONS.md` #4). Disregard the "Strengths"/"Gaps" below re:
+> Alembic; the one still-valid idea, reframed for the real stack, is a CI
+> test that applies then rolls back the Django migrations. Kept for
+> historical transparency.
+
 ### Strengths
 - **Alembic environment** configured at `migrations/env.py` with proper `target_metadata` and migration script template.
 - **Versioned migrations** under `migrations/versions/`.

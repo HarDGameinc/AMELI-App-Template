@@ -203,8 +203,10 @@ header aligned to the content max-width, panel radius/spacing polish. D-1
 Phase C (`v0.4.15`): signature "telemetry pulse" sparkline in the header
 (decorative, palette-colored; /health is IP-allowlisted so the pulse does
 not probe it). Phase D (`v0.4.16`): motion — staggered reveal on load +
-hover states, reduced-motion-safe. **D-1 complete.** All validated on the
-dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+hover states, reduced-motion-safe. **D-1 complete**, and `dev` was
+**promoted to `main` as `v0.5.0-django`** (2026-07-07, PR #1 — the first
+release; tag/release published, `main` is no longer frozen). All validated
+on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -231,7 +233,9 @@ dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
   (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
   focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
   Still open: screen-reader announcement audits (`aria-live` coverage)
-- No migration tests (alembic upgrade/downgrade)
+- No Django migration tests (apply/rollback of `accounts` migrations in CI).
+  Note: the stack uses **Django migrations only** — there is no Alembic /
+  SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
 - No visual regression tests
 
 ## Source-of-truth files

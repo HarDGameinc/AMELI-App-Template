@@ -53,7 +53,13 @@ back to the commits it bundles. See the existing entries for the shape.
 
 ## Promotion to `main`
 
-`main` is frozen until the **v0.5.0 / v1.0.0** milestone and advances only
-by explicit operator instruction, via PR (see
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) and the promotion checklist in
-[`docs/HANDOFF_TEMPLATE.md`](HANDOFF_TEMPLATE.md) §S-08).
+`main` is the release branch. It was promoted to **`v0.5.0-django`** on
+2026-07-07 (the first release; previously frozen until this milestone) and
+advances only by PR from `dev` with green CI, by explicit operator
+instruction (see [`CONTRIBUTING.md`](../CONTRIBUTING.md) and the promotion
+checklist in [`docs/HANDOFF_TEMPLATE.md`](HANDOFF_TEMPLATE.md) §S-08).
+
+Reference promotion (v0.5.0, 2026-07-07): bump on `dev` → PR `dev → main`
+→ wait for green CI (`gh pr checks <n> --watch`) → **merge commit** (not
+squash, to preserve history) → tag + GitHub release `vX.Y.Z-django` on
+`main`.
