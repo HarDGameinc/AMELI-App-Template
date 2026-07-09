@@ -224,3 +224,44 @@ sudo ss -tlnp | grep 5432
 # updates
 systemctl status unattended-upgrades 2>/dev/null | head -3
 ```
+
+---
+
+## Appendix — `ha-report2` host status (dev box)
+
+Audit + remediation performed with the operator (Debian 13 "trixie",
+service runs as the dedicated user `ameli-app-template-dev`).
+
+### Closed 2026-07-08 → 2026-07-09
+
+- 🔴 **P1 — SSH (CLOSED 2026-07-09)**: was `PermitRootLogin yes` +
+  `PasswordAuthentication yes` (default) with port 22 open to Anywhere.
+  Set up an **ed25519 key** (workstation → `/root/.ssh/authorized_keys`,
+  validated from PowerShell + PuTTY), then set `PasswordAuthentication no`
+  + `PermitRootLogin prohibit-password` and reloaded. Verified:
+  `sshd -T` → `passwordauthentication no` / `permitrootlogin
+  without-password`; a forced-password login returns `Permission denied
+  (publickey)`. **Root is now key-only.**
+- 🔴 **P2 — App exposure (CLOSED 2026-07-09, quick win)**: `18080` was
+  `0.0.0.0` + `ufw ALLOW Anywhere`. Derived the real client subnets from the
+  app's access logs (192.168.110.0/24, 192.168.111.0/24, 10.100.100.0/24,
+  10.11.2.1 VPN), added `ufw allow from <cidr> ... 18080`, then deleted the
+  `Anywhere` rule. Public exposure closed; LAN/VPN access preserved.
+- 🟠 **P3 — Auto-patching (CLOSED 2026-07-09)**: installed + enabled
+  `unattended-upgrades` (`20auto-upgrades` = `Update-Package-Lists "1"` /
+  `Unattended-Upgrade "1"`; service active).
+
+### Already good (verified in the audit)
+
+Postgres bound to `127.0.0.1:5432` only; ufw active default-deny incoming;
+service runs as the dedicated non-root user; `app.env` is `0640
+root:<run_group>`.
+
+### Still pending (not urgent)
+
+- **P2 full fix**: intra-LAN traffic to `18080` is still plain HTTP. Bind
+  the app to `127.0.0.1` + front with Caddy (already on `:80`) terminating
+  TLS on 443 → §2. The ufw restriction already removed the public exposure.
+- **Apply the hardened systemd units** (§1): still the pre-hardening
+  rendered units in `/etc/systemd/system/`; re-render + `daemon-reload` to
+  pick up the new sandbox.
