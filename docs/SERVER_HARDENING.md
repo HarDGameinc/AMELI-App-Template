@@ -264,11 +264,26 @@ Postgres bound to `127.0.0.1:5432` only; ufw active default-deny incoming;
 service runs as the dedicated non-root user; `app.env` is `0640
 root:<run_group>`.
 
+### Closed 2026-07-10
+
+- ✅ **Hardened systemd units applied (§1)**: re-rendered the instance units
+  (`APP_ENV=dev bash -c 'source scripts/_common.sh; render_systemd_units'`)
+  + restarted api/notifier. `systemd-analyze security` for the api dropped
+  from **8.4 EXPOSED → 1.5 OK**; the app came back healthy (`/health` ok, no
+  syscall/EPERM in the journal). Pre-change units backed up to
+  `/root/systemd-backup-20260710/`.
+- ✅ **`verify-audit.timer` enabled (§7)**: it was rendered but no profile
+  enabled it — fixed in-repo (now enabled by every profile) and enabled live
+  on the box (`systemctl enable --now …-verify-audit.timer`).
+- ✅ **App bound to loopback (§2)**: `18080` now listens on `127.0.0.1` only
+  (was `0.0.0.0`); Caddy fronts it on `:80`.
+
 ### Still pending (not urgent)
 
-- **P2 full fix**: intra-LAN traffic to `18080` is still plain HTTP. Bind
-  the app to `127.0.0.1` + front with Caddy (already on `:80`) terminating
-  TLS on 443 → §2. The ufw restriction already removed the public exposure.
-- **Apply the hardened systemd units** (§1): still the pre-hardening
-  rendered units in `/etc/systemd/system/`; re-render + `daemon-reload` to
-  pick up the new sandbox.
+- **P2 full fix — TLS**: Caddy currently serves `:80` (HTTP) only; intra-LAN
+  traffic is still cleartext. Add TLS on 443 (see `TLS_WITH_CADDY.md`) +
+  `AMELI_APP_SECURE_PROXY_SSL_HEADER`. Loopback bind + ufw restriction are
+  already done.
+- **SSH port 22 open to Anywhere (§4)**: root is key-only so brute-force is
+  moot, but the daemon is still internet-exposed. Optional: restrict the
+  source to the admin/VPN CIDR (like `18080`) or add `fail2ban`.

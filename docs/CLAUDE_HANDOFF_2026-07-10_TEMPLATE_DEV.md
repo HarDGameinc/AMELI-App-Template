@@ -101,14 +101,30 @@ lo que el appendix daba por pendiente.
 > Fuera de scope (host compartido, otras apps): `ameli-notifier` en
 > `0.0.0.0:8099` y un `ALLOW Anywhere` redundante en `8443` (Bandwidth).
 
+### 3.4. Aplicacion de #1 + #3 en el host (10-jul) + fix de repo #3 (`48d0bd3`)
+
+- **#1 — units endurecidos aplicados**: render quirurgico en el box
+  (`APP_ENV=dev bash -c 'source scripts/_common.sh; render_systemd_units'`)
+  + restart api/notifier. `systemd-analyze security` del api: **8.4 EXPOSED
+  → 1.5 OK**; app sana (`/health` ok, journal sin EPERM/syscall). Backup de
+  los units previos en `/root/systemd-backup-20260710/`. **CERRADO.**
+- **#3 — verify-audit**: fix de repo (`48d0bd3`) — `resolve_systemd_profile`
+  ahora habilita el `verify-audit.timer` en **todo** profile (era renderizado
+  pero nunca habilitado) + agregado a `ALL_UNIT_SUFFIXES` (uninstall) + test
+  parametrizado. Habilitado live en el box (`systemctl enable --now
+  …-verify-audit.timer`, programado). **CERRADO.**
+- El appendix de `SERVER_HARDENING.md` quedo actualizado (sección "Closed
+  2026-07-10").
+
 ## §4. Continuidad
 
 ### 4.1. Pendientes del HOST (operador) — accionables
 
-1. 🔴 **Aplicar los units endurecidos** (#1 arriba) — mayor impacto, mas directo.
-2. 🟠 **TLS con Caddy en 443** (#2) — cierra el cleartext en la LAN.
-3. 🟠 **Enable `verify-audit.timer`** (#3).
-4. 🟡 Restringir SSH 22 a CIDR admin/VPN o `fail2ban` (#4).
+1. ~~🔴 Aplicar units endurecidos (#1)~~ **CERRADO 10-jul** (8.4→1.5 OK, §3.4).
+2. ~~🟠 Enable `verify-audit.timer` (#3)~~ **CERRADO 10-jul** (§3.4).
+3. 🟠 **TLS con Caddy en 443** (#2) — cierra el cleartext en la LAN. Loopback +
+   ufw ya hechos; falta TLS. Ver `docs/TLS_WITH_CADDY.md`.
+4. 🟡 Restringir SSH 22 a CIDR admin/VPN o `fail2ban` (#4) — menor (key-only).
 
 ### 4.2. Pendiente de la WORKSTATION (operador)
 
