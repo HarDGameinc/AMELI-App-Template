@@ -123,12 +123,25 @@ def email_change_confirm_view(request: HttpRequest, request_id: int, token: str)
     )
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def email_change_cancel_view(request: HttpRequest, request_id: int, token: str) -> HttpResponse:
     """Public endpoint reached from the OLD-address alert email. Lets the
-    legitimate user revert a request they didn't make."""
+    legitimate user revert a request they didn't make.
+
+    Two-step to defeat mail-scanner auto-click (Safe Links / Proofpoint /
+    Outlook preview) that GETs every link in the alert email: a prefetch of
+    this URL would otherwise auto-cancel a legitimate pending change. GET
+    renders an intersticial page; POST (CSRF-protected) applies the cancel.
+    Mirrors the confirm two-step (PHASE_B_SECURITY_REVIEW B5); L4 review.
+    """
     from ..services import cancel_email_change
 
+    if request.method == "GET":
+        return render(
+            request,
+            "accounts/email_change_cancel.html",
+            {"request_id": int(request_id), "token": token, "version": __version__},
+        )
     try:
         result = cancel_email_change(
             request_id=int(request_id),

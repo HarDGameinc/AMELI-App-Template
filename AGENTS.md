@@ -183,7 +183,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.0-django, 2026-07-07)
+## State of the project (v0.5.2-django, 2026-07-10)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -203,8 +203,16 @@ header aligned to the content max-width, panel radius/spacing polish. D-1
 Phase C (`v0.4.15`): signature "telemetry pulse" sparkline in the header
 (decorative, palette-colored; /health is IP-allowlisted so the pulse does
 not probe it). Phase D (`v0.4.16`): motion — staggered reveal on load +
-hover states, reduced-motion-safe. **D-1 complete.** All validated on the
-dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+hover states, reduced-motion-safe. **D-1 complete**, and `dev` was
+**promoted to `main` as `v0.5.0-django`** (2026-07-07, PR #1 — the first
+release; tag/release published, `main` is no longer frozen). `v0.5.1`
+(2026-07-08): a defensive security review (3 agents by vuln class + manual
+verification) closed 7 logic/config findings — env fail-closed (M1),
+enforced `mfa_required` (M2), avatar-IDOR keyed on exact `avatar.name` (L1),
+narrowed `decrypt_secret` (L2), two-step email-cancel (L3), last-active-
+superadmin invariant (L4), honest throttle-atomicity docstring (M3); plus a
+branded favicon and web-font license attribution. All validated on the dev
+server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -231,7 +239,9 @@ dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
   (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
   focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
   Still open: screen-reader announcement audits (`aria-live` coverage)
-- No migration tests (alembic upgrade/downgrade)
+- No Django migration tests (apply/rollback of `accounts` migrations in CI).
+  Note: the stack uses **Django migrations only** — there is no Alembic /
+  SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
 - No visual regression tests
 
 ## Source-of-truth files
@@ -264,6 +274,7 @@ dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/PHASE_A_PREPROD_AUDIT_*.md` | Pre-production audit report |
 | `docs/PHASE_B_SECURITY_REVIEW_*.md` | Security review report |
 | `docs/TLS_WITH_CADDY.md` | TLS/Caddy configuration |
+| `docs/SERVER_HARDENING.md` | Host/deployment hardening checklist (systemd sandbox, network, Postgres, SSH, secrets, backups) |
 | `docs/I18N.md` | Internationalization notes |
 | `docs/THIRD_PARTY_LICENSES.md` | Third-party license attributions |
 

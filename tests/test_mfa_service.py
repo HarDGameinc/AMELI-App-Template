@@ -122,7 +122,10 @@ def test_confirm_mfa_enrollment_without_pending_secret_rejects(admin_user):
 
 
 @pytest.mark.django_db
-def test_confirm_mfa_enrollment_clears_admin_requirement(admin_user):
+def test_confirm_mfa_enrollment_keeps_admin_requirement(admin_user):
+    # M2: enrolling SATISFIES the mandate (mfa_enabled becomes True, so the
+    # enrollment gate passes) but must NOT clear ``mfa_required`` — clearing
+    # it let the user immediately self-disable and shed the admin mandate.
     admin_user.mfa_required = True
     admin_user.save()
     start_result = start_mfa_enrollment("admin", current_password=ADMIN_PASSWORD)
@@ -131,7 +134,8 @@ def test_confirm_mfa_enrollment_clears_admin_requirement(admin_user):
     confirm_mfa_enrollment("admin", code)
 
     refreshed = _refresh(admin_user)
-    assert refreshed.mfa_required is False
+    assert refreshed.mfa_enabled is True
+    assert refreshed.mfa_required is True
 
 
 # ---- disable_mfa_for_self ----

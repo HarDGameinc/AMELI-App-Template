@@ -23,10 +23,20 @@ if _proxy_ssl_header:
     if "=" not in _proxy_ssl_header:
         raise RuntimeError(
             "AMELI_APP_SECURE_PROXY_SSL_HEADER must be 'HEADER_NAME=value' "
-            "(e.g. 'HTTP_X_FORWARDED_PROTO=https')."
+            "(e.g. 'X-Forwarded-Proto=https' or 'HTTP_X_FORWARDED_PROTO=https')."
         )
-    _proxy_header_name, _proxy_header_value = _proxy_ssl_header.split("=", 1)
-    SECURE_PROXY_SSL_HEADER = (_proxy_header_name.strip(), _proxy_header_value.strip())
+    _proxy_header_name, _proxy_header_value = (
+        part.strip() for part in _proxy_ssl_header.split("=", 1)
+    )
+    # Django matches this against ``request.META[name]``, whose HTTP-header
+    # keys are WSGI-mangled: ``HTTP_`` prefix, dashes -> underscores, upper
+    # case. Operators routinely set the on-the-wire name ('X-Forwarded-Proto')
+    # and the setting then silently never matches -> ``request.is_secure()``
+    # stays False behind a TLS proxy, a security downgrade with no error.
+    # Normalise the wire form to the META key so both spellings work.
+    if not _proxy_header_name.startswith("HTTP_"):
+        _proxy_header_name = "HTTP_" + _proxy_header_name.upper().replace("-", "_")
+    SECURE_PROXY_SSL_HEADER = (_proxy_header_name, _proxy_header_value)
 
 # HSTS: only meaningful when the deploy is reachable over HTTPS, and
 # easy to lock yourself out of staging if you set it too early. The

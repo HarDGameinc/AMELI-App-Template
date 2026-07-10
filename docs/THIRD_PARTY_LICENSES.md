@@ -35,6 +35,13 @@ notes (e.g. LGPL implications for psycopg).
 | qrcode | ~=7.4 | BSD-3-Clause | TOTP enrollment QR. |
 | uvicorn[standard] | ~=0.30 | BSD-3-Clause | ASGI server. |
 
+> The **Version pin** column is indicative (the declared floor in
+> `pyproject.toml` / `requirements.txt`). The exact, hash-locked versions
+> actually shipped live in `requirements.lock` — that file is the source
+> of truth for what is redistributed. License *type* does not change
+> across these packages' minor/patch bumps, so the attribution above holds
+> regardless of the locked version.
+
 ## Development / test dependencies
 
 These are NOT shipped in the runtime artifact but appear in
@@ -48,6 +55,30 @@ These are NOT shipped in the runtime artifact but appear in
 | ruff | ~=0.6 | MIT |
 | pip-audit | ~=2.7 | Apache-2.0 |
 | axe-core (vendored) | 4.10.2 | **MPL-2.0** | Vendored at `tests/e2e/vendor/axe.min.js` for the Playwright accessibility smoke. Test-only (not shipped in the runtime artifact), unmodified, MPL header preserved. File-level copyleft applies only to `axe.min.js` itself, which we do not modify — no effect on the template's MIT license. Not a pip dependency (kept out of the hash-locked `requirements*.lock`). |
+
+## Web fonts (Google Fonts, CDN-referenced)
+
+The UI links three font families from the Google Fonts CDN (`base.html`),
+so the font files are served by Google and are **not redistributed** in
+the template's own artifact — no notice is legally required for merely
+referencing them. They are listed here for transparency and for adopters
+who choose to **self-host** the files (self-hosting redistributes them,
+which does activate the OFL / Apache-2.0 notice requirements).
+
+| Family | Where | License | Copyright |
+| --- | --- | --- | --- |
+| DM Sans | Display / headings (D-1) | SIL OFL 1.1 | Colophon Foundry, Jonny Pinhorn, Indian Type Foundry |
+| IBM Plex Sans | Body copy (D-1) | SIL OFL 1.1 | © 2017 IBM Corp. |
+| Material Symbols Rounded | Icon glyphs | Apache-2.0 | © Google LLC |
+
+- **SIL OFL 1.1** (DM Sans, IBM Plex Sans): the fonts may be used, bundled,
+  embedded and redistributed freely, including in commercial products; the
+  only constraints are that they not be sold on their own and that the
+  Reserved Font Name not be reused on a modified version. Ship the OFL text
+  with the font files if you self-host.
+- **Apache-2.0** (Material Symbols Rounded): if self-hosted, forward
+  Google's `NOTICE` alongside the glyph files (see the Apache NOTICE section
+  below).
 
 ## LGPL note (psycopg)
 
@@ -74,6 +105,8 @@ template currently pulls in two Apache-2.0 deps:
   dateutil contributors.
 - `pip-audit` (dev only; not shipped at runtime): Copyright Trail of
   Bits.
+- **Material Symbols Rounded** — only if **self-hosted** (the default
+  CDN reference does not redistribute the glyphs): Copyright Google LLC.
 
 Operators redistributing AMELI App Template binaries that include
 these wheels must preserve the above attributions alongside this
@@ -87,5 +120,7 @@ file.
 | MIT ↔ Apache-2.0 | yes | Apache-2.0 NOTICE must travel with the artifact. |
 | MIT ↔ LGPL-3.0 (psycopg) | yes (via dynamic link) | See "LGPL note". |
 | MIT ↔ MIT-CMU (Pillow) | yes | Functionally identical to MIT. |
+| MIT ↔ SIL OFL 1.1 (fonts) | yes | Permissive; Reserved Font Name is the only real constraint. CDN-referenced, so not redistributed by default. |
+| MIT ↔ MPL-2.0 (axe-core) | yes | File-level copyleft, test-only, unmodified. |
 
 The template ships zero GPL / AGPL-licensed code.

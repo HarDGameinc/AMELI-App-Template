@@ -51,6 +51,32 @@ def test_update_user_account_allows_non_self_disable(admin_user, public_tester):
     assert result["user"]["enabled"] is False
 
 
+# ---- update_user_account: last-active-superadmin invariant (L4) ----
+
+
+@pytest.mark.django_db
+def test_update_user_account_refuses_disabling_last_active_superadmin(admin_user):
+    # ``admin`` is the only active superadmin; a non-self actor disabling it
+    # would leave zero admins. The self-guard doesn't cover this cross-user
+    # / concurrent path, so the last-admin invariant must.
+    with pytest.raises(ValueError, match="ultimo superadmin"):
+        update_user_account("ghost", "admin", enabled=False)
+
+
+@pytest.mark.django_db
+def test_update_user_account_refuses_demoting_last_active_superadmin(admin_user):
+    with pytest.raises(ValueError, match="ultimo superadmin"):
+        update_user_account("ghost", "admin", role="public")
+
+
+@pytest.mark.django_db
+def test_update_user_account_allows_reducing_admin_when_another_remains(admin_user, public_tester):
+    update_user_account("admin", "tester", role="superadmin")  # now two active admins
+    result = update_user_account("tester", "admin", enabled=False)
+    assert result["ok"] is True
+    assert result["user"]["enabled"] is False
+
+
 # ---- update_user_account: self-role-change ----
 
 

@@ -11,11 +11,12 @@ architecture, policies), then the most recent `docs/CLAUDE_HANDOFF_*`.
 ## Branching
 
 - **Work on `dev`.** The dev server (`ha-report2`) always pulls `dev`.
-- **`main` is frozen** until the **v0.5.0 / v1.0.0** milestone. It is the
-  GitHub default branch and advances **only by explicit operator
-  instruction, via PR** — never a direct push.
+- **`main` is the release branch** (GitHub default). It was promoted to
+  **`v0.5.0-django`** on 2026-07-07 (previously frozen until this
+  milestone). It advances **only by PR from `dev` with green CI** — never a
+  direct push, and only by explicit operator instruction.
 - There is no local `main` checkout by default; `origin/main` is the
-  frozen reference.
+  release reference.
 
 ## Commits
 

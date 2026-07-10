@@ -66,18 +66,23 @@ def test_media_404_for_missing_file(client, admin_user):
 
 
 def _seed_avatar(slug: str, token: str = "a1b2c3d4e5f60718", ext: str = "png",
-                 content: bytes = b"fake-png-bytes") -> str:
-    """Plant a fake avatar file under ``MEDIA_ROOT/avatars/`` and
-    return its URL-path tail. Mirrors the layout of
-    ``avatar_upload_to`` in models.py — owner slug + 16-hex token +
-    extension. Tests do NOT need a real PNG; ``serve`` only cares about
-    the bytes round-tripping.
+                 content: bytes = b"fake-png-bytes", owner=None) -> str:
+    """Plant a fake avatar file under ``MEDIA_ROOT/avatars/`` and return its
+    URL-path tail. Mirrors ``avatar_upload_to`` (owner slug + 16-hex token +
+    ext). When ``owner`` is given, also point that user's ``avatar`` field
+    at the file — as a real upload would — so the ownership gate (which now
+    matches the exact stored ``avatar.name``, not a lossy slug) recognises
+    them. Tests do NOT need a real PNG; ``serve`` only round-trips bytes.
     """
     media_root = Path(settings.MEDIA_ROOT) / "avatars"
     media_root.mkdir(parents=True, exist_ok=True)
     name = f"{slug}-{token}.{ext}"
     (media_root / name).write_bytes(content)
-    return f"avatars/{name}"
+    rel = f"avatars/{name}"
+    if owner is not None:
+        owner.avatar.name = rel
+        owner.save(update_fields=["avatar"])
+    return rel
 
 
 @pytest.fixture()
@@ -102,12 +107,28 @@ def bob(db):
 
 @pytest.mark.django_db
 def test_owner_can_fetch_their_own_avatar(client, alice):
-    rel = _seed_avatar("alice")
+    rel = _seed_avatar("alice", owner=alice)
     client.force_login(alice)
     response = client.get(f"/media/{rel}")
     assert response.status_code == 200
     body = b"".join(response.streaming_content) if response.streaming else response.content
     assert body == b"fake-png-bytes"
+
+
+@pytest.mark.django_db
+def test_slug_twin_cannot_fetch_avatar(client):
+    """L1 regression: usernames that collapse to the SAME slug (the old gate
+    compared lossy slugs, so ``al.ice`` and ``al-ice`` both slug to
+    ``al-ice`` and passed each other's ownership check). Ownership now keys
+    on the exact stored avatar name, so the twin is refused.
+    """
+    owner = User.objects.create_user(username="al.ice", password="UserPass!12?",
+                                      role=User.ROLE_PUBLIC, email="a@example.com")
+    twin = User.objects.create_user(username="al-ice", password="UserPass!12?",
+                                    role=User.ROLE_PUBLIC, email="b@example.com")
+    rel = _seed_avatar("al-ice", owner=owner)  # avatar_upload_to slug for both
+    client.force_login(twin)
+    assert client.get(f"/media/{rel}").status_code == 403
 
 
 @pytest.mark.django_db
@@ -119,7 +140,7 @@ def test_other_user_cannot_fetch_owner_avatar(client, alice, bob):
     """
     from ameli_web.audit.models import AuditEvent
 
-    rel = _seed_avatar("alice")
+    rel = _seed_avatar("alice", owner=alice)
     client.force_login(bob)
     response = client.get(f"/media/{rel}")
     assert response.status_code == 403
@@ -184,16 +205,16 @@ def test_anonymous_request_unchanged_for_avatars(client, alice):
 @pytest.mark.django_db
 def test_owner_with_special_chars_in_username(client, db):
     """User ``Carlos Urbina`` is stored with the safe-username slug
-    ``carlos-urbina`` in the avatar filename. The gate must
-    canonicalise the requester's username the same way; otherwise the
-    owner gets locked out of their own avatar.
+    ``carlos-urbina`` in the avatar filename. Ownership now keys on the
+    exact stored ``avatar.name`` (not a re-derived slug), so the owner
+    reaches their own avatar regardless of username punctuation.
     """
     user = User.objects.create_user(
         username="Carlos Urbina",
         password="UserPass!12?",
         role=User.ROLE_PUBLIC,
     )
-    rel = _seed_avatar("carlos-urbina")
+    rel = _seed_avatar("carlos-urbina", owner=user)
     client.force_login(user)
     response = client.get(f"/media/{rel}")
     assert response.status_code == 200

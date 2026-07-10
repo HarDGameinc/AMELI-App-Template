@@ -90,18 +90,6 @@ def _serve_static(request, path):
     return serve(request, Path(absolute).name, document_root=str(Path(absolute).parent))
 
 
-def _safe_username_slug(username: str) -> str:
-    """Mirror the slug logic used in ``accounts.models.avatar_upload_to``.
-
-    Kept here (instead of imported) to avoid a circular import between
-    ``urls.py`` and ``accounts.models``. If the upload-side slug logic
-    changes, this MUST be updated in lockstep — otherwise the ownership
-    check breaks for any user whose username contains non-alphanumeric
-    characters.
-    """
-    return "".join(ch.lower() if ch.isalnum() else "-" for ch in (username or "user")).strip("-") or "user"
-
-
 def _parse_avatar_filename(path: str):
     """Extract ``(safe_username, token)`` from an avatar media path.
 
@@ -163,8 +151,12 @@ def _authenticated_media(request, path):
     parsed = _parse_avatar_filename(path)
     if parsed is not None:
         safe_username, _token = parsed
-        requester_slug = _safe_username_slug(user.username)
-        if not can_view_avatar(user, owner_slug=safe_username, requester_slug=requester_slug):
+        # Ownership is an EXACT match of the requested path against this
+        # user's stored avatar name (which includes the random token) — not
+        # a lossy username slug that could collide (L1 security review).
+        own_avatar = user.avatar.name if getattr(user, "avatar", None) else ""
+        is_owner = bool(own_avatar) and own_avatar == path
+        if not can_view_avatar(user, is_owner=is_owner):
             # Deliberate: audit the OWNER's slug as the target so the
             # audit chain answers "who was probed?" rather than just
             # "who probed?". The requester is captured by ``actor``.

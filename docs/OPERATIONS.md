@@ -151,6 +151,34 @@ PY
 
 No `set -a`, no `IFS= read`, no `export APP_CONFIG`.
 
+## Continuous Integration (`.github/workflows/ci.yml`)
+
+CI is tuned to stay inside the GitHub Actions monthly budget (2000 min on
+the Free plan) **without weakening the promotion gate**. The trigger
+strategy (since 2026-07-10):
+
+| Event | What runs | ~Cost |
+|---|---|---|
+| **Docs-only push** (`**/*.md`, `docs/**`) | nothing — skipped via `paths-ignore` | 0 |
+| **Code push to `dev`** | `Lint + Test` on **Python 3.13** only (ruff · ruff-format · bandit · mypy · django check · migrations · pytest+coverage on SQLite) + `pip-audit` + `js-unit` | ~4-5 min |
+| **Pull request** (promotion to `main`) | the **full** `Lint + Test` matrix (3.11 · 3.12 · 3.13 · 3.14) + **E2E** (Playwright/Chromium) + **Test (PostgreSQL)** + `pip-audit` + `js-unit` | ~18 min |
+| **Weekly schedule** (Mon 06:00 UTC) | same full sweep as a PR — catches Python-version drift and freshly-disclosed CVEs (`pip-audit`) even with no push | ~18 min |
+
+Key points:
+
+- **Skipping is precise.** A *mixed* commit (code **+** docs) still runs;
+  a *release* commit touches `pyproject.toml`/`requirements*.lock` (not
+  ignored), so `pip-audit` always gates a dependency change.
+- **The full matrix + e2e + Postgres run on every PR to `main`**, so the
+  branch-protection required checks below are all present on a promotion.
+  A plain `dev` push only produces `Lint + Test (Python 3.13)` — that is
+  expected, not a regression.
+- The `dev` push runs the SQLite unit suite; the **PostgreSQL** run
+  (which exercises `select_for_update()` etc. on the real backend) and
+  the **e2e** browser flows move to PR + weekly.
+- To force a full run without a PR: wait for the Monday schedule, or add
+  a `workflow_dispatch` trigger if on-demand full runs become useful.
+
 ## Branch protection on `main`
 
 Repo policy (applied 2026-06-18, roadmap #23):

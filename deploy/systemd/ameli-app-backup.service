@@ -33,4 +33,24 @@ ExecStart=__APP_DIR__/scripts/backup.sh
 # blast radius if pg_dump or gpg is ever exploited.
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER
+UMask=0077
+ReadWritePaths=__DATA_DIR__ __LOG_DIR__ __BACKUP_DIR__
+# Deliberately NOT sandboxed as tightly as the app services: this is a
+# root oneshot that shells out to pg_dump + tar/gzip across file owners,
+# so SystemCallFilter / RestrictAddressFamilies / an empty
+# CapabilityBoundingSet are omitted to avoid breaking the backup. It runs
+# briefly under a timer and is not network-exposed. See SERVER_HARDENING.md.

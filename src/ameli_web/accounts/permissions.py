@@ -67,22 +67,28 @@ def can_access_admin_panel(user: Any) -> bool:
     return is_superadmin(user)
 
 
-def can_view_avatar(requester: Any, owner_slug: str, requester_slug: str) -> bool:
+def can_view_avatar(requester: Any, *, is_owner: bool) -> bool:
     """IDOR check for ``/media/avatars/<slug>-<token>.<ext>``.
 
-    The avatar is viewable by:
+    Viewable by:
 
-    * the owner (slug matches the requester's username slug);
-    * any superadmin (the operator may legitimately need to see the
-      avatar in the user-list UI).
+    * the owner — where ``is_owner`` is decided by the caller with an
+      EXACT match of the requested path against the requester's stored
+      ``avatar.name`` (which carries the unguessable random token), NOT a
+      lossy username slug. The old slug comparison collided (``john.doe``,
+      ``john_doe``, ``john@doe`` all slug to ``john-doe``), so a user who
+      picked a slug-twin username could read another user's avatar despite
+      this gate (L1 security review).
+    * any superadmin (the operator may legitimately need to see the avatar
+      in the user-list UI).
 
-    Anonymous requesters get ``False`` even for their own slug —
-    callers should have already enforced authentication; this is a
-    second line of defence.
+    Anonymous requesters get ``False`` even when ``is_owner`` — callers
+    should have already enforced authentication; this is a second line of
+    defence.
     """
     if not is_authenticated(requester):
         return False
-    if requester_slug == owner_slug:
+    if is_owner:
         return True
     return is_superadmin(requester)
 

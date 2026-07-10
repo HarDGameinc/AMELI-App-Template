@@ -64,6 +64,31 @@ def test_profile_includes_notifier(profile):
     )
 
 
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "api-worker-maintenance",
+        "api-web",
+        "api-web-worker-maintenance",
+        "web-worker",
+        "web-capture",
+        "api-web-capture",
+        "api-capture-notifier-maintenance",
+    ],
+)
+def test_profile_includes_crosscutting_timers(profile):
+    """Every profile enables the cross-cutting ops/security timers:
+    backup and verify-audit (audit-chain integrity). verify-audit was
+    previously rendered but never enabled by any profile."""
+    _, timers = _resolve(profile)
+    assert any("backup" in t for t in timers), (
+        f"profile {profile!r} does not enable the backup timer: timers={timers}"
+    )
+    assert any("verify-audit" in t for t in timers), (
+        f"profile {profile!r} does not enable the verify-audit timer: timers={timers}"
+    )
+
+
 def test_default_profile_is_api_worker_maintenance():
     """If anyone changes the default in _common.sh, this catches it
     so the operator notices in code review rather than after a deploy."""

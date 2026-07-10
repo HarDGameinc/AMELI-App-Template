@@ -159,19 +159,52 @@ cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
 
 ## Cambios en el AMELI App Template
 
-Despues de habilitar TLS, marca las cookies como secure via env:
+Detras de un proxy TLS hay que ajustar **cuatro** cosas en
+`/etc/<slug>-<env>/app.env`. Cambialas **juntas** y reinicia: arreglar el
+header sin agregar el trusted-origin rompe el login (ver mas abajo).
 
 ```bash
 # /etc/<slug>-<env>/app.env
+
+# 1. Que request.is_secure() sea honesto detras del proxy. Caddy manda
+#    "X-Forwarded-Proto: https"; Django lo lee como META HTTP_X_FORWARDED_PROTO.
+#    Aceptamos ambas formas (la app normaliza), pero es el header CLAVE:
+#    si queda mal, is_secure() es False y secure-cookies/HSTS/CSRF-seguro
+#    no se activan aunque el sitio sea HTTPS (falla en silencio).
+AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https
+
+# 2. Origenes confiables para CSRF (scheme://host[:puerto]). REQUERIDO en
+#    cuanto is_secure() es True: sin esto, todo POST (login) falla el
+#    chequeo estricto de origen. Lista separada por comas.
+AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480
+
+# 3. Cookies solo por HTTPS (+ prefijo __Host- en la de CSRF).
 AMELI_APP_SESSION_COOKIE_SECURE=true
+
+# 4. Hosts que responde la app. En dev el default es "*"; fuera de dev
+#    (o si lo restringis) tiene que incluir el hostname del sitio Caddy.
+# AMELI_APP_DJANGO_ALLOWED_HOSTS=dev03.ameli.cl,127.0.0.1
 ```
 
-Eso fuerza que el browser solo envie la session cookie sobre HTTPS, y
-proteccion CSRF tambien valida origen seguro.
+> **Footgun del #1**: Django compara contra `request.META[name]`, cuyas
+> claves de header estan WSGI-mangled (`HTTP_` + mayusculas +
+> guiones->underscores). Poner `X-Forwarded-Proto=https` "a secas" no
+> matcheaba y dejaba `is_secure()` en False **sin ningun error**. Desde
+> 2026-07-10 la app **normaliza** el nombre, asi que tanto
+> `X-Forwarded-Proto=https` como `HTTP_X_FORWARDED_PROTO=https` funcionan.
 
-Si la app esta detras de Caddy, el `client_ip()` de servicios.py ya
-lee `X-Forwarded-For`, asi que el rate limiting y account lockout
-cuentan correctamente la IP del cliente real (no la del proxy).
+> **Seguridad del header**: confiar en `X-Forwarded-Proto` solo es seguro
+> si la app **no** es alcanzable salvo por el proxy. Con
+> `AMELI_APP_HOST=127.0.0.1` (bind a loopback) se cumple; si la app
+> escuchara en `0.0.0.0`, un cliente podria mandar el header y falsear
+> "secure". Verifica el bind con `ss -tlnp | grep <puerto>`.
+
+Si la app esta detras de Caddy, el `client_ip()` de `services/` ya lee
+`X-Forwarded-For`, asi que el rate limiting y account lockout cuentan
+correctamente la IP del cliente real (no la del proxy).
+
+Verifica el login **por HTTPS** despues del cambio (un POST real, no solo
+un GET) — es lo que ejercita el CSRF trusted-origin.
 
 ## Verificacion
 

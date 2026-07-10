@@ -1,7 +1,36 @@
 from dataclasses import replace
 
+import pytest
+
 from ameli_app.config import load_settings, settings_summary
 from ameli_web import settings as django_settings
+
+
+def test_load_settings_requires_explicit_environment(tmp_path, monkeypatch):
+    """M1 fail-closed: a config that omits ``app.environment`` with ``APP_ENV``
+    unset must REFUSE to boot rather than silently defaulting to 'dev' — the
+    old default disabled every production hardening guard on a forgotten env."""
+    monkeypatch.delenv("APP_ENV", raising=False)
+    cfg = tmp_path / "app.yaml"
+    cfg.write_text("app:\n  name: Test\n  slug: test\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="No environment declared"):
+        load_settings(config_path=str(cfg))
+
+
+def test_load_settings_honors_explicit_environment(tmp_path, monkeypatch):
+    """The same config with an explicit ``app.environment`` boots normally."""
+    monkeypatch.delenv("APP_ENV", raising=False)
+    cfg = tmp_path / "app.yaml"
+    cfg.write_text("app:\n  name: Test\n  slug: test\n  environment: dev\n", encoding="utf-8")
+    assert load_settings(config_path=str(cfg)).environment == "dev"
+
+
+def test_load_settings_environment_from_app_env_var(tmp_path, monkeypatch):
+    """APP_ENV alone (config omits it) is a valid explicit declaration."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    cfg = tmp_path / "app.yaml"
+    cfg.write_text("app:\n  name: Test\n  slug: test\n", encoding="utf-8")
+    assert load_settings(config_path=str(cfg)).environment == "prod"
 
 
 def test_load_settings_from_example(config_path):

@@ -448,9 +448,21 @@ def check_login_throttle(*, username: str, ip: str) -> None:
     """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should
     be refused. Returns silently if the login may proceed.
 
-    Reads the atomic counter that :func:`record_login_failure` writes;
-    the snapshot is consistent with the latest committed increment so a
-    concurrent burst cannot slip past the cap.
+    Reads the counter that :func:`record_login_failure` writes. This is a
+    **check-then-act** gate: the read here is NOT in the same locked
+    transaction as the increment (which only happens *after* an auth
+    failure), so a burst of concurrent requests can each read a stale
+    sub-cap count and slip through in one window before any of them commit
+    a failure — i.e. the per-window cap is a soft ceiling, not a hard one,
+    under high concurrency (M3 security review).
+
+    Why this is an accepted bound, not a hole: the counters catch up (no
+    permanent bypass), the **permanent lockout** (``locked_at``, set after
+    a few fully-consumed windows) caps the *total* attempts to a few dozen,
+    and the smallest keyspace this gates — a 6-digit MFA code (10^6) — makes
+    even a burst per window a negligible guessing edge. A hard fix (count
+    attempts, or reserve-then-verify inside one locked txn) would change the
+    lockout semantics and is deferred.
 
     Hard-locked accounts (``locked_at`` set by the permanent-lockout
     promotion) are always refused regardless of throttle counters until

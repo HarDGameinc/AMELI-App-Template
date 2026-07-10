@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Cancelar cambio de email - {{ app_name }}{% endblock %}
+{% block header_title %}Cancela el cambio de email{% endblock %}
+{% block header_subtitle %}Toca el boton para revertir el pedido{% endblock %}
+
+{% block content %}
+{% comment %}
+Intersticial POST page (L4 security review — mirrors the confirm two-step
+of B5). Mail-scanners (Microsoft Safe Links, Proofpoint URL Defense,
+Outlook preview) hacen GET automatico a cualquier URL del email — si
+cancelaramos en el GET, un scanner que prefetch-ea el enlace de alerta de
+la direccion ANTIGUA cancelaria un cambio legitimo antes de que el usuario
+decida. Esta pagina es estatica (GET) y la cancelacion solo se aplica al
+POST (CSRF-protegido por Django).
+{% endcomment %}
+<section class="panel">
+  <div class="form-card-head">
+    <div class="metric-label">Cancelar el pedido</div>
+    <p class="panel-copy">
+      Si vos no pediste cambiar tu email, toca el boton para cancelar el
+      pedido pendiente. El enlace caduca tras un uso.
+    </p>
+  </div>
+  <form method="post" class="modal-actions-row">
+    {% csrf_token %}
+    <button class="primary" type="submit">Cancelar cambio de email</button>
+    <a class="icon-action" href="/profile/">Volver</a>
+  </form>
+</section>
+{% endblock %}

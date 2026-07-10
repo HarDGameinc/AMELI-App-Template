@@ -107,8 +107,11 @@ def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
     was_enabled = user.mfa_enabled
     user.mfa_totp_enabled = True
     user.mfa_enabled = True
-    user.mfa_required = False
-    user.save(update_fields=["mfa_totp_enabled", "mfa_enabled", "mfa_required", "updated_at"])
+    # NOTE: do NOT clear ``mfa_required`` here. Enrolling already satisfies
+    # the mandate (``mfa_enabled`` is now True, so the enrollment gate
+    # passes), and keeping the flag set is what lets ``disable_*_for_self``
+    # refuse to drop an admin-mandated account back below MFA (M2).
+    user.save(update_fields=["mfa_totp_enabled", "mfa_enabled", "updated_at"])
     # Only mint a fresh recovery batch the first time the user enables
     # ANY method. Stacking the second method keeps the existing codes.
     if not was_enabled:
@@ -133,6 +136,15 @@ def confirm_mfa_enrollment(actor_username: str, code: str) -> dict[str, Any]:
     }
 
 
+# Raised (as ValueError) when a self-disable would drop an account that an
+# admin has flagged ``mfa_required`` below MFA entirely. The mandate is
+# absolute for self-service; only an admin can lift it (clear the flag).
+_MFA_REQUIRED_DISABLE_MSG = (
+    "Un administrador exige 2FA en esta cuenta; no puedes desactivar tu "
+    "ultimo factor. Contacta al administrador si necesitas removerlo."
+)
+
+
 def disable_mfa_totp_for_self(actor_username: str, *, current_password: str) -> dict[str, Any]:
     """Disable just the TOTP factor for the calling user."""
     user = User.objects.filter(username__iexact=actor_username).first()
@@ -142,6 +154,10 @@ def disable_mfa_totp_for_self(actor_username: str, *, current_password: str) -> 
         return {"ok": True, "status": "already-disabled"}
     if not current_password or not user.check_password(current_password):
         raise ValueError("current password is invalid")
+    # M2: refuse to drop a mandated account below MFA. Disabling TOTP is
+    # only allowed here if the email factor keeps them covered.
+    if user.mfa_required and not user.mfa_email_enabled:
+        raise ValueError(_MFA_REQUIRED_DISABLE_MSG)
     user.mfa_totp_enabled = False
     user.mfa_secret = ""
     user.mfa_enabled = bool(user.mfa_email_enabled)
@@ -167,6 +183,9 @@ def disable_mfa_email_for_self(actor_username: str, *, current_password: str) ->
         return {"ok": True, "status": "already-disabled"}
     if not current_password or not user.check_password(current_password):
         raise ValueError("current password is invalid")
+    # M2: refuse to drop a mandated account below MFA (TOTP must remain).
+    if user.mfa_required and not user.mfa_totp_enabled:
+        raise ValueError(_MFA_REQUIRED_DISABLE_MSG)
     user.mfa_email_enabled = False
     user.mfa_enabled = bool(user.mfa_totp_enabled)
     user.save(update_fields=["mfa_email_enabled", "mfa_enabled", "updated_at"])
@@ -194,6 +213,9 @@ def disable_mfa_for_self(actor_username: str, *, current_password: str) -> dict[
         return {"ok": True, "status": "already-disabled"}
     if not current_password or not user.check_password(current_password):
         raise ValueError("current password is invalid")
+    # M2: a mandated account cannot self-disable ALL factors.
+    if user.mfa_required:
+        raise ValueError(_MFA_REQUIRED_DISABLE_MSG)
     user.mfa_totp_enabled = False
     user.mfa_email_enabled = False
     user.mfa_enabled = False
@@ -452,8 +474,9 @@ def confirm_mfa_email_enrollment(actor_username: str, code: str) -> dict[str, An
     was_enabled = user.mfa_enabled
     user.mfa_email_enabled = True
     user.mfa_enabled = True
-    user.mfa_required = False
-    user.save(update_fields=["mfa_email_enabled", "mfa_enabled", "mfa_required", "updated_at"])
+    # See confirm_mfa_enrollment: keep ``mfa_required`` set so the mandate
+    # survives and self-disable stays blocked (M2).
+    user.save(update_fields=["mfa_email_enabled", "mfa_enabled", "updated_at"])
     # Only mint a fresh recovery batch the first time the user enables
     # ANY method. Stacking the second method keeps the existing codes.
     if not was_enabled:

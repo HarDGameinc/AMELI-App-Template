@@ -1,10 +1,23 @@
 name: CI
 
 on:
+  # Docs-only pushes skip CI (no code/deps changed) — saves Actions
+  # minutes. A mixed commit (code + docs) still runs. Release commits
+  # touch pyproject/lock (not ignored), so pip-audit still gates them.
   push:
     branches: [main, dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches: [main, dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  # Weekly full sweep (matrix + e2e + postgres + pip-audit) so version
+  # drift and freshly-disclosed CVEs get caught even without a push.
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
 
 # Cancel in-flight runs when a new commit lands on the same ref —
 # avoids burning CI minutes on stale PR updates.
@@ -19,12 +32,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Django 5.2 LTS supports Python 3.10-3.14. We test 3.11 (floor)
-        # through 3.14 — 3.13 is what the dev server runs, 3.14 what the
-        # dev workstation runs. The hash-locked requirements.lock already
-        # carries cp313/cp314 manylinux wheel hashes, so --require-hashes
-        # installs cleanly across the whole matrix without a lock regen.
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # Django 5.2 LTS supports Python 3.10-3.14. To save Actions
+        # minutes, a plain push to dev tests only 3.13 (what the server
+        # runs); the FULL matrix (3.11 floor → 3.14 workstation) runs on
+        # pull_request (promotion to main) and the weekly schedule. The
+        # hash-locked requirements.lock carries cp311-cp314 wheel hashes,
+        # so --require-hashes installs cleanly across the whole matrix.
+        python-version: ${{ (github.event_name == 'pull_request' || github.event_name == 'schedule') && fromJSON('["3.11", "3.12", "3.13", "3.14"]') || fromJSON('["3.13"]') }}
 
     # Sensible default env so the test suite + management commands
     # boot without manual export. Mirrors the minimum the boot
@@ -144,7 +158,7 @@ jobs:
     # is clean and the operator has a single-screen path forward on a
     # surprise CVE: bump the lower bound of the affected dep in
     # requirements.txt to the first CVE-clean release and re-run.
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -180,7 +194,8 @@ jobs:
     # runners (~30 s).
     name: E2E (Playwright + Chromium)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    # Heavy (chromium download); run on PR (promotion) + weekly, not every push.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -246,7 +261,7 @@ jobs:
     # ``typeof document`` so it is ``require``-able under node:test.
     name: JS unit tests (node:test)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -273,7 +288,9 @@ jobs:
     # matrix already covers Python-version spread on SQLite.
     name: Test (PostgreSQL)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    # Postgres service is costly; run on PR (promotion) + weekly, not every
+    # push. The SQLite unit suite still runs on every code push (3.13).
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     services:
       postgres:
         image: postgres:16

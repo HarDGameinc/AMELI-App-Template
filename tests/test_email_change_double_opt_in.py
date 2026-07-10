@@ -384,14 +384,20 @@ def test_email_change_cancel_view_via_alert_link_renders_outcome(client, tester)
     match = re.search(r"/cancel/(\d+)/([^/\s]+)/", alert_msg.body)
     request_id, token = match.group(1), match.group(2)
 
-    response = client.get(f"/profile/email-change/cancel/{request_id}/{token}/")
+    url = f"/profile/email-change/cancel/{request_id}/{token}/"
+    # L4: GET renders the intersticial and must NOT cancel (mail-scanner
+    # prefetch safety); only POST applies the cancel.
+    get_resp = client.get(url)
+    assert get_resp.status_code == 200
+    assert b"Cancelar cambio de email" in get_resp.content
+    assert EmailChangeRequest.objects.get(id=request_id).cancelled_at is None
 
-    assert response.status_code == 200
-    assert b"Pedido cancelado" in response.content
+    post_resp = client.post(url)
+    assert post_resp.status_code == 200
+    assert b"Pedido cancelado" in post_resp.content
     tester.refresh_from_db()
     assert tester.email == "old@example.com"
-    record = EmailChangeRequest.objects.get(id=request_id)
-    assert record.cancelled_at is not None
+    assert EmailChangeRequest.objects.get(id=request_id).cancelled_at is not None
 
 
 @pytest.mark.django_db
@@ -404,7 +410,9 @@ def test_email_change_cancel_view_rejects_invalid_token(client, tester):
     )
     record = EmailChangeRequest.objects.get(user=tester)
 
-    response = client.get(f"/profile/email-change/cancel/{record.id}/wrong-token/")
+    # The rejection now happens on the POST that applies the cancel; the GET
+    # intersticial renders regardless (token only flows through the form).
+    response = client.post(f"/profile/email-change/cancel/{record.id}/wrong-token/")
 
     assert response.status_code == 400
 
