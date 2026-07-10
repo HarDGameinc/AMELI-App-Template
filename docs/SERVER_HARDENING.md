@@ -146,7 +146,8 @@ non-dev deploy:
 > SSH/SFTP key (OpenSSH + PuTTY + FileZilla) with
 > [`tools/Setup-SshKey.ps1`](../tools/Setup-SshKey.ps1) — idempotent, prints
 > the exact `authorized_keys` command. E.g.
-> `.\tools\Setup-SshKey.ps1 -ServerHost <ip> -MakePpk`. `Get-Help` for options.
+> `.\tools\Setup-SshKey.ps1 -ServerHost <ip> -MakePpk`. Full manual (walkthrough,
+> examples, troubleshooting): [`tools/Setup-SshKey.md`](../tools/Setup-SshKey.md).
 
 - **SSH**: **key-only**. In `/etc/ssh/sshd_config`:
   `PasswordAuthentication no`, `KbdInteractiveAuthentication no`. For root

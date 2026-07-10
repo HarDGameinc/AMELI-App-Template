@@ -51,6 +51,9 @@
 .NOTES
     Re-running is safe: it skips generation when the key exists and just
     re-prints the public key + instructions.
+
+.LINK
+    tools/Setup-SshKey.md   (full manual: walkthrough, examples, troubleshooting)
 #>
 [CmdletBinding()]
 param(
