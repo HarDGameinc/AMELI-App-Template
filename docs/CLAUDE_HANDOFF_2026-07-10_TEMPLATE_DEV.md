@@ -208,5 +208,8 @@ SSH key-only + restringido por CIDR, Postgres loopback. Unico remanente
 opcional: limpiar reglas ufw vestigiales del 18080. Ademas se corto el
 release de seguridad **v0.5.2-django** (Django 5.2.16, 3 CVEs — §3.7).
 `dev` en `v0.5.2-django`, **live en el server** (Django 5.2.16
-deployado 10-jul, 3 CVEs parcheados). Ni v0.5.1 ni v0.5.2 promovidos a
-`main` aun (main sigue en v0.5.0).
+deployado 10-jul, 3 CVEs parcheados). **Promovido a `main`** (10-jul, PR
+#2 → CI full verde → merge commit `99e2eac` → tag + release
+`v0.5.2-django`); `main` paso de v0.5.0 a **v0.5.2** con todo el trabajo
+de seguridad. Post-promo: `pip-audit` ahora corre tambien en PR
+(`76c5dce`).
