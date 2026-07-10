@@ -138,6 +138,18 @@ HSTS/CSRF-seguro sin activarse, sin error).
   `ameli_app_session` con `Secure=true` (prueba de que `is_secure()` es
   True). **#2 CERRADO.**
 
+### 3.6. #4 SSH 22 restringido + limpieza ufw (host)
+
+Se reemplazo el `OpenSSH ALLOW Anywhere` (v4+v6) por allows por-CIDR de
+las redes admin/VPN (192.168.100/110/111.0/24, 10.100.100.0/24,
+10.11.2.1). Secuencia self-protecting: allow del origen actual primero
+(el operador entra por VPN `10.11.2.1`), luego drop del Anywhere.
+**Gotcha vivido**: `ufw` re-numera tras cada delete → borrar dos seguidas
+por numero pego en una regla ajena (`8106/tcp` de OMEGA), que se
+restauro. Regla de oro documentada en `SERVER_HARDENING.md`: borrar una y
+re-listar. Las reglas vestigiales del 18080 se dejaron (inofensivas,
+loopback-only). **#4 CERRADO.**
+
 ## §4. Continuidad
 
 ### 4.1. Pendientes del HOST (operador) — accionables
@@ -146,8 +158,11 @@ HSTS/CSRF-seguro sin activarse, sin error).
 2. ~~🟠 Enable `verify-audit.timer` (#3)~~ **CERRADO 10-jul** (§3.4).
 3. ~~🟠 TLS (#2)~~ **CERRADO 10-jul** (§3.5) — front ya existia (07-09); se
    arreglo el proxy header (repo + app.env), login HTTPS validado.
-4. 🟡 Restringir SSH 22 a CIDR admin/VPN o `fail2ban` (#4) — **único que queda**,
-   menor (key-only). Limpiar tambien las reglas ufw vestigiales del 18080.
+4. ~~🟡 Restringir SSH 22 (#4)~~ **CERRADO 10-jul** (§3.6) — 22 solo desde CIDR
+   admin/VPN. **Revision de SERVER_HARDENING completa: los 4 hallazgos cerrados.**
+
+Unico remanente opcional: limpiar las reglas ufw vestigiales del 18080
+(inofensivas). Nada mas pendiente del host.
 
 ### 4.2. Pendiente de la WORKSTATION (operador)
 
@@ -168,3 +183,16 @@ HSTS/CSRF-seguro sin activarse, sin error).
 - Tests requieren `APP_ENV=dev`. En el server no hay `sudo` (root).
 - Al tocar seguridad: verificar el hallazgo antes de arreglar; suite completa
   (`APP_ENV=dev pytest`) + ruff antes de push.
+
+## §5. Cierre
+
+**Revision de `SERVER_HARDENING.md` completa (2026-07-10).** Los 4
+hallazgos del audit cerrados: #1 units endurecidos (8.4→1.5 OK), #2 TLS
+(proxy header + login HTTPS validado), #3 verify-audit timer, #4 SSH 22
+restringido. Lado repo verificado + 3 fixes que benefician toda app hija
+(verify-audit en profiles `48d0bd3`; proxy-header normalizado + doc TLS
+`32eb65f`). El host `ha-report2` quedo sustancialmente endurecido:
+sandbox systemd, TLS end-to-end con cookies seguras, audit-verify activo,
+SSH key-only + restringido por CIDR, Postgres loopback. Unico remanente
+opcional: limpiar reglas ufw vestigiales del 18080. `dev` en
+`v0.5.1-django`; v0.5.1 aun sin promover a `main`.

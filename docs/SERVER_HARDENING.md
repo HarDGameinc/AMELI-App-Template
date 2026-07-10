@@ -288,11 +288,18 @@ root:<run_group>`.
   `__Host-ameli_csrf` + `Secure` on both cookies (proof `is_secure()` is now
   True).
 
+- ✅ **SSH port 22 restricted (§4)**: replaced the `OpenSSH ALLOW Anywhere`
+  (v4 + v6) with per-source allows for the admin/VPN ranges
+  (`192.168.100/110/111.0/24`, `10.100.100.0/24`, `10.11.2.1`). Applied
+  self-protectingly: allow the current SSH source first, verify a fresh
+  session, then drop `Anywhere`.
+  > **ufw gotcha**: rules **renumber after every delete**. Delete ONE rule,
+  > then re-list — deleting a second by its old number hit an unrelated rule
+  > (an OMEGA `8106/tcp` allow), which was restored. Prefer `ufw status
+  > numbered` immediately before each single `ufw delete <n>`.
+
 ### Still pending (not urgent)
 
-- **SSH port 22 open to Anywhere (§4)**: root is key-only so brute-force is
-  moot, but the daemon is still internet-exposed. Optional: restrict the
-  source to the admin/VPN CIDR (like `18080`) or add `fail2ban`.
 - **Vestigial ufw**: the `18080` LAN/VPN allow rules are now moot (18080 is
   loopback-only; clients reach the app via `dev03.ameli.cl:18480`). Harmless;
-  clean up when convenient.
+  clean up when convenient (one rule at a time — see the ufw gotcha above).
