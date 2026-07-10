@@ -191,8 +191,9 @@ El CI `pip-audit` (post-push del dia) marco **3 CVEs** en django 5.2.15
 5.2 LTS, no el 6.0.7 non-LTS) con hashes de PyPI, en `requirements.lock`
 + `requirements-dev.lock`; el rango `Django>=5.2,<7` ya lo permitia (sin
 cambios de codigo). Bump ritual a **v0.5.2-django**. CI verde
-(pip-audit ok en Linux). Pendiente: deploy al server (`git pull` + `pip
-install --require-hashes -r requirements.lock` + restart).
+(pip-audit ok en Linux). **Deployado en el server 10-jul**: `pip install
+--require-hashes` acepto 5.2.16 (hashes correctos), `check` ok, restart,
+`ameli-app version` → v0.5.2-django. Los 3 CVEs parcheados en produccion.
 
 ## §5. Cierre
 
@@ -206,6 +207,6 @@ sandbox systemd, TLS end-to-end con cookies seguras, audit-verify activo,
 SSH key-only + restringido por CIDR, Postgres loopback. Unico remanente
 opcional: limpiar reglas ufw vestigiales del 18080. Ademas se corto el
 release de seguridad **v0.5.2-django** (Django 5.2.16, 3 CVEs — §3.7).
-`dev` en `v0.5.2-django`; ni v0.5.1 ni v0.5.2 promovidos a `main` aun
-(main sigue en v0.5.0). **Deploy pendiente al server**: 5.2.16 aun no
-esta live (git pull + reinstall deps + restart).
+`dev` en `v0.5.2-django`, **live en el server** (Django 5.2.16
+deployado 10-jul, 3 CVEs parcheados). Ni v0.5.1 ni v0.5.2 promovidos a
+`main` aun (main sigue en v0.5.0).
