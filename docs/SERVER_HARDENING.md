@@ -142,6 +142,12 @@ non-dev deploy:
 
 ## 4. SSH / OS ⚙️
 
+> **Workstation key setup**: on a Windows workstation, generate + wire an
+> SSH/SFTP key (OpenSSH + PuTTY + FileZilla) with
+> [`tools/Setup-SshKey.ps1`](../tools/Setup-SshKey.ps1) — idempotent, prints
+> the exact `authorized_keys` command. E.g.
+> `.\tools\Setup-SshKey.ps1 -ServerHost <ip> -MakePpk`. `Get-Help` for options.
+
 - **SSH**: **key-only**. In `/etc/ssh/sshd_config`:
   `PasswordAuthentication no`, `KbdInteractiveAuthentication no`. For root
   login: the operator currently logs in as root, so at minimum use
