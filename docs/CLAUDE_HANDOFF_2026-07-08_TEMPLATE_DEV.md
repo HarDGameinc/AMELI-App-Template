@@ -106,10 +106,16 @@ repo):
 ## §5. Continuidad — proximo agente / operador
 
 ### 5.1. Pendientes del OPERADOR en el host (no-repo, prioridad alta)
-1. **Terminar P1**: PuTTY con la clave → validar → desactivar password SSH.
-2. **P2 quick win**: `ufw` restringir 18080 a LAN/VPN (o TLS con Caddy).
-3. **P3**: instalar `unattended-upgrades`.
-4. Aplicar los units endurecidos (re-render + daemon-reload) — opcional.
+
+> **Actualizado 2026-07-09**: P1, P2 (quick win) y P3 quedaron **CERRADOS**
+> — ver [`CLAUDE_HANDOFF_2026-07-09_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-09_TEMPLATE_DEV.md)
+> y el Appendix de `SERVER_HARDENING.md`. Solo siguen abiertos el #2 (fix
+> completo TLS/Caddy) y el #4 (aplicar units endurecidos).
+
+1. ~~**Terminar P1**: PuTTY con la clave → validar → desactivar password SSH.~~ **CERRADO 07-09.**
+2. **P2 fix completo**: TLS con Caddy + bind loopback (el quick win ufw ya se aplico 07-09).
+3. ~~**P3**: instalar `unattended-upgrades`.~~ **CERRADO 07-09.**
+4. Aplicar los units endurecidos (re-render + daemon-reload) — opcional, aun pendiente.
 
 ### 5.2. Pendientes del REPO (opcionales)
 - **Promover `v0.5.1` → `main`** (mismo flujo que v0.5.0: PR + CI verde +
