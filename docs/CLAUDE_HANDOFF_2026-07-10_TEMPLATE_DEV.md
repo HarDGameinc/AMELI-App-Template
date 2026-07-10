@@ -184,6 +184,16 @@ Unico remanente opcional: limpiar las reglas ufw vestigiales del 18080
 - Al tocar seguridad: verificar el hallazgo antes de arreglar; suite completa
   (`APP_ENV=dev pytest`) + ruff antes de push.
 
+### 3.7. Release de seguridad v0.5.2 — Django 5.2.16 (post-cierre, `31bb921`)
+
+El CI `pip-audit` (post-push del dia) marco **3 CVEs** en django 5.2.15
+(PYSEC-2026-2090/2091/2092). Bump del lock a **django==5.2.16** (patch
+5.2 LTS, no el 6.0.7 non-LTS) con hashes de PyPI, en `requirements.lock`
++ `requirements-dev.lock`; el rango `Django>=5.2,<7` ya lo permitia (sin
+cambios de codigo). Bump ritual a **v0.5.2-django**. CI verde
+(pip-audit ok en Linux). Pendiente: deploy al server (`git pull` + `pip
+install --require-hashes -r requirements.lock` + restart).
+
 ## §5. Cierre
 
 **Revision de `SERVER_HARDENING.md` completa (2026-07-10).** Los 4
@@ -194,5 +204,8 @@ restringido. Lado repo verificado + 3 fixes que benefician toda app hija
 `32eb65f`). El host `ha-report2` quedo sustancialmente endurecido:
 sandbox systemd, TLS end-to-end con cookies seguras, audit-verify activo,
 SSH key-only + restringido por CIDR, Postgres loopback. Unico remanente
-opcional: limpiar reglas ufw vestigiales del 18080. `dev` en
-`v0.5.1-django`; v0.5.1 aun sin promover a `main`.
+opcional: limpiar reglas ufw vestigiales del 18080. Ademas se corto el
+release de seguridad **v0.5.2-django** (Django 5.2.16, 3 CVEs — §3.7).
+`dev` en `v0.5.2-django`; ni v0.5.1 ni v0.5.2 promovidos a `main` aun
+(main sigue en v0.5.0). **Deploy pendiente al server**: 5.2.16 aun no
+esta live (git pull + reinstall deps + restart).
