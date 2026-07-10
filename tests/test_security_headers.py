@@ -108,3 +108,31 @@ def test_base_template_ships_trusted_types_bootstrap(client):
     body = response.content.decode("utf-8")
     assert "window.ameliTrusted" in body
     assert 'createPolicy("ameli-template"' in body
+
+
+def test_secure_proxy_ssl_header_normalizes_wire_name(monkeypatch):
+    """The on-the-wire header name (``X-Forwarded-Proto``) is normalized to
+    Django's WSGI META key (``HTTP_X_FORWARDED_PROTO``) so a common
+    misconfiguration doesn't silently leave ``request.is_secure()`` False
+    behind a TLS-terminating proxy."""
+    import importlib
+
+    from ameli_web.settings import security_headers
+
+    monkeypatch.setenv("AMELI_APP_SECURE_PROXY_SSL_HEADER", "X-Forwarded-Proto=https")
+    importlib.reload(security_headers)
+    assert security_headers.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
+
+    # The already-mangled form is accepted unchanged.
+    monkeypatch.setenv("AMELI_APP_SECURE_PROXY_SSL_HEADER", "HTTP_X_FORWARDED_PROTO=https")
+    importlib.reload(security_headers)
+    assert security_headers.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
+
+    # Missing '=' still fails loudly.
+    monkeypatch.setenv("AMELI_APP_SECURE_PROXY_SSL_HEADER", "no-equals")
+    with pytest.raises(RuntimeError):
+        importlib.reload(security_headers)
+
+    # Restore the ambient module state for any later importer.
+    monkeypatch.delenv("AMELI_APP_SECURE_PROXY_SSL_HEADER", raising=False)
+    importlib.reload(security_headers)
