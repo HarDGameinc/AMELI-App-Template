@@ -275,15 +275,24 @@ root:<run_group>`.
 - ✅ **`verify-audit.timer` enabled (§7)**: it was rendered but no profile
   enabled it — fixed in-repo (now enabled by every profile) and enabled live
   on the box (`systemctl enable --now …-verify-audit.timer`).
-- ✅ **App bound to loopback (§2)**: `18080` now listens on `127.0.0.1` only
-  (was `0.0.0.0`); Caddy fronts it on `:80`.
+- ✅ **TLS front (§2) — P2 fully closed**: the app is loopback-only
+  (`127.0.0.1:18080`) and fronted by Caddy at `dev03.ameli.cl:18480` with a
+  real wildcard cert (`/etc/ssl/ameli/wildcard-*`, not the internal CA),
+  proxying with `X-Forwarded-Proto https`. The app-side config had a silent
+  bug — `AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` never
+  matched Django's WSGI META key, so `request.is_secure()` stayed False
+  behind the TLS. Fixed in-repo (the parser now normalizes the wire name)
+  and in `app.env` (canonical value + `SESSION_COOKIE_SECURE=true` +
+  `CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480`, stale `0.0.0.0` bind
+  removed). Verified: HTTPS login works and the browser shows
+  `__Host-ameli_csrf` + `Secure` on both cookies (proof `is_secure()` is now
+  True).
 
 ### Still pending (not urgent)
 
-- **P2 full fix — TLS**: Caddy currently serves `:80` (HTTP) only; intra-LAN
-  traffic is still cleartext. Add TLS on 443 (see `TLS_WITH_CADDY.md`) +
-  `AMELI_APP_SECURE_PROXY_SSL_HEADER`. Loopback bind + ufw restriction are
-  already done.
 - **SSH port 22 open to Anywhere (§4)**: root is key-only so brute-force is
   moot, but the daemon is still internet-exposed. Optional: restrict the
   source to the admin/VPN CIDR (like `18080`) or add `fail2ban`.
+- **Vestigial ufw**: the `18080` LAN/VPN allow rules are now moot (18080 is
+  loopback-only; clients reach the app via `dev03.ameli.cl:18480`). Harmless;
+  clean up when convenient.

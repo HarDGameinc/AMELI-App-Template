@@ -116,15 +116,38 @@ lo que el appendix daba por pendiente.
 - El appendix de `SERVER_HARDENING.md` quedo actualizado (sección "Closed
   2026-07-10").
 
+### 3.5. #2 TLS — cierre real + fix de repo del proxy header (`32eb65f`)
+
+Al revisar el Caddyfile se vio que el TLS **ya estaba montado** (07-09):
+`dev03.ameli.cl:18480` con cert wildcard real → `127.0.0.1:18080`. (Mi
+"sin TLS" del audit fue un artefacto de grep — filtre `:80/:443` y me
+perdi el `:18480`.) **Pero** el `app.env` tenia un bug silencioso:
+`AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` nunca
+matcheaba la clave WSGI de Django (`HTTP_X_FORWARDED_PROTO`), asi que
+`request.is_secure()` quedaba **False** detras del TLS (secure-cookies/
+HSTS/CSRF-seguro sin activarse, sin error).
+
+- **Repo (`32eb65f`)**: `security_headers.py` ahora **normaliza** el nombre
+  del header (acepta `X-Forwarded-Proto` y lo mapea a
+  `HTTP_X_FORWARDED_PROTO`) + `TLS_WITH_CADDY.md` documenta los 4 env vars
+  (antes solo `SESSION_COOKIE_SECURE`) + test.
+- **Host**: `app.env` corregido — header canonico, `SESSION_COOKIE_SECURE=
+  true`, `CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480`, borrada la
+  linea stale `AMELI_APP_HOST=0.0.0.0`.
+- **Verificado**: login por HTTPS OK; cookies `__Host-ameli_csrf` +
+  `ameli_app_session` con `Secure=true` (prueba de que `is_secure()` es
+  True). **#2 CERRADO.**
+
 ## §4. Continuidad
 
 ### 4.1. Pendientes del HOST (operador) — accionables
 
 1. ~~🔴 Aplicar units endurecidos (#1)~~ **CERRADO 10-jul** (8.4→1.5 OK, §3.4).
 2. ~~🟠 Enable `verify-audit.timer` (#3)~~ **CERRADO 10-jul** (§3.4).
-3. 🟠 **TLS con Caddy en 443** (#2) — cierra el cleartext en la LAN. Loopback +
-   ufw ya hechos; falta TLS. Ver `docs/TLS_WITH_CADDY.md`.
-4. 🟡 Restringir SSH 22 a CIDR admin/VPN o `fail2ban` (#4) — menor (key-only).
+3. ~~🟠 TLS (#2)~~ **CERRADO 10-jul** (§3.5) — front ya existia (07-09); se
+   arreglo el proxy header (repo + app.env), login HTTPS validado.
+4. 🟡 Restringir SSH 22 a CIDR admin/VPN o `fail2ban` (#4) — **único que queda**,
+   menor (key-only). Limpiar tambien las reglas ufw vestigiales del 18080.
 
 ### 4.2. Pendiente de la WORKSTATION (operador)
 
