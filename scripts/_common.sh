@@ -110,6 +110,8 @@ ALL_UNIT_SUFFIXES=(
   "maintenance.timer"
   "backup.service"
   "backup.timer"
+  "verify-audit.service"
+  "verify-audit.timer"
 )
 
 log() {
@@ -408,6 +410,15 @@ resolve_systemd_profile() {
   # ${UNIT_PREFIX}-backup.timer``) and is documented in
   # docs/OPERATIONS.md.
   ENABLED_TIMER_UNITS+=("$(timer_unit_name backup)")
+
+  # Every profile also gets the audit-chain verification timer. Like the
+  # backup, integrity verification is a cross-cutting security concern,
+  # not tied to a runtime role: every deployment that runs the app writes
+  # to the hash-chained audit log, so every deployment should verify it
+  # (a failed verify = tampering/corruption). Was previously rendered but
+  # never enabled by any profile. Disable per-instance with
+  # ``systemctl disable ${UNIT_PREFIX}-verify-audit.timer`` if unwanted.
+  ENABLED_TIMER_UNITS+=("$(timer_unit_name verify-audit)")
 }
 
 enable_selected_units() {
