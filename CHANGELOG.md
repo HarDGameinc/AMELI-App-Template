@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.2-django — 2026-07-10 (security: Django 5.2.16 — 3 CVEs)
+
+Bump Django `5.2.15 → 5.2.16` (LTS patch) to clear three CVEs the CI
+`pip-audit` job flagged against the lockfile: **PYSEC-2026-2090 / 2091 /
+2092**. Stays on the 5.2 **LTS** line (the alternative fix, 6.0.7, is
+non-LTS — see `DECISIONS.md`).
+
+- Lock-only change: `requirements.lock` + `requirements-dev.lock` updated
+  to `django==5.2.16` with fresh PyPI hashes. The `Django>=5.2,<7` range
+  in `requirements.txt` already permitted it — no code changes.
+- **Deploy**: on the server, `git pull` + `pip install --require-hashes -r
+  requirements.lock` picks up 5.2.16, then restart the service.
+
 ## v0.5.1-django — 2026-07-08 (hardening: revisión de seguridad multi-agente)
 
 Cierra 7 hallazgos de una revisión de seguridad defensiva (3 agentes por
