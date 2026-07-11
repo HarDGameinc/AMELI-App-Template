@@ -488,7 +488,7 @@ def _handle_template_check(args: argparse.Namespace) -> int:
     # Fixed https host (api.github.com); repo validated by _REPO_RE above.
     request = urllib.request.Request(url, headers=headers)  # noqa: S310
     try:
-        with urllib.request.urlopen(request, timeout=args.timeout) as resp:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=args.timeout) as resp:  # noqa: S310  # nosec B310
             data = json.load(resp)
     except urllib.error.HTTPError as exc:
         hint = " (private repo or no release yet? set GITHUB_TOKEN)" if exc.code == 404 else ""
