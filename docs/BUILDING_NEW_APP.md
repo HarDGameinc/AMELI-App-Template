@@ -341,7 +341,19 @@ so "how far behind am I" is answerable — e.g. a line in your app's
 ### Consultar — is there a newer template version?
 
 The template publishes a **GitHub Release + tag per promotion**
-(`vX.Y.Z-django`); security fixes are called out in the notes.
+(`vX.Y.Z-django`); security fixes are called out in the notes. The CLI
+does the compare for you:
+
+```bash
+ameli-app template-check          # JSON: current lineage vs latest release + status
+```
+
+It compares your **template lineage** (env `AMELI_APP_TEMPLATE_LINEAGE`,
+else a root `TEMPLATE_LINEAGE` file, else the app's `VERSION`) against the
+latest release, and exits **1 when behind** (cron-friendly). Point it at a
+fork with `--repo owner/name` (or `AMELI_APP_TEMPLATE_REPO`). The template
+repo is **private**, so set `GITHUB_TOKEN` (a read-only token) — otherwise
+the API returns 404. Manual alternatives:
 
 ```bash
 gh release view --repo HarDGameinc/AMELI-App-Template   # latest release + notes

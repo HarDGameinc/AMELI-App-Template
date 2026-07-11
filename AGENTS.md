@@ -152,6 +152,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 | `ameli-app worker-once` | Run worker once |
 | `ameli-app notify-once` | Process email queue once |
 | `ameli-app maintenance` | Toggle maintenance mode from CLI |
+| `ameli-app template-check` | Compare template lineage vs the latest release (exit 1 if behind) |
 
 ## Install / Update
 

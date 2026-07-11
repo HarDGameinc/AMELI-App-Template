@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -87,6 +88,23 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("worker-once", help="Run one worker/capture cycle.")
     sub.add_parser("notify-once", help="Run one notifier/dispatch cycle.")
     sub.add_parser("maintenance", help="Run one maintenance cycle.")
+
+    template_check = sub.add_parser(
+        "template-check",
+        help="Compare this app's template lineage against the latest "
+        "AMELI App Template release on GitHub.",
+    )
+    template_check.add_argument(
+        "--repo",
+        default=os.environ.get("AMELI_APP_TEMPLATE_REPO", "HarDGameinc/AMELI-App-Template"),
+        help="owner/name of the template repo (env AMELI_APP_TEMPLATE_REPO).",
+    )
+    template_check.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="HTTP timeout in seconds (default 10).",
+    )
 
     purge_users = sub.add_parser(
         "purge-inactive-users",
@@ -406,6 +424,99 @@ def _handle_shell(args) -> int:
     return 0
 
 
+_SEMVER_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def _parse_semver(tag: str) -> tuple[int, int, int] | None:
+    """Extract ``(major, minor, patch)`` from a ``vX.Y.Z-django`` tag."""
+    match = _SEMVER_RE.search(tag or "")
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _lineage_status(current: str, latest: str) -> str:
+    """``behind`` / ``ahead`` / ``up-to-date`` / ``unknown`` comparing two tags."""
+    cur, lat = _parse_semver(current), _parse_semver(latest)
+    if cur is None or lat is None:
+        return "unknown"
+    if cur < lat:
+        return "behind"
+    if cur > lat:
+        return "ahead"
+    return "up-to-date"
+
+
+def _template_lineage() -> str:
+    """The template release this app is synced to. Precedence:
+    ``AMELI_APP_TEMPLATE_LINEAGE`` env → a root ``TEMPLATE_LINEAGE`` file →
+    the app's own ``VERSION`` (correct for the template repo itself and a
+    freshly-forked app that has not diverged yet)."""
+    env = os.environ.get("AMELI_APP_TEMPLATE_LINEAGE", "").strip()
+    if env:
+        return env
+    lineage_file = Path(__file__).resolve().parents[2] / "TEMPLATE_LINEAGE"
+    try:
+        text = lineage_file.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        text = ""
+    return text or __version__
+
+
+def _handle_template_check(args: argparse.Namespace) -> int:
+    """Query the latest GitHub release of the template and compare. Exit 0
+    when up-to-date/ahead/unknown, 1 when behind (actionable), 2 on error."""
+    import urllib.error
+    import urllib.request
+
+    repo = str(args.repo).strip()
+    if not _REPO_RE.match(repo):
+        _json({"ok": False, "error": f"invalid --repo {repo!r}; expected 'owner/name'"})
+        return 2
+
+    current = _template_lineage()
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ameli-app-template-check",
+    }
+    # Private template repos return 404 unauthenticated — pass a token if set.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("AMELI_APP_GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    # Fixed https host (api.github.com); repo validated by _REPO_RE above.
+    request = urllib.request.Request(url, headers=headers)  # noqa: S310
+    try:
+        with urllib.request.urlopen(request, timeout=args.timeout) as resp:  # noqa: S310
+            data = json.load(resp)
+    except urllib.error.HTTPError as exc:
+        hint = " (private repo or no release yet? set GITHUB_TOKEN)" if exc.code == 404 else ""
+        _json(
+            {"ok": False, "error": f"github api {exc.code}{hint}", "repo": repo, "current": current}
+        )
+        return 2
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        _json({"ok": False, "error": f"fetch failed: {exc}", "repo": repo, "current": current})
+        return 2
+
+    latest = str(data.get("tag_name", "")).strip()
+    status = _lineage_status(current, latest)
+    _json(
+        {
+            "ok": True,
+            "repo": repo,
+            "current": current,
+            "latest": latest,
+            "status": status,
+            "release_url": data.get("html_url"),
+            "published_at": data.get("published_at"),
+            "notes_excerpt": str(data.get("body") or "")[:800],
+        }
+    )
+    return 1 if status == "behind" else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -458,6 +569,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_rotate_audit_key(args)
     if args.command == "shell":
         return _handle_shell(args)
+    if args.command == "template-check":
+        return _handle_template_check(args)
 
     parser.error(f"Unknown command: {args.command}")
     return 2
