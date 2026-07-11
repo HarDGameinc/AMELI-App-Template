@@ -23,12 +23,30 @@ Sesion previa: [`CLAUDE_HANDOFF_2026-07-10_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026
 
 ## §2. Objetivo de la sesion
 
-(pendiente de definir con el operador — se abrio el handoff tras revisar
-documentacion.)
+Elegido por el operador: **`ameli-app template-check` CLI** — la pieza
+"consultar" del canal de updates documentado el 10-jul.
 
 ## §3. Trabajo realizado
 
-(por completar)
+### 3.1. `template-check` CLI (commits `95d3926`, `c89cf2f`)
+
+Nuevo subcomando `ameli-app template-check` (`cli.py`): consulta el ultimo
+GitHub Release del template y lo compara contra el **lineage** de la app
+(env `AMELI_APP_TEMPLATE_LINEAGE` → archivo root `TEMPLATE_LINEAGE` → el
+`VERSION` de la app). Emite JSON `{current, latest, status, release_url,
+notes_excerpt}` y sale **1 si esta behind** (cron-friendly), 0 si
+up-to-date/ahead, 2 en error.
+
+- **Sin dep runtime nueva** — stdlib `urllib`; repo validado por regex +
+  host https fijo (`api.github.com`).
+- **Token**: el repo del template es **privado** → la API da 404 sin auth;
+  soporta `GITHUB_TOKEN` / `AMELI_APP_GITHUB_TOKEN`.
+- **+11 tests** (`test_cli_template_check.py`) con `urlopen` mockeado.
+- Docs: `BUILDING_NEW_APP.md` §6 "Consultar" lidera con el comando;
+  tabla de CLI en `AGENTS.md`.
+- **Lección**: CI corre **bandit** aparte de ruff-S. El `# noqa: S310`
+  silencia ruff pero NO el `B310` de bandit → hace falta el patron dual
+  `# noqa: S310  # nosec B310` (`c89cf2f`). Suite local 1098 pass; CI verde.
 
 ## §4. Continuidad / backlog (todo opcional — nada obligatorio pendiente)
 
@@ -40,10 +58,7 @@ documentacion.)
 
 ### Repo (opcionales, ninguno urgente)
 
-- **`ameli-app template-check`** — CLI que consulta la GitHub Release mas
-  reciente y compara contra el lineage de la app (canal "consultar" del
-  update-channel; ver `DECISIONS.md` #7 + `BUILDING_NEW_APP.md` §6).
-  Propuesto 10-jul, no implementado.
+- ~~**`ameli-app template-check`**~~ **HECHO 11-jul** (§3.1).
 - **M3** — rediseño atomico del throttle (diferido; riesgo bajo acotado
   por el lockout permanente).
 - **Runbook de rotacion de secretos** — el §5 de `SERVER_HARDENING.md` lo
