@@ -48,6 +48,26 @@ up-to-date/ahead, 2 en error.
   silencia ruff pero NO el `B310` de bandit → hace falta el patron dual
   `# noqa: S310  # nosec B310` (`c89cf2f`). Suite local 1098 pass; CI verde.
 
+### 3.2. M3 — throttle atómico del gate por-usuario (commit `a711a02`)
+
+`check_login_throttle` era **check-then-act**: leía el contador por-user
+(sin lock) antes de que el fallo lo incrementara después, así que una
+ráfaga concurrente leía un valor stale sub-cap y se colaba (techo blando).
+
+**Fix — reserve-then-verify** sobre un gate dedicado `login_gate_user`:
+cada `check` cuenta el intento atómicamente (`_bump_throttle_counter` bajo
+`select_for_update`) y luego lee el sliding total; el incremento commitea
+antes de la decisión → requests concurrentes ven counts distintos y el cap
+es **techo duro**. `>` (no `>=`) mantiene el cap efectivo idéntico. Un
+login exitoso limpia el gate vía `reset_login_throttle()`, cableado al
+único hook de éxito `user_logged_in` (cubre login-form + MFA).
+
+**Scope**: solo el gate por-usuario. El gate por-**IP** queda failure-based
+soft **a propósito** — gatea un keyspace grande/mixto (usernames
+rotativos), contar todos los intentos penalizaría ráfagas legítimas de una
+IP compartida (NAT/oficina). `record_login_failure` + la alerta de
+auth-failures **sin cambios**. Suite completa **1101 pass**; CI verde.
+
 ## §4. Continuidad / backlog (todo opcional — nada obligatorio pendiente)
 
 ### Host (operador) — trivial
@@ -59,8 +79,8 @@ up-to-date/ahead, 2 en error.
 ### Repo (opcionales, ninguno urgente)
 
 - ~~**`ameli-app template-check`**~~ **HECHO 11-jul** (§3.1).
-- **M3** — rediseño atomico del throttle (diferido; riesgo bajo acotado
-  por el lockout permanente).
+- ~~**M3** — rediseño atomico del throttle~~ **HECHO 11-jul** (§3.2) — gate
+  por-usuario reserve-then-verify (techo duro) + reset-on-success.
 - **Runbook de rotacion de secretos** — el §5 de `SERVER_HARDENING.md` lo
   pide; hoy solo la rotacion de `AUDIT_HMAC_KEY` esta documentada del todo.
 - Refactor inline-styles → utility-classes (cosmetico).
