@@ -178,6 +178,7 @@ from .throttle import (
     check_mfa_resend_throttle as check_mfa_resend_throttle,
     maybe_permanently_lock as maybe_permanently_lock,
     record_login_failure as record_login_failure,
+    reset_login_throttle as reset_login_throttle,
 )
 
 # User domain (CRUD + serialize + avatars + password/email change for self + account deletion)

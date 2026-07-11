@@ -37,6 +37,12 @@ def _record_login(sender, request, user: User, **kwargs):
         session.last_seen_at = timezone.now()
         session.save()
     record_audit("login", actor=user, target_username=user.username, payload={"auth_mode": "session"})
+    # Reserve-then-verify login gate: a successful auth clears the per-user
+    # attempt counter so earlier fumbles don't count against the rest of
+    # the window. Single success hook for both the login form and MFA.
+    from .services import reset_login_throttle
+
+    reset_login_throttle(user.username)
 
 
 @receiver(user_logged_out)
