@@ -317,7 +317,71 @@ you continue — the failure is likely a template bug, not your fork.
 
 ---
 
-## 6. Where to read next
+## 6. Keeping up with the template (upstream updates)
+
+Your app is born by copying this template and then diverges (your
+renames, models, views). Meanwhile the Core (`accounts/`, `audit/`,
+`settings/`, middleware, CLI, deploy) keeps improving upstream —
+especially **security fixes** (e.g. the Django 5.2.16 CVE patch in
+v0.5.2). Pull those in with a git **upstream remote**. See
+[`DECISIONS.md`](DECISIONS.md) #7 for *why* this model (git upstream)
+rather than a Copier template or an `ameli-core` package.
+
+### One-time: add the template as a remote
+
+```bash
+git remote add template https://github.com/HarDGameinc/AMELI-App-Template.git
+git fetch template --tags
+```
+
+Record which template release your app was born from (or last synced to)
+so "how far behind am I" is answerable — e.g. a line in your app's
+`README.md` / handoff: `Template lineage: v0.5.2-django`.
+
+### Consultar — is there a newer template version?
+
+The template publishes a **GitHub Release + tag per promotion**
+(`vX.Y.Z-django`); security fixes are called out in the notes.
+
+```bash
+gh release view --repo HarDGameinc/AMELI-App-Template   # latest release + notes
+git fetch template --tags && git tag -l 'v*-django' | tail -5
+```
+
+(Or watch the repo → Releases, or subscribe to its `releases.atom` feed.)
+
+### Enviar — pull the update in
+
+- **A security fix / single change (recommended — surgical):** cherry-pick
+  the specific commit; minimal conflict surface.
+  ```bash
+  git fetch template
+  git log --oneline template/main | head        # find the fix commit
+  git cherry-pick <sha>
+  ```
+- **A broad catch-up:** merge the template branch, resolving conflicts
+  where your app diverged from the Core.
+  ```bash
+  git merge template/main        # conflicts land in files you customized
+  ```
+  Conflicts concentrate in what you renamed/extended (§2, §3); the Core
+  you did **not** touch (§4) usually merges clean — which is exactly why
+  §4 matters for keeping this channel cheap.
+
+After either path, run the full suite (`APP_ENV=dev pytest` + `ruff`) and
+update your lineage note.
+
+### When the fleet grows
+
+Manual cherry-pick/merge gets heavy across many apps. The stronger
+channel — extracting the shared Core into a versioned `ameli-core`
+package so fixes ship via `pip install -U` + Dependabot auto-PRs — is
+**deferred by decision** (`DECISIONS.md` #7). Adopt it when the
+maintenance cost justifies the refactor.
+
+---
+
+## 7. Where to read next
 
 | Doc | When to read |
 |---|---|
@@ -332,7 +396,7 @@ you continue — the failure is likely a template bug, not your fork.
 
 ---
 
-## 7. Open questions for your fork
+## 8. Open questions for your fork
 
 These are decisions the template explicitly defers to the child
 app. Document the answer in your own handoff doc when you make
