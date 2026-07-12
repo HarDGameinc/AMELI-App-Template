@@ -174,11 +174,12 @@ sudo ls -l /etc/ameli-app-template-*/app.env     # 0640 root:<run_group>
 sudo git -C /opt/ameli-app-template-* status --porcelain | grep -i env   # env must NOT be tracked
 grep -RiE 'SECRET|HMAC|ENCRYPTION' /var/log/ 2>/dev/null | head   # keys must not leak to logs
 ```
-- **Rotation**: document a rotation runbook. For `MFA_ENCRYPTION_KEY`,
-  rotating invalidates existing ciphertext (Fernet cannot tell a wrong key
-  from legacy plaintext — see the `decrypt_secret` L2 note); verify TOTP
-  after any rotation. For `AUDIT_HMAC_KEY`, use the existing key-rotation
-  tooling so the chain stays verifiable.
+- **Rotation**: full runbook for all four secrets (Django key, MFA
+  encryption key, audit HMAC key, DB password) — cost, procedure and
+  gotchas per secret — in `OPERATIONS.md` → **Secret rotation**. Headlines:
+  rotating `MFA_ENCRYPTION_KEY` silently breaks every enrolled TOTP (verify
+  TOTP after), and `AUDIT_HMAC_KEY` must go through `ameli-app
+  rotate-audit-key` (never a bare env edit) so the chain stays verifiable.
 
 ---
 
