@@ -116,6 +116,40 @@ python -m venv /tmp/lock-check
 A mismatched hash exits non-zero with the offending wheel's URL —
 that is the expected behaviour and the protection the lock buys you.
 
+### SBOM (CycloneDX)
+
+Produce a CycloneDX software bill of materials from the hash-pinned deps —
+one artifact that both inventories every shipped component and flags known
+CVEs, because `pip-audit` (already a dev dep + a CI job) emits CycloneDX
+natively (no extra tool):
+
+```bash
+# From the deployed venv on the server — the SBOM of what is ACTUALLY
+# installed, the most faithful record of the running deploy:
+.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
+
+# Or from the lock (what ships, pre-install) on Linux CI/dev:
+pip-audit -r requirements.lock -f cyclonedx-json -o sbom.cdx.json || true
+```
+
+- `|| true` because `pip-audit` exits non-zero when it finds a
+  vulnerability — the SBOM file is still written (a clean run exits 0).
+- Output is CycloneDX 1.4 JSON: a `components` inventory + a
+  `vulnerabilities` section. Use `-f cyclonedx-xml` for the XML flavour.
+- The `-r requirements.lock` form must resolve the lock, so run it on
+  **Linux** (CI or the server); it fails on the Windows workstation
+  (`uvloop` won't build). The installed-venv form works anywhere.
+
+**When to refresh**: after any lock change (i.e. each release — the
+`pip-audit` CI job already re-checks the lock then). **Where it lives**:
+the SBOM is a generated, point-in-time artifact — do NOT commit it. Attach
+it to the GitHub release when a downstream consumer or auditor needs the
+provenance for a version:
+
+```bash
+gh release upload vX.Y.Z-django sbom.cdx.json
+```
+
 ## manage.py auto-loads APP_CONFIG (and app.env)
 
 `manage.py` discovers a sensible `APP_CONFIG` automatically so

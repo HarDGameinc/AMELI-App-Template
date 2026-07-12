@@ -81,8 +81,13 @@ auth-failures **sin cambios**. Suite completa **1101 pass**; CI verde.
 - ~~**`ameli-app template-check`**~~ **HECHO 11-jul** (§3.1).
 - ~~**M3** — rediseño atomico del throttle~~ **HECHO 11-jul** (§3.2) — gate
   por-usuario reserve-then-verify (techo duro) + reset-on-success.
-- **Runbook de rotacion de secretos** — el §5 de `SERVER_HARDENING.md` lo
-  pide; hoy solo la rotacion de `AUDIT_HMAC_KEY` esta documentada del todo.
+- ~~**Runbook de rotacion de secretos**~~ **HECHO 11-jul** (`ff1a074`) —
+  `OPERATIONS.md` → "Secret rotation" cubre las 4 claves; SERVER_HARDENING
+  §5 apunta ahi.
+- ~~**SBOM (CycloneDX)**~~ **HECHO 12-jul** — `OPERATIONS.md` → "Lockfile /
+  supply chain" → subseccion "SBOM (CycloneDX)": `pip-audit -f
+  cyclonedx-json` (sin dep nueva), refresh por release, artefacto adjunto
+  al release (no commiteado; `*.cdx.json` gitignored).
 - Refactor inline-styles → utility-classes (cosmetico).
 - **Modelo C del update-channel** (`ameli-core` package + Dependabot) —
   el canal mas fuerte, refactor grande; adoptar si la flota crece
