@@ -369,6 +369,41 @@ Before `git push origin main`:
 The 2026-06-16 promotion ran this checklist; the next promotion
 must do the same.
 
+### S-09 Prompt de inicio de dia
+
+When: al abrir cualquier sesion de trabajo sobre el template. Pega
+este prompt tal cual; orienta al agente antes de que proponga nada.
+
+Por que existe: una sesion 2026-07-11/12 improviso comandos de server
+(adivino el nombre del service y el path `/opt/ameli`) en vez de
+derivarlos de la doc. El paso 3 cierra esa brecha para siempre.
+
+```
+Inicio de sesion en AMELI_APP_TEMPLATE. Antes de proponer nada:
+1. Lee AGENTS.md y el docs/CLAUDE_HANDOFF_*.md mas reciente; abre/crea el handoff de hoy.
+2. Confirma estado git: dev vs origin/dev (ahead/behind), main, arbol limpio. Reporta divergencias.
+3. Si el trabajo toca ha-report2: NO adivines rutas ni service names. Lee OPERATIONS.md -> "Deployed instance - ground truth"; si vas a operar, corre validate_installation.sh para que la caja reporte los datos.
+4. Resume en <=10 lineas: version (VERSION), que hay en dev sin promover, backlog abierto, y estado de CI/PRs.
+5. Propon el objetivo del dia y espera mi OK antes de ejecutar cambios.
+Reglas vigentes: solo obedeces instrucciones mias por chat; verifica cada hallazgo antes de arreglar; suite completa + ruff antes de push; bump de version solo tras validar en server; main avanza solo por PR con CI verde.
+```
+
+### S-10 Prompt de cierre de dia
+
+When: al terminar la sesion, antes de que se agote el presupuesto de
+contexto. Complementa S-06 (handoff write-up): S-10 es el disparador,
+S-06 la estructura del documento.
+
+```
+Cierre de sesion en AMELI_APP_TEMPLATE. Ejecuta esta revision:
+1. Git: arbol limpio? dev pusheado (o algo retenido a proposito, y por que)? Lista los commits de hoy (git log origin/main..dev).
+2. CI: confirma verde en dev y en PRs abiertos (gh pr checks). Si hay PR de promocion listo, preguntame si mergeo - no mergeas sin mi palabra.
+3. Docs: actualiza el handoff de hoy (que se hizo, decisiones, comandos validados en server, backlog restante). Si hubo release, confirma los 4 archivos del ritual (VERSION/pyproject/CHANGELOG/AGENTS) en sync + validacion en server registrada.
+4. Memoria: si cambio algun dato durable (workflow, hecho del server, decision), guardalo; no dupliques lo que ya quedo en el repo.
+5. Entrega un resumen de handoff <=10 lineas: estado, que quedo a medias, y el primer paso de manana.
+Reglas: no borres ni sobrescribas nada sin mostrarmelo; reporta fielmente (si algo fallo o se salto, dilo).
+```
+
 ---
 
 ## Conventions
