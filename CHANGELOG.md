@@ -41,6 +41,11 @@ verificado por CI (`--require-hashes` + `pip-audit`).
   --check` dentro de la suite) + round-trip reverse-a-zero/re-apply que prueba
   la **reversibilidad** de todas las migraciones first-party (incluidas las 3
   `RunPython`). Cierra el gap "no migration tests" de `AGENTS.md`.
+- `test(migration-backfill)`: `tests/test_migration_mfa_backfill.py` — cubre la
+  lógica de datos de `0012_mfa_secret_encrypt` (antes solo ejercitada como
+  no-op sin clave): con clave, encripta filas plaintext, salta las ya
+  encriptadas (idempotente), el reverse desencripta, y sin clave es no-op.
+  Código sensible: un bug dejaría secretos TOTP en claro o bloquearía usuarios.
 
 ### a11y — anuncio SR de swaps de paginación/filtro
 

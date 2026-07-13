@@ -154,8 +154,14 @@ forward-apply + drift; faltaba **reversibilidad**. `tests/test_migrations.py`:
 Hallazgo: **descartado** el approach de DB secundaria aislada porque las
 data-migrations consultan `User.objects` sobre la conexión **default** sin
 `.using()` (son single-DB, correcto para la app; no se reescriben migraciones
-aplicadas). Round-trip corre sobre la default. Suite **1108 passed / 57
-skipped**, ruff limpio. Sin cambio de workflow (viven en la suite pytest).
+aplicadas). Round-trip corre sobre la default. Sin cambio de workflow (viven
+en la suite pytest).
+
+**Ampliación** (`tests/test_migration_mfa_backfill.py`): el round-trip solo
+ejercita las 3 `RunPython` como no-op (dev sin clave). Agregado test directo de
+la lógica de backfill de `0012_mfa_secret_encrypt` con clave: encripta filas
+plaintext, salta ya-encriptadas (idempotente), reverse desencripta, no-op sin
+clave. Es código sensible (secretos TOTP at-rest). Suite **1114 passed**.
 
 ### 3.8. Auditoría aria-live + anuncio de swaps de paginación
 
