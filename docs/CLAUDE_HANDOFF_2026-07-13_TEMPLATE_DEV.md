@@ -73,11 +73,17 @@ be increased"* → **Actions bloqueado por billing** (probable: agotados los
 2000 min/mes del plan Free en repo privado). **No es fallo de codigo.**
 
 Por la regla "`main` solo por PR con CI verde", la promocion queda
-**PAUSADA** hasta que el operador resuelva el billing (GitHub → Settings →
-Billing & plans: subir spending limit / metodo de pago, o esperar el reset
-mensual). Estado: **`dev` en `v0.5.4`** (CSP + Pillow, verde local, corriendo
-en server); **`main` en `v0.5.3`**; PR #4 abierto listo para re-disparar CI
-+ merge cuando Actions vuelva. Ningun agente debe forzar el merge sin CI.
+**PAUSADA**. Billing confirmado: **2000/2000 min de Actions agotados**,
+spending limit $0 (plan Free), **reset en ~19 dias (≈ 1-ago-2026)**.
+
+**Decision del operador (13-jul): esperar el reset — costo $0**, sin subir
+spending limit ni pagar overage. Estado: **`dev` en `v0.5.4`** (CSP + Pillow,
+verde local, corriendo en server); **`main` en `v0.5.3`**; PR #4 abierto.
+
+**Accion pendiente (proximo agente / operador, tras el reset ~1-ago o si se
+sube el limite antes):** `gh run rerun` del PR #4 → esperar verde → merge
+commit + tag/release `v0.5.4-django` → sync del server. Ningun agente debe
+forzar el merge sin CI.
 
 ## §4. Continuidad / backlog (opcional)
 
