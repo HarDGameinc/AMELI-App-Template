@@ -157,10 +157,29 @@ data-migrations consultan `User.objects` sobre la conexión **default** sin
 aplicadas). Round-trip corre sobre la default. Suite **1108 passed / 57
 skipped**, ruff limpio. Sin cambio de workflow (viven en la suite pytest).
 
+### 3.8. Auditoría aria-live + anuncio de swaps de paginación
+
+Auditada la cobertura de anuncios screen-reader (gap `AGENTS.md`). Ya estaba
+bien: flash messages + banner de mantenimiento (`role=status`) y los feedbacks
+JS de MFA/email/sudo. **Gap encontrado**: los swaps de paginación/filtro del
+admin (`swapPanelTo`) reemplazan `innerHTML` con `aria-busy` pero **sin anunciar**
+el resultado. Agregado: región live global `#a11y-live` (`role=status`,
+`aria-live=polite`, `aria-atomic`) en `base.html` + helper `announce()` en
+`app.js` que anuncia el resumen del panel tras cada swap. Tests:
+`tests/test_a11y_live_region.py` (template, en suite normal) +
+`tests/e2e/test_a11y_announce.py` (e2e, job dedicado). Diferido a propósito:
+hints de fuerza/match de password (serían ruido por cada tecla).
+
+> **Nota e2e**: el e2e no corre en Windows local (`SynchronousOnlyOperation`
+> en el setup de DB — afecta a **todos** los e2e existentes, no solo el nuevo;
+> es ambiental, corre en el job de CI Linux). Verificación local vía el test
+> de template + suite completa **1109 passed / 58 skipped**, ruff limpio.
+
 ## §4. Continuidad / backlog (opcional)
 
 - ~~Host: limpiar reglas ufw vestigiales del 18080.~~ **HECHO** (§3.6).
 - ~~Testing gap: tests de migraciones Django.~~ **HECHO** (§3.7, `3761d9b`).
+- ~~Testing gap: auditoría aria-live / anuncios SR.~~ **HECHO** (§3.8).
 - **Promoción `v0.5.4 → main`**: DIFERIDA hasta el reset de CI (~1-ago) o subir
   el spending limit. PR #4 abierto, MERGEABLE, checks fallando por billing (no
   código). No forzar merge sin CI verde.

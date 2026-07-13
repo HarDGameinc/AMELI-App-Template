@@ -263,7 +263,14 @@ the latest `docs/CLAUDE_HANDOFF_*`.
   stop; login form is reachable) plus admin dialog focus management
   (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
   focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
-  Still open: screen-reader announcement audits (`aria-live` coverage)
+  **`aria-live` coverage audited 2026-07-13**: flash messages + maintenance
+  banner (`role=status` in `base.html`) and the MFA / email / sudo JS
+  feedbacks already announce; the admin **pagination/filter swaps were
+  silent** (`aria-busy` only) — added a global `#a11y-live` region +
+  `announce()` in `app.js` so each swap announces its result summary
+  (`tests/test_a11y_live_region.py` + `tests/e2e/test_a11y_announce.py`).
+  Deferred by choice: password strength/match hints are not live-announced
+  (would fire on every keystroke)
 - ~~No Django migration tests (apply/rollback in CI).~~ **CLOSED
   2026-07-13** — `tests/test_migrations.py`: drift (`makemigrations --check`
   in-suite) + a reverse-to-zero/re-apply round-trip proving every first-party

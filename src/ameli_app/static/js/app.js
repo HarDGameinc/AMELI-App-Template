@@ -267,6 +267,23 @@ if (typeof window !== "undefined") {
 // the request through the same swap path so filter and pagination stay
 // consistent without the page ever reloading.
 
+// ---- Screen-reader announcements ----
+//
+// A single visually-hidden polite live region (``#a11y-live`` in base.html).
+// Client-side DOM swaps (pagination / filter) announce a concise summary here
+// so screen-reader users are told the content changed — ``aria-busy`` alone
+// does NOT announce the new content. Clearing then re-setting textContent on
+// the next frame forces assistive tech to re-announce even an identical
+// message (e.g. paging back and forth to the same result count).
+function announce(message) {
+  const region = document.getElementById("a11y-live");
+  if (!region || !message) return;
+  region.textContent = "";
+  window.requestAnimationFrame(() => {
+    region.textContent = message;
+  });
+}
+
 async function swapPanelTo(panel, targetUrl) {
   const panelKey = panel.dataset.paginationPanel;
   const url = new URL(targetUrl, window.location.origin);
@@ -286,6 +303,11 @@ async function swapPanelTo(panel, targetUrl) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const html = await response.text();
     panel.innerHTML = window.ameliTrusted.createHTML(html);
+    // Announce the new result summary (e.g. "Mostrando 26–50 de 120") so
+    // screen-reader users know the swap completed. Falls back to a generic
+    // message if the swapped partial has no pagination counter.
+    const counter = panel.querySelector(".pagination-counter");
+    announce(counter ? counter.textContent.trim() : "Contenido actualizado.");
     const newUrl = url.pathname + url.search + url.hash;
     window.history.pushState({ panel: panelKey }, "", newUrl);
     return true;

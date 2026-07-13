@@ -42,6 +42,16 @@ verificado por CI (`--require-hashes` + `pip-audit`).
   la **reversibilidad** de todas las migraciones first-party (incluidas las 3
   `RunPython`). Cierra el gap "no migration tests" de `AGENTS.md`.
 
+### a11y — anuncio SR de swaps de paginación/filtro
+
+- Los paneles del admin reemplazan su contenido in-place (`swapPanelTo` en
+  `app.js`) con `aria-busy` pero **sin anunciar** el resultado al lector de
+  pantalla. Agregada una región live global oculta (`#a11y-live`, `role=status`
+  `aria-live=polite` `aria-atomic`) en `base.html` + helper `announce()` que,
+  tras cada swap, anuncia el resumen del panel (`"Mostrando 26–50 de 120"` /
+  `"Sin resultados"`). Cubierto por `tests/test_a11y_live_region.py` (template)
+  y `tests/e2e/test_a11y_announce.py` (e2e).
+
 ### HSTS `includeSubDomains` — override + default opt-in (commit `8ddb0bb`)
 
 - Nuevo env-var `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py`
