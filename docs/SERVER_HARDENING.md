@@ -273,21 +273,26 @@ curl -sI https://<host>/ | grep -i strict-transport-security
 - **Proxy-managed** (e.g. `ha-report2` / Caddy): edit the HSTS line in the
   proxy's per-site config; leave the app HSTS vars unset.
 
-### The `includeSubDomains` caveat on a shared parent domain 🔴
+### The `includeSubDomains` caveat 🔴
 
-HSTS `includeSubDomains` tells the browser to force **every**
-`*.parent-domain` host onto HTTPS — irreversibly, for the max-age window. On
-a **shared** parent domain (e.g. several `*.ameli.cl` services, some possibly
-still HTTP-only), a single host emitting `includeSubDomains` can break its
-siblings. Enable HSTS **without** `includeSubDomains` unless the deploy owns
-its entire parent domain.
+`includeSubDomains` extends the HSTS policy to every subdomain **of the host
+that sends it** — for `app.example.com` that is `*.app.example.com`, **not**
+siblings like `other.example.com` and **not** the parent `example.com`. The
+footgun is turning it on for a host that has (or will have) HTTP-only hosts
+beneath it, or submitting to the HSTS **preload** list, which hardcodes the
+whole subtree into browsers. On a leaf host with no subdomains of its own it
+adds scope for no benefit. Enable `includeSubDomains` **only** when the host
+owns and HTTPS-serves every subdomain beneath it.
 
-- **App-managed**: the template defaults `includeSubDomains` **ON** whenever
-  HSTS is on, so opt out explicitly:
+> Note: a sibling emitting `includeSubDomains` does **not** affect you — e.g.
+> `dev02.ameli.cl`'s flag covers `*.dev02.ameli.cl`, never `dev03.ameli.cl`.
+> The cross-host risk only exists when the header is set on a *parent* domain.
+
+- **App-managed**: `includeSubDomains` defaults **OFF** (opt-in, matching
+  Django). Turn HSTS on, and opt into subdomains only if you own the subtree:
   ```bash
-  # HSTS for THIS host only — does not HTTPS-upgrade the whole parent domain
   AMELI_APP_HSTS_SECONDS=31536000
-  AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false
+  # AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true   # ONLY if this host owns *.its-subtree
   ```
   The flag is never emitted when HSTS is off, and a non-boolean value fails
   closed (the app refuses to boot).
@@ -297,9 +302,10 @@ its entire parent domain.
   # Referrer-Policy / X-Frame-Options / CSP still pass through untouched
   header Strict-Transport-Security "max-age=31536000"
   ```
-  > **`ha-report2` (2026-07-13):** `dev03.ameli.cl` had no HSTS; added the
-  > line above to its Caddy site block (no `includeSubDomains`, shared
-  > `*.ameli.cl`). `dev02` keeps its pre-existing `includeSubDomains`.
+  > **`ha-report2` (2026-07-13):** `dev03.ameli.cl` (a leaf, no subdomains of
+  > its own) had no HSTS; added the line above to its Caddy site block without
+  > `includeSubDomains`. `dev02` keeps its pre-existing `includeSubDomains`
+  > (which only ever scoped `*.dev02.ameli.cl`, so it never touched dev03).
 
 ---
 

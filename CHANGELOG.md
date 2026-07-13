@@ -38,6 +38,23 @@ verificado por CI (`--require-hashes` + `pip-audit`).
 - Prompts de sesión S-09/S-10 (inicio/cierre de día) en el handoff template.
 - `test(sri)`: test de invalidación por mtime hecho determinista (flake Windows).
 
+### HSTS `includeSubDomains` — override + default opt-in (commit `8ddb0bb`)
+
+- Nuevo env-var `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py`
+  para controlar la directiva `includeSubDomains` de HSTS.
+- **Cambio de default:** `includeSubDomains` pasa a **OFF (opt-in)**, igual que
+  el default de Django. Antes se prendía implícitamente cuando `HSTS_SECONDS>0`.
+  Un deploy que hoy tenga HSTS activo y dependa del `includeSubDomains` implícito
+  debe ahora setear `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true` para conservarlo.
+- Motivo: `includeSubDomains` extiende la política solo a los **subdominios del
+  host que lo emite** (no a hermanos ni al padre); activarlo sin ser dueño de
+  todo el subárbol —o con hijos HTTP-only, o vía preload— bloquea navegadores en
+  HTTPS de forma irreversible por el `max-age`. Opt-in es la postura conservadora.
+- Valor no-booleano falla cerrado (raise); nunca se emite con HSTS off. +5 tests.
+- Nota operativa: en deploys detrás de un reverse-proxy que ya emite HSTS (p. ej.
+  Caddy), el proxy es la fuente de verdad y estas vars quedan sombreadas
+  (ver `SERVER_HARDENING.md` §9).
+
 ## v0.5.3-django — 2026-07-12 (security: throttle atómico M3 + template-check CLI)
 
 Completa **M3**: el rediseño atómico del throttle de login que en `v0.5.1`

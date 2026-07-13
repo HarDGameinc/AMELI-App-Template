@@ -92,14 +92,19 @@ internet sobre TLS**). Ya estaba bien: `DEBUG=false`, cookies Secure, proxy
 SSL header, claves audit+MFA reales (verificado con dump de settings). **Unico
 gap: HSTS** (default `0` en dev).
 
-**Feature en el repo (`8ddb0bb`):** añadido `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS`
-en `security_headers.py` — permite prender HSTS app-side en un host bajo un
-**dominio padre compartido** sin `includeSubDomains` (que forzaria HTTPS en TODO
-el dominio, irreversible por el max-age, rompiendo hermanos HTTP-only). Default
-preserva el comportamiento actual (True cuando HSTS>0); valor no-booleano falla
-cerrado (raise); nunca se emite con HSTS off. **+4 tests**, ruff limpio, suite
-**1106 passed / 57 skipped**. Es feature del template para deploys **sin** un
-reverse-proxy que gestione HSTS.
+**Feature en el repo (`8ddb0bb`, semántica corregida + default flip después):**
+añadido `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py` — permite
+controlar `includeSubDomains` app-side. **Corrección importante:** la primera
+redacción decía que un host emitiendo `includeSubDomains` "rompe a los
+hermanos" del dominio compartido — **es falso**. Por RFC 6797, `includeSubDomains`
+extiende la política solo a los **subdominios del host que lo emite** (`dev03`
+→ `*.dev03.ameli.cl`), no a hermanos (`dev02`) ni al padre (`ameli.cl`). El
+footgun real es un host **padre/apex** con hijos HTTP-only, o el **preload**.
+Por eso se **cambió el default a OFF (opt-in)**, igual que Django (que también
+lo defaultea a False); se activa con `=true` solo si el host es dueño de todo
+su subárbol. Valor no-booleano falla cerrado (raise); nunca se emite con HSTS
+off. **+5 tests**, ruff limpio. Feature útil para deploys **sin** reverse-proxy
+que gestione HSTS.
 
 **Realidad en `ha-report2` (importante):** HSTS **NO lo maneja la app, lo maneja
 Caddy**, por-sitio. El Caddy del host sirve tres sitios bajo `ameli.cl`
@@ -107,11 +112,13 @@ Caddy**, por-sitio. El Caddy del host sirve tres sitios bajo `ameli.cl`
 descubrimos que el header lo inyecta Caddy (su directive `header` **reemplaza**
 el del upstream), asi que el knob app-side queda sombreado en este host.
 
-- **dev02**: ya tenia `Strict-Transport-Security "max-age=31536000; includeSubDomains"`.
+- **dev02**: ya tenia `Strict-Transport-Security "max-age=31536000; includeSubDomains"`
+  (solo alcanza `*.dev02.ameli.cl`, nunca tocó a dev03).
 - **dev03** (nuestra app): **no tenia HSTS**. **Cerrado 2026-07-13**: agregada la
   linea `header Strict-Transport-Security "max-age=31536000"` (SIN
-  `includeSubDomains`, por el dominio compartido) **al bloque de dev03 del
-  Caddyfile** — solo esa linea, para no pisar los headers propios de la app
+  `includeSubDomains`: dev03 es hoja, no tiene subdominios propios que forzar)
+  **al bloque de dev03 del Caddyfile** — solo esa linea, para no pisar los
+  headers propios de la app
   (`Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, nosniff, CSP, todos
   verificados intactos post-cambio). `caddy validate` OK, `systemctl reload caddy`
   graceful. `app.env` quedo **sin** vars HSTS (fuente de verdad = Caddy).

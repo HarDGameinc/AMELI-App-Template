@@ -138,9 +138,10 @@ def test_secure_proxy_ssl_header_normalizes_wire_name(monkeypatch):
     importlib.reload(security_headers)
 
 
-def test_hsts_include_subdomains_default_follows_hsts(monkeypatch):
-    """With HSTS enabled and no override, ``includeSubDomains`` is ON — the
-    right default for a deploy that owns its whole domain."""
+def test_hsts_include_subdomains_defaults_off_even_when_hsts_on(monkeypatch):
+    """``includeSubDomains`` is opt-in: with HSTS enabled but no override it
+    stays OFF, so a host never asserts HSTS for a subtree it was not explicitly
+    told it owns (matches Django's own default of False)."""
     import importlib
 
     from ameli_web.settings import security_headers
@@ -149,26 +150,25 @@ def test_hsts_include_subdomains_default_follows_hsts(monkeypatch):
     monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
     importlib.reload(security_headers)
     assert security_headers.SECURE_HSTS_SECONDS == 31_536_000
-    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is True
+    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is False
 
     # Restore ambient state for later importers.
     monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
     importlib.reload(security_headers)
 
 
-def test_hsts_include_subdomains_can_be_disabled_while_hsts_on(monkeypatch):
-    """On a SHARED parent domain an operator turns HSTS on for THIS host only
-    by setting ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false`` — HSTS stays on but
-    the browser does not HTTPS-upgrade sibling ``*.example.com`` services."""
+def test_hsts_include_subdomains_opt_in_when_owning_subtree(monkeypatch):
+    """A deploy that owns and HTTPS-serves its whole subtree opts in with
+    ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true`` and then the flag is emitted."""
     import importlib
 
     from ameli_web.settings import security_headers
 
     monkeypatch.setenv("AMELI_APP_HSTS_SECONDS", "31536000")
-    monkeypatch.setenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "false")
+    monkeypatch.setenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "true")
     importlib.reload(security_headers)
     assert security_headers.SECURE_HSTS_SECONDS == 31_536_000
-    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is False
+    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is True
 
     monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
     monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
@@ -176,20 +176,21 @@ def test_hsts_include_subdomains_can_be_disabled_while_hsts_on(monkeypatch):
 
 
 def test_hsts_include_subdomains_never_set_when_hsts_off(monkeypatch):
-    """``includeSubDomains`` must never be emitted when HSTS is off, even if the
-    operator left the flag at its default True — Django only writes the header
+    """``includeSubDomains`` must never be emitted when HSTS is off — even if
+    the operator explicitly opted in — because Django only writes the header
     when ``SECURE_HSTS_SECONDS`` > 0, and the two must not disagree."""
     import importlib
 
     from ameli_web.settings import security_headers
 
     monkeypatch.setenv("AMELI_APP_HSTS_SECONDS", "0")
-    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
+    monkeypatch.setenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "true")
     importlib.reload(security_headers)
     assert security_headers.SECURE_HSTS_SECONDS == 0
     assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is False
 
     monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
+    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
     importlib.reload(security_headers)
 
 

@@ -48,25 +48,28 @@ if _proxy_ssl_header:
 # (the submission is functionally irreversible).
 _hsts_default = 0 if ENV_NAME == "dev" else 31_536_000
 SECURE_HSTS_SECONDS = int(os.environ.get("AMELI_APP_HSTS_SECONDS", str(_hsts_default)))
-# ``includeSubDomains`` defaults ON whenever HSTS is on — the correct posture
-# for a deploy that owns its whole domain. But on a SHARED parent domain
-# (several ``*.example.com`` services, some possibly still HTTP-only), a
-# single host emitting ``includeSubDomains`` makes the browser HTTPS-upgrade
-# the ENTIRE parent domain, breaking sibling HTTP services. An operator on a
-# shared domain can set ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false`` to turn
-# HSTS on for THIS host only. Unrecognised values fail closed (raise) like
-# the other guards in this module. The flag is never emitted when HSTS is off.
+# ``includeSubDomains`` extends the HSTS policy to every subdomain OF THIS
+# host (for ``app.example.com`` that means ``*.app.example.com`` — NOT
+# siblings like ``other.example.com`` and NOT the parent ``example.com``).
+# It defaults OFF (opt-in), matching Django's own default: asserting HSTS for
+# a subtree you may not fully control — or that still has HTTP-only hosts —
+# locks browsers onto HTTPS for it irreversibly for the max-age window, and
+# preloading amplifies that. A deploy that owns and HTTPS-serves its entire
+# subtree opts in with ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true``. Unrecognised
+# values fail closed (raise) like the other guards in this module. The flag is
+# never emitted when HSTS is off.
 _hsts_subdomains_env = os.environ.get("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "").strip().lower()
-if _hsts_subdomains_env in {"", "1", "true", "yes", "on"}:
-    _include_subdomains = True
-elif _hsts_subdomains_env in {"0", "false", "no", "off"}:
+if _hsts_subdomains_env in {"", "0", "false", "no", "off"}:
     _include_subdomains = False
+elif _hsts_subdomains_env in {"1", "true", "yes", "on"}:
+    _include_subdomains = True
 else:
     raise RuntimeError(
         f"AMELI_APP_HSTS_INCLUDE_SUBDOMAINS={_hsts_subdomains_env!r} is not a "
-        "boolean. Use true/false (or leave unset for the default). Set it to "
-        "false to enable HSTS for THIS host without forcing HTTPS across the "
-        "whole parent domain (shared-domain deploys)."
+        "boolean. Use true/false (or leave unset for the default of off). Set "
+        "it to true only when this host owns and HTTPS-serves every subdomain "
+        "beneath it — includeSubDomains locks browsers onto HTTPS for the "
+        "whole subtree for the max-age window."
     )
 SECURE_HSTS_INCLUDE_SUBDOMAINS = _include_subdomains and SECURE_HSTS_SECONDS > 0
 SECURE_HSTS_PRELOAD = False
