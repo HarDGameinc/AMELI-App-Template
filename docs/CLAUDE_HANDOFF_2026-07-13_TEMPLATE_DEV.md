@@ -140,16 +140,34 @@ el del upstream), asi que el knob app-side queda sombreado en este host.
   Además, por decisión del operador, **flip del default a OFF (opt-in)**, igual
   que Django. 5 tests, suite **1106 passed / 57 skipped**, ruff limpio.
 
+### 3.7. Tests de migraciones — drift + reversibilidad (`3761d9b`)
+
+Cerrado el gap "No Django migration tests" de `AGENTS.md`. CI ya cubría
+forward-apply + drift; faltaba **reversibilidad**. `tests/test_migrations.py`:
+- `test_no_missing_migrations`: `makemigrations --check` dentro de la suite
+  (drift en todo entorno, no solo el job de CI).
+- `test_first_party_migrations_reverse_and_reapply_cleanly`: revierte `audit`
+  + `accounts` a `zero` (ejercita todos los reverse, incl. las 3 `RunPython`)
+  y vuelve forward. `transaction=True` + `finally` que re-migra a head → deja
+  la DB compartida limpia.
+
+Hallazgo: **descartado** el approach de DB secundaria aislada porque las
+data-migrations consultan `User.objects` sobre la conexión **default** sin
+`.using()` (son single-DB, correcto para la app; no se reescriben migraciones
+aplicadas). Round-trip corre sobre la default. Suite **1108 passed / 57
+skipped**, ruff limpio. Sin cambio de workflow (viven en la suite pytest).
+
 ## §4. Continuidad / backlog (opcional)
 
 - ~~Host: limpiar reglas ufw vestigiales del 18080.~~ **HECHO** (§3.6).
+- ~~Testing gap: tests de migraciones Django.~~ **HECHO** (§3.7, `3761d9b`).
 - **Promoción `v0.5.4 → main`**: DIFERIDA hasta el reset de CI (~1-ago) o subir
   el spending limit. PR #4 abierto, MERGEABLE, checks fallando por billing (no
   código). No forzar merge sin CI verde.
-- **Roadmap (opcional, per `DECISIONS.md` + `AGENTS.md`):**
-  - Testing gaps: tests de migraciones Django (apply/rollback en CI); auditoría
-    de `aria-live`/screen-reader; unit tests JS de DOM-wiring (jsdom); visual
-    regression. Todos **low priority** (ver `TECH_EVOLUTION.md`).
+- **Roadmap restante (opcional, per `DECISIONS.md` + `AGENTS.md`):**
+  - Testing gaps abiertos: auditoría de `aria-live`/screen-reader; unit tests
+    JS de DOM-wiring (jsdom); visual regression. Todos **low priority** (ver
+    `TECH_EVOLUTION.md`).
   - **Model C** del update-channel (`ameli-core` + Dependabot, `DECISIONS.md`
     #7): el canal más fuerte pero refactor grande; diferido hasta que la flota
     lo justifique.
