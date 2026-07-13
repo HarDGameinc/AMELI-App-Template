@@ -63,8 +63,12 @@ def test_sri_for_caches_until_mtime_changes(tmp_path):
     assert sri_tag._cache[str(fake)] == (cached_mtime, cached_digest)
 
     import os
-    os.utime(fake, (cached_mtime + 5, cached_mtime + 5))
+    # Rewrite FIRST, then force a distinctly-different mtime. Doing utime
+    # before write_bytes was flaky: the write reset mtime back to "now",
+    # which on a coarse-resolution filesystem could equal cached_mtime and
+    # leave the cache un-invalidated. Setting mtime last makes it deterministic.
     fake.write_bytes(b"body { color: green; }")
+    os.utime(fake, (cached_mtime + 5, cached_mtime + 5))
     refreshed = sri_tag._compute_sri(str(fake))
     assert refreshed != first
     assert sri_tag._cache[str(fake)][1] == refreshed
