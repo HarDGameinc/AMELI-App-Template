@@ -44,7 +44,7 @@
     {# Visible only when focused (CSS ``.skip-link:focus`` reveals). #}
     <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
     {% if request.maintenance_state.active %}
-    <div role="status" aria-live="polite" style="background:#d6336c;color:#fff;padding:10px 16px;font-weight:600;text-align:center;">
+    <div role="status" aria-live="polite" class="maintenance-banner">
       Mantenimiento activo{% if request.maintenance_state.message %}: {{ request.maintenance_state.message }}{% else %}. Algunas acciones estaran temporalmente deshabilitadas.{% endif %}
     </div>
     {% endif %}

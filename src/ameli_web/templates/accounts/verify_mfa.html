@@ -13,7 +13,7 @@
     <p class="muted modal-copy">Continuando como <strong>@{{ pending_username }}</strong>. Tenes dos metodos activos. Elegi cual usar ahora.</p>
     <form method="post" action="">
       {% csrf_token %}
-      <div class="form-grid-split" style="margin-top:12px;">
+      <div class="form-grid-split mt-12">
         <article class="form-card">
           <div class="form-card-head">
             <h3 class="form-card-title">App de autenticacion</h3>
@@ -40,8 +40,8 @@
         </article>
       </div>
     </form>
-    <p class="muted modal-copy" style="margin-top:14px;">
-      <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
+    <p class="muted modal-copy mt-14">
+      <a href="{% url 'accounts:login' %}" class="link-accent">Cancelar e ingresar con otra cuenta</a>
     </p>
     {% else %}
     <h2 class="modal-title">Tu codigo de 6 digitos</h2>
@@ -67,7 +67,7 @@
       <button class="primary login-form-submit" type="submit">Verificar y continuar</button>
     </form>
     {% if method == "email" %}
-    <div class="modal-actions-row" style="margin-top:12px;">
+    <div class="modal-actions-row mt-12">
       <button class="icon-action" type="button" id="verify-mfa-resend">
         <span class="material-symbols-rounded icon-glyph" aria-hidden="true">refresh</span>
         <span>Reenviar codigo</span>
@@ -76,7 +76,7 @@
     <p class="muted" id="verify-mfa-resend-feedback"></p>
     {% endif %}
     {% if available_methods|length >= 2 %}
-    <form method="post" action="" style="margin-top:14px;">
+    <form method="post" action="" class="mt-14">
       {% csrf_token %}
       <input type="hidden" name="choose_method" value="{% if method == 'totp' %}email{% else %}totp{% endif %}">
       <button class="icon-action" type="submit">
@@ -85,8 +85,8 @@
       </button>
     </form>
     {% endif %}
-    <p class="muted modal-copy" style="margin-top:14px;">
-      <a href="{% url 'accounts:login' %}" style="color:var(--accent); font-weight:600;">Cancelar e ingresar con otra cuenta</a>
+    <p class="muted modal-copy mt-14">
+      <a href="{% url 'accounts:login' %}" class="link-accent">Cancelar e ingresar con otra cuenta</a>
     </p>
     {% endif %}
   </article>

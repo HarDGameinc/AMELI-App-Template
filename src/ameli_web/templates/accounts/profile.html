@@ -19,21 +19,21 @@
 {% include "accounts/_force_password_modal.html" %}
 {% else %}
 {% if security_alerts %}
-<section class="panel" id="profile-security-alerts" style="border-left:4px solid var(--warn-fg, #f5b041); margin-bottom:16px;">
+<section class="panel panel-alert mb-16" id="profile-security-alerts">
   <div class="form-card-head">
     <div class="metric-label warn-text">Alertas de seguridad ({{ security_alerts|length }})</div>
     <p class="muted panel-copy">Revisar y resolver lo antes posible. Algunos puntos te dejan sin recuperacion de cuenta o te exponen a un robo de sesion.</p>
   </div>
-  <ul style="list-style:none;padding:0;margin:0;">
+  <ul class="list-reset">
     {% for alert in security_alerts %}
-    <li style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--panel-border, #1f2733);">
-      <span class="material-symbols-rounded icon-glyph" aria-hidden="true" style="color:var(--warn-fg,#f5b041);">{{ alert.icon }}</span>
-      <div style="flex:1;">
+    <li class="alert-item">
+      <span class="material-symbols-rounded icon-glyph text-warn-fg" aria-hidden="true">{{ alert.icon }}</span>
+      <div class="flex-1">
         <strong>{{ alert.title }}</strong>
-        <p class="muted" style="margin:4px 0 0 0;">{{ alert.detail }}</p>
+        <p class="muted alert-detail">{{ alert.detail }}</p>
       </div>
       {% if alert.action_label and alert.action_tab %}
-      <button class="icon-action" type="button" data-tab-trigger="{{ alert.action_tab }}" style="flex-shrink:0;">
+      <button class="icon-action flex-shrink-0" type="button" data-tab-trigger="{{ alert.action_tab }}">
         <span>{{ alert.action_label }}</span>
       </button>
       {% endif %}
@@ -150,7 +150,7 @@
         multi-line se filtra como HTML — bug surfacie en el wire test
         21-jun.
       {% endcomment %}
-      <div class="form-card-head" style="margin-top:24px;">
+      <div class="form-card-head mt-24">
         <div class="metric-label">Imagen de perfil</div>
         <p class="muted panel-copy">JPEG, PNG, WebP o GIF. Maximo 3 MB. Se valida y se escanea por antivirus antes de guardar.</p>
       </div>
@@ -186,7 +186,7 @@
         </div>
       </form>
       {% if current_user.has_avatar %}
-      <form id="avatar-delete-form" class="form-card" method="post" action="{% url 'accounts:profile-avatar-delete' %}" style="margin-top:8px;">
+      <form id="avatar-delete-form" class="form-card mt-8" method="post" action="{% url 'accounts:profile-avatar-delete' %}">
         {% csrf_token %}
         <div class="modal-actions-row">
           <button class="danger" type="submit">Borrar imagen actual</button>
@@ -348,14 +348,14 @@
         {% endif %}
       </div>
 
-      <div class="form-grid-split" style="margin-top:12px;">
+      <div class="form-grid-split mt-12">
         <article class="form-card" data-mfa-method="totp" data-mfa-active="{% if mfa_status.totp_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
-            <h3 class="form-card-title">App de autenticacion <span class="session-state-badge {% if mfa_status.totp_enabled %}active{% else %}neutral{% endif %}" style="margin-left:8px;">{% if mfa_status.totp_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
+            <h3 class="form-card-title">App de autenticacion <span class="session-state-badge {% if mfa_status.totp_enabled %}active{% else %}neutral{% endif %} ml-8">{% if mfa_status.totp_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
             <p class="muted panel-copy">Google Authenticator, Authy, 1Password u otra. Codigo de 6 digitos que se renueva cada 30 segundos.</p>
           </div>
           {% if mfa_status.totp_enabled %}
-          <div class="modal-form-row" style="margin-top:8px;">
+          <div class="modal-form-row mt-8">
             <label class="modal-form-label" for="profile-mfa-totp-disable-password">Contrasena actual</label>
             <div class="modal-input-with-action">
               <input id="profile-mfa-totp-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
@@ -372,7 +372,7 @@
           </div>
           <p class="muted" id="profile-mfa-totp-disable-feedback"></p>
           {% else %}
-          <div class="modal-form-row" style="margin-top:8px;">
+          <div class="modal-form-row mt-8">
             <label class="modal-form-label" for="profile-mfa-totp-activate-password">Contrasena actual</label>
             <div class="modal-input-with-action">
               <input id="profile-mfa-totp-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
@@ -392,11 +392,11 @@
 
         <article class="form-card" data-mfa-method="email" data-mfa-active="{% if mfa_status.email_enabled %}1{% else %}0{% endif %}">
           <div class="form-card-head">
-            <h3 class="form-card-title">Email <span class="session-state-badge {% if mfa_status.email_enabled %}active{% else %}neutral{% endif %}" style="margin-left:8px;">{% if mfa_status.email_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
+            <h3 class="form-card-title">Email <span class="session-state-badge {% if mfa_status.email_enabled %}active{% else %}neutral{% endif %} ml-8">{% if mfa_status.email_enabled %}Activo{% else %}Inactivo{% endif %}</span></h3>
             <p class="muted panel-copy">Te mandamos un codigo de 6 digitos {% if mfa_status.has_email %}a <strong>{{ request.user.email }}</strong> en cada ingreso{% else %}cuando registres un email{% endif %}. Util si no queres instalar apps extra.</p>
           </div>
           {% if mfa_status.email_enabled %}
-          <div class="modal-form-row" style="margin-top:8px;">
+          <div class="modal-form-row mt-8">
             <label class="modal-form-label" for="profile-mfa-email-disable-password">Contrasena actual</label>
             <div class="modal-input-with-action">
               <input id="profile-mfa-email-disable-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para desactivar">
@@ -414,7 +414,7 @@
           <p class="muted" id="profile-mfa-email-disable-feedback"></p>
           {% else %}
           {% if mfa_status.has_email %}
-          <div class="modal-form-row" style="margin-top:8px;">
+          <div class="modal-form-row mt-8">
             <label class="modal-form-label" for="profile-mfa-email-activate-password">Contrasena actual</label>
             <div class="modal-input-with-action">
               <input id="profile-mfa-email-activate-password" class="modal-input" type="password" autocomplete="current-password" placeholder="Confirma tu clave para activar">
@@ -431,7 +431,7 @@
             </button>
           </div>
           {% if not mfa_status.has_email %}
-          <p class="muted warn-text" style="margin-top:8px;">Sin email registrado en tu cuenta. Pedile al administrador que te asigne uno antes de activar este metodo.</p>
+          <p class="muted warn-text mt-8">Sin email registrado en tu cuenta. Pedile al administrador que te asigne uno antes de activar este metodo.</p>
           {% endif %}
           {% endif %}
         </article>
@@ -439,7 +439,7 @@
       <p class="muted" id="profile-mfa-activate-feedback"></p>
 
       {% if mfa_status.enabled %}
-      <div class="form-card" style="margin-top:14px;">
+      <div class="form-card mt-14">
         <p class="muted panel-copy warn-text"><strong>Regenerar reemplaza todos tus codigos actuales:</strong> los que tengas guardados dejaran de funcionar. Confirma con tu contrasena.</p>
         <div class="modal-form-row">
           <label class="modal-form-label" for="profile-mfa-regenerate-password">Contrasena actual</label>

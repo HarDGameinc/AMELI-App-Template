@@ -53,7 +53,7 @@ helper can swap just this fragment without reloading the whole admin page.
   {% endif %}
 </form>
 
-<div class="modal-actions-row" style="margin-bottom:8px;" data-audit-export-actions>
+<div class="modal-actions-row mb-8" data-audit-export-actions>
   <a class="icon-action"
      href="{% url 'admin-audit-export' %}?{% for key, value in request.GET.items %}{% if key != 'partial' and key != 'audit_page' and key != 'format' %}{{ key }}={{ value }}&{% endif %}{% endfor %}format=csv"
      data-audit-export-csv

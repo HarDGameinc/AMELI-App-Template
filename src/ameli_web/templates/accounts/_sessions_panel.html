@@ -34,7 +34,7 @@ helper can swap just this fragment without reloading the whole profile.
       {% if session.user_agent %}<span class="session-meta-item">{{ session.user_agent|truncatechars:72 }}</span>{% endif %}
     </div>
     {% if not session.is_current and not session.revoked %}
-    <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}" style="margin-top:10px;">
+    <form method="post" action="{% url 'accounts:profile-revoke-session' session.session_key %}" class="mt-10">
       {% csrf_token %}
       <button class="icon-action danger" type="submit">
         <span class="material-symbols-rounded icon-glyph" aria-hidden="true">block</span>

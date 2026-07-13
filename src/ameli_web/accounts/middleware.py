@@ -27,11 +27,14 @@ def build_csp(nonce: str) -> str:
     can inject the markup but not the matching nonce only known to the
     server for this response.
 
-    ``style-src`` keeps ``'unsafe-inline'`` because every layout
-    template still relies on inline ``style=""`` attributes; rewriting
-    them all would be a giant refactor for marginal value. Inline
-    styles cannot execute JavaScript, so the residual risk is cosmetic
-    (an attacker could rewrite layout, never run code).
+    ``style-src`` no longer needs ``'unsafe-inline'``: every template
+    inline ``style=""`` attribute was moved to a utility/semantic class
+    in ``static/css/app.css`` (2026-07-12), so a reflected-markup XSS
+    can no longer smuggle in styles either. ``https://fonts.googleapis.
+    com`` stays whitelisted for the Google Fonts stylesheet ``<link>``.
+    (The ``/django-admin`` and ``/docs`` per-page CSPs still carry
+    ``'unsafe-inline'`` for framework/CDN-owned inline styles we do not
+    control — see ``_django_admin_csp`` and the docs view.)
 
     ``require-trusted-types-for 'script'`` + ``trusted-types
     ameli-template`` enforce that every DOM-XSS sink assignment
@@ -46,7 +49,7 @@ def build_csp(nonce: str) -> str:
     return (
         "default-src 'self'; "
         "img-src 'self' data:; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "style-src 'self' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         f"script-src 'self' 'nonce-{nonce}'; "
         "connect-src 'self'; "

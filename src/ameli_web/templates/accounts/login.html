@@ -17,7 +17,7 @@
       {# <input> happily fill it; the view treats a non-empty value as  #}
       {# a bot signal and rejects the request with the bland wrong-pass #}
       {# error so the trap stays invisible.                             #}
-      <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden;">
+      <div aria-hidden="true" class="visually-hidden">
         <label for="id_login_hp_company">Company</label>
         <input type="text" id="id_login_hp_company" name="hp_company" tabindex="-1" autocomplete="off" value="">
       </div>
@@ -38,8 +38,8 @@
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <button class="primary login-form-submit" type="submit">Ingresar</button>
     </form>
-    <p class="muted modal-copy" style="margin-top:14px;">
-      <a href="{% url 'accounts:forgot-password' %}" style="color:var(--accent); font-weight:600;">¿Olvidaste tu contrasena?</a>
+    <p class="muted modal-copy mt-14">
+      <a href="{% url 'accounts:forgot-password' %}" class="link-accent">¿Olvidaste tu contrasena?</a>
     </p>
   </article>
 
