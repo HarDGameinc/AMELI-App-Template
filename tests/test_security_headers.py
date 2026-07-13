@@ -136,3 +136,74 @@ def test_secure_proxy_ssl_header_normalizes_wire_name(monkeypatch):
     # Restore the ambient module state for any later importer.
     monkeypatch.delenv("AMELI_APP_SECURE_PROXY_SSL_HEADER", raising=False)
     importlib.reload(security_headers)
+
+
+def test_hsts_include_subdomains_default_follows_hsts(monkeypatch):
+    """With HSTS enabled and no override, ``includeSubDomains`` is ON — the
+    right default for a deploy that owns its whole domain."""
+    import importlib
+
+    from ameli_web.settings import security_headers
+
+    monkeypatch.setenv("AMELI_APP_HSTS_SECONDS", "31536000")
+    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
+    importlib.reload(security_headers)
+    assert security_headers.SECURE_HSTS_SECONDS == 31_536_000
+    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is True
+
+    # Restore ambient state for later importers.
+    monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
+    importlib.reload(security_headers)
+
+
+def test_hsts_include_subdomains_can_be_disabled_while_hsts_on(monkeypatch):
+    """On a SHARED parent domain an operator turns HSTS on for THIS host only
+    by setting ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false`` — HSTS stays on but
+    the browser does not HTTPS-upgrade sibling ``*.example.com`` services."""
+    import importlib
+
+    from ameli_web.settings import security_headers
+
+    monkeypatch.setenv("AMELI_APP_HSTS_SECONDS", "31536000")
+    monkeypatch.setenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "false")
+    importlib.reload(security_headers)
+    assert security_headers.SECURE_HSTS_SECONDS == 31_536_000
+    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is False
+
+    monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
+    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
+    importlib.reload(security_headers)
+
+
+def test_hsts_include_subdomains_never_set_when_hsts_off(monkeypatch):
+    """``includeSubDomains`` must never be emitted when HSTS is off, even if the
+    operator left the flag at its default True — Django only writes the header
+    when ``SECURE_HSTS_SECONDS`` > 0, and the two must not disagree."""
+    import importlib
+
+    from ameli_web.settings import security_headers
+
+    monkeypatch.setenv("AMELI_APP_HSTS_SECONDS", "0")
+    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
+    importlib.reload(security_headers)
+    assert security_headers.SECURE_HSTS_SECONDS == 0
+    assert security_headers.SECURE_HSTS_INCLUDE_SUBDOMAINS is False
+
+    monkeypatch.delenv("AMELI_APP_HSTS_SECONDS", raising=False)
+    importlib.reload(security_headers)
+
+
+def test_hsts_include_subdomains_rejects_non_boolean(monkeypatch):
+    """A typo'd value fails closed (raises) rather than silently coercing to a
+    posture the operator did not intend, matching the other guards here."""
+    import importlib
+
+    from ameli_web.settings import security_headers
+
+    monkeypatch.setenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "maybe")
+    with pytest.raises(RuntimeError, match="AMELI_APP_HSTS_INCLUDE_SUBDOMAINS"):
+        importlib.reload(security_headers)
+
+    # Restore ambient state for later importers.
+    monkeypatch.delenv("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", raising=False)
+    importlib.reload(security_headers)

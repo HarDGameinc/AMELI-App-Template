@@ -235,6 +235,49 @@ systemctl status unattended-upgrades 2>/dev/null | head -3
 
 ---
 
+## 9. Hardening a publicly-exposed dev/staging instance ⚙️
+
+A dev/staging box reachable from the public internet over TLS (not just a
+LAN/VPN sandbox) needs the production security posture even though it runs
+`APP_ENV=dev`. The `_IS_DEV_ENV` gate makes several settings *default* to a
+laxer value in dev — but each one has an env override that wins regardless of
+`APP_ENV`. Set these on the instance (in `app.env`) so a public dev host is
+not one config typo away from plaintext cookies or `DEBUG` tracebacks:
+
+| Concern | Env var | Value for a public dev host |
+| --- | --- | --- |
+| Debug tracebacks off | `AMELI_APP_DJANGO_DEBUG` | `false` |
+| Secure (HTTPS-only) cookies | `AMELI_APP_SESSION_COOKIE_SECURE` | `true` |
+| Behind a TLS proxy | `AMELI_APP_SECURE_PROXY_SSL_HEADER` | `X-Forwarded-Proto=https` |
+| Audit-log HMAC | `AMELI_APP_AUDIT_HMAC_KEY` | a real 32-byte key |
+| MFA secret encryption | `AMELI_APP_MFA_ENCRYPTION_KEY` | a real Fernet key |
+| HSTS | `AMELI_APP_HSTS_SECONDS` | `31536000` (see caveat below) |
+
+> `ha-report2` already sets `DEBUG=false`, Secure cookies, the proxy SSL
+> header, and real audit + MFA keys (verified 2026-07-13). The one gap is
+> HSTS, which defaults to `0` in dev.
+
+### The `includeSubDomains` caveat on a shared parent domain 🔴
+
+HSTS `includeSubDomains` tells the browser to force **every**
+`*.parent-domain` host onto HTTPS — irreversibly, for the max-age window. On
+a **shared** parent domain (e.g. several `*.ameli.cl` services, some possibly
+still HTTP-only), a single host emitting `includeSubDomains` can break its
+siblings. Because the template defaults `includeSubDomains` **ON** whenever
+HSTS is on, enabling HSTS on such a host needs the opt-out:
+
+```bash
+# HSTS for THIS host only — does not HTTPS-upgrade the whole *.ameli.cl domain
+AMELI_APP_HSTS_SECONDS=31536000
+AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false
+```
+
+Only leave `includeSubDomains` at its default (or set it `true`) when the
+deploy **owns its entire parent domain**. The flag is never emitted when HSTS
+is off, and a non-boolean value fails closed (the app refuses to boot).
+
+---
+
 ## Appendix — `ha-report2` host status (dev box)
 
 Audit + remediation performed with the operator (Debian 13 "trixie",

@@ -48,7 +48,27 @@ if _proxy_ssl_header:
 # (the submission is functionally irreversible).
 _hsts_default = 0 if ENV_NAME == "dev" else 31_536_000
 SECURE_HSTS_SECONDS = int(os.environ.get("AMELI_APP_HSTS_SECONDS", str(_hsts_default)))
-SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+# ``includeSubDomains`` defaults ON whenever HSTS is on — the correct posture
+# for a deploy that owns its whole domain. But on a SHARED parent domain
+# (several ``*.example.com`` services, some possibly still HTTP-only), a
+# single host emitting ``includeSubDomains`` makes the browser HTTPS-upgrade
+# the ENTIRE parent domain, breaking sibling HTTP services. An operator on a
+# shared domain can set ``AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false`` to turn
+# HSTS on for THIS host only. Unrecognised values fail closed (raise) like
+# the other guards in this module. The flag is never emitted when HSTS is off.
+_hsts_subdomains_env = os.environ.get("AMELI_APP_HSTS_INCLUDE_SUBDOMAINS", "").strip().lower()
+if _hsts_subdomains_env in {"", "1", "true", "yes", "on"}:
+    _include_subdomains = True
+elif _hsts_subdomains_env in {"0", "false", "no", "off"}:
+    _include_subdomains = False
+else:
+    raise RuntimeError(
+        f"AMELI_APP_HSTS_INCLUDE_SUBDOMAINS={_hsts_subdomains_env!r} is not a "
+        "boolean. Use true/false (or leave unset for the default). Set it to "
+        "false to enable HSTS for THIS host without forcing HTTPS across the "
+        "whole parent domain (shared-domain deploys)."
+    )
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _include_subdomains and SECURE_HSTS_SECONDS > 0
 SECURE_HSTS_PRELOAD = False
 
 # The project-wide CSP is built per request by SecurityHeadersMiddleware
