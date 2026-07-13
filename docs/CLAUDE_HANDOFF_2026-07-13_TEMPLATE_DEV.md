@@ -6,6 +6,36 @@ Rama de trabajo: `dev` (version `v0.5.4-django`)
 Rama estable: `main` (promoviendo `v0.5.4` en esta sesion)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-11_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-11_TEMPLATE_DEV.md)
 
+## §0. Cierre de sesión (TL;DR, 2026-07-13)
+
+Sesión larga y productiva. `dev` en `v0.5.4-django`, árbol limpio, todo
+pusheado. **`main` sigue en `v0.5.3`**: la promoción v0.5.4 está **DIFERIDA**
+por el bloqueo de billing de GitHub Actions (2000/2000 min, reset ~1-ago). PR
+#4 abierto y MERGEABLE.
+
+**Entregado hoy** (11 commits sobre los 4 previos de v0.5.4):
+- **Seguridad HSTS**: env-var `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS`, flip de
+  default a **OFF/opt-in**, corrección del fundamento (RFC 6797: `includeSubDomains`
+  alcanza solo subdominios del host emisor, no hermanos), y HSTS aplicado a
+  `dev03` en el **Caddyfile del server** (fuente de verdad = Caddy). Ver §3.5–3.6.
+- **Host**: borradas reglas ufw vestigiales del 18080 (loopback-only). §3.6.
+- **Tests de migraciones** (§3.7): reversibilidad round-trip + drift +
+  **backfill de `0012`** (encrypt/decrypt at-rest, seguridad). `0004`/`0005`
+  NO se testean a propósito (bookkeeping de bajo riesgo + campo removido →
+  harness frágil; no vale).
+- **a11y aria-live** (§3.8): región global `#a11y-live` + `announce()` para
+  swaps de paginación (bug de `requestAnimationFrame` atrapado en verificación
+  en browser real → `setTimeout`), + `aria-live` en los 4 feedbacks de acción
+  admin. Verificado en vivo.
+
+Suite **1114 passed / 58 skipped**, ruff limpio.
+
+**Próximo paso (cuando vuelva el CI ~1-ago o se suba el spending limit):**
+`gh run rerun` del PR #4 → esperar verde → merge commit + tag/release
+`v0.5.4-django` → sync del server (que sigue en `a11a897`; los commits nuevos
+son test/config/a11y sin efecto runtime en el host Caddy-managed). **No forzar
+merge sin CI verde.** Backlog restante en §4, todo low-priority.
+
 ## §1. Snapshot al inicio
 
 - Local `dev` estaba **33 commits detras** de `origin/dev` (ahead=0, arbol

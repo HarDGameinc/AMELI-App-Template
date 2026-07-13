@@ -236,8 +236,13 @@ only ever scopes the emitting host's own subdomains, per RFC 6797, not
 siblings or the parent). On the live `ha-report2` host HSTS is **Caddy-managed
 per-site**; `dev03.ameli.cl` got `max-age=31536000` (no `includeSubDomains`)
 added to its Caddy block, and the vestigial LAN/VPN ufw allows for the
-loopback-only `18080` were removed. All validated on the dev server / CI; see
-the latest `docs/CLAUDE_HANDOFF_*`.
+loopback-only `18080` were removed. The same release also closes two testing
+gaps — Django **migration reversibility + drift** tests plus the
+`0012` MFA-secret encrypt/decrypt **data-backfill** coverage, and an
+**`aria-live` announcement** pass (global `#a11y-live` region + `announce()`
+for the admin pagination/filter swaps, and `aria-live` on the four admin
+action feedbacks). All validated on the dev server / CI; see the latest
+`docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
