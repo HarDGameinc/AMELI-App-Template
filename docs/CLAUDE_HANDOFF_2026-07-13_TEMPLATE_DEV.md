@@ -85,6 +85,30 @@ sube el limite antes):** `gh run rerun` del PR #4 → esperar verde → merge
 commit + tag/release `v0.5.4-django` → sync del server. Ningun agente debe
 forzar el merge sin CI.
 
+### 3.5. Hardening de la instancia dev publica — HSTS override (`8ddb0bb`)
+
+Revision de postura de `ha-report2` (corre `APP_ENV=dev` pero **expuesto a
+internet sobre TLS**). Ya estaba bien: `DEBUG=false`, cookies Secure, proxy
+SSL header, claves audit+MFA reales (verificado con dump de settings). **Unico
+gap: HSTS** (default `0` en dev).
+
+Añadido `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py`: permite
+prender HSTS en un host bajo un **dominio padre compartido** (`*.ameli.cl`)
+sin `includeSubDomains` — que forzaria HTTPS en TODO `*.ameli.cl` (irreversible
+por el max-age) y romperia servicios hermanos HTTP-only. Default preserva el
+comportamiento actual (True cuando HSTS>0); valor no-booleano falla cerrado
+(raise); nunca se emite con HSTS off. **+4 tests, +§9 en `SERVER_HARDENING.md`**
+(checklist de env-vars para instancia publica + caveat del dominio compartido).
+Suite completa **1106 passed / 57 skipped**, ruff limpio. Backend/config puro
+(cubierto por suite local, sin gap de render durante el corte de CI).
+
+**Accion operador (opcional, para cerrar el gap HSTS en `ha-report2`):** añadir
+a `app.env` de la instancia y reiniciar el servicio:
+```bash
+AMELI_APP_HSTS_SECONDS=31536000
+AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false   # host-only; *.ameli.cl es compartido
+```
+
 ## §4. Continuidad / backlog (opcional)
 
 - Host: limpiar reglas ufw vestigiales del 18080 (loopback-only, inofensivas).
