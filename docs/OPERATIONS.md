@@ -1,5 +1,46 @@
 # Operations
 
+## Deployed instance — ground truth (never guess)
+
+> **For any AI or operator touching a server: derive the instance facts,
+> do not hardcode or guess them.** Service names, paths and ports are
+> **computed**, not fixed — guessing `ameli-app-web.service` or `/opt/ameli`
+> will target the wrong unit. There are two sources of truth:
+
+1. **`scripts/_common.sh`** derives every path and unit name from
+   `APP_INSTANCE` (= `APP_SLUG-APP_ENV`, e.g. `ameli-app-template-dev`).
+   `resolve_systemd_profile()` picks which services/timers are enabled from
+   `APP_SYSTEMD_PROFILE` — so *which* process is served is profile-dependent.
+2. **`scripts/validate_installation.sh`** runs those on the box and prints
+   `[OK]/[WARN]/[FAIL]` for paths, config, DB, `manage.py check`, and every
+   enabled service/timer unit. **Run it first** — it *tells you* the real
+   unit names instead of you guessing:
+   ```bash
+   cd "$APP_DIR" && APP_ENV=<env> bash scripts/validate_installation.sh
+   ```
+
+### Live template deploy on `ha-report2`
+
+`APP_INSTANCE=ameli-app-template-dev` · `APP_ENV=dev` · profile
+`api-worker-maintenance`. Resolved ground truth (confirmed 2026-07-12):
+
+| Fact | Value |
+|---|---|
+| Checkout (`APP_DIR`) | `/opt/ameli-app-template-dev` |
+| venv | `/opt/ameli-app-template-dev/.venv` |
+| Config / env | `/etc/ameli-app-template-dev/{app.yaml,app.env}` |
+| Data / logs | `/var/lib/…` · `/var/log/ameli-app-template-dev` |
+| **Served process** | **`ameli-app-template-dev-api.service`** (uvicorn → `ameli_web.asgi:application`) |
+| Also enabled | `…-notifier.service`; timers: `worker`, `maintenance`, `backup`, `verify-audit` |
+| Shipped but **disabled** | `…-web.service` — this profile serves via `-api`; **do not restart `-web`** |
+| Loopback bind | `127.0.0.1:18080` (`DEFAULT_API_PORT`, loopback-only behind the proxy) |
+| Health | `curl http://127.0.0.1:18080/health` (JSON: `version`, `ok`, `status`, `checks`) — see [Health checks](#health-checks) |
+
+Deploy + restart commands live in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server"
+(canonical, already names `ameli-app-template-dev-api.service`). The bump
+ritual is in [`RELEASE.md`](RELEASE.md).
+
 ## Local validation
 
 ```bash

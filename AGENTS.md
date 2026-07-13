@@ -161,6 +161,10 @@ manage.py               # Django management entrypoint (autodiscover config)
 - **Validate:** `scripts/validate_installation.sh` — CLI + Django health + PostgreSQL check
 - **Lockfile:** `requirements.lock` with `--require-hashes` (ASVS V14.2.3)
 - **Systemd:** 16 unit files in `deploy/systemd/`, configurable via `APP_SYSTEMD_PROFILE`
+- **Server facts (never guess):** paths/unit names/port are *derived* from
+  `APP_INSTANCE`, not fixed — see `docs/OPERATIONS.md` → "Deployed instance —
+  ground truth" before any server op. Run `validate_installation.sh` to have
+  the box report them; don't hardcode a service name or `/opt/...` path.
 
 ## Testing
 
@@ -270,7 +274,7 @@ validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/DECISIONS.md` | Architecture decisions (ADR-lite): the durable "why" |
 | `docs/ARCHITECTURE.md` | Technical structure |
 | `docs/FIRST_INSTALL_DJANGO.md` | First install guide |
-| `docs/OPERATIONS.md` | Operational procedures |
+| `docs/OPERATIONS.md` | Operational procedures (starts with "Deployed instance — ground truth": derive server paths/units, never guess) |
 | `docs/SECURITY.md` | Security posture |
 | `docs/THREAT_MODEL.md` | STRIDE threat model |
 | `docs/COMPLIANCE_ASVS_L2_*.md` | ASVS L2 compliance snapshots |
