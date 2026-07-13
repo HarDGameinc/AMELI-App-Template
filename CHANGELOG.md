@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.5.3-django — 2026-07-12 (security: throttle atómico M3 + template-check CLI)
+
+Completa **M3**: el rediseño atómico del throttle de login que en `v0.5.1`
+quedó diferido (allí solo se corrigió el docstring a "soft-ceiling"). Cierra
+la carrera **check-then-act** del gate por-usuario, que dejaba un techo
+blando bajo ráfagas concurrentes. Validado en `ha-report2` (`manage.py
+check` limpio, `/health` OPERATIVO sobre Postgres); la prueba atómica sobre
+Postgres la cierra el job `test-postgres` del CI en el PR de promoción.
+Suite completa **1101** verde.
+
+### Security
+
+- **M3 — gate de login por-usuario atómico** (`accounts/services/
+  throttle.py`, `signals.py`, `services/__init__.py`): **reserve-then-verify**
+  sobre un gate dedicado `login_gate_user`. Cada `check` cuenta el intento
+  atómicamente (`_bump_throttle_counter` bajo `select_for_update` + `F()`) y
+  luego lee el sliding total; el incremento commitea **antes** de la
+  decisión, así requests concurrentes ven counts distintos y el cap pasa de
+  techo blando a **techo duro** (`>` en vez de `>=` mantiene el cap efectivo
+  idéntico). Un login exitoso limpia el gate vía `reset_login_throttle()`,
+  cableado al único hook `user_logged_in` (cubre login-form + MFA). El gate
+  por-**IP** queda failure-based soft **a propósito** — gatea un keyspace
+  grande/mixto; contar todos los intentos penalizaría ráfagas legítimas de
+  NAT/oficina compartida. +5 tests (`test_login_throttle.py`).
+
+### Features
+
+- **`ameli-app template-check`** (`cli.py`): la pieza "consultar" del canal
+  de updates (`DECISIONS.md` #7). Consulta el último GitHub Release del
+  template y lo compara contra el **lineage** de la app; emite JSON y sale
+  **1 si está behind** (cron-friendly), 0 up-to-date/ahead, 2 en error. Sin
+  dep runtime nueva (stdlib `urllib`, repo validado por regex + host https
+  fijo); soporta `GITHUB_TOKEN`/`AMELI_APP_GITHUB_TOKEN` (el repo del
+  template es privado → la API da 404 sin auth). +11 tests.
+- **Canal de actualización del template documentado** (`BUILDING_NEW_APP.md`
+  §6, `DECISIONS.md` #7): flujo upstream + los tres modelos de adopción.
+
+### Docs / ops
+
+- **Runbook de rotación de secretos** (`OPERATIONS.md` → "Secret rotation";
+  `SERVER_HARDENING.md` §5 apunta ahí): procedimiento para las 4 claves
+  (`DJANGO_SECRET_KEY`, `MFA_ENCRYPTION_KEY`, `AUDIT_HMAC_KEY`, password de
+  la DB), con las trampas de cada una (p. ej. rotar `MFA_ENCRYPTION_KEY`
+  rompe TOTP en silencio → re-enrolar o re-cifrar).
+- **SBOM CycloneDX** (`OPERATIONS.md` → "Lockfile / supply chain"): generar
+  con `pip-audit -f cyclonedx-json` (sin dep nueva — ya es dev-dep + job de
+  CI); artefacto point-in-time adjunto al GitHub Release, no commiteado
+  (`*.cdx.json` gitignored).
+
+### CI
+
+- `pip-audit` corre también en `pull_request`, completando el gate de
+  promoción a `main` (antes solo en push/schedule).
+
+### Deploy
+
+- **Sin migraciones ni deps nuevas.** `git pull` en `dev` + restart del
+  service (`ameli-app-template-dev-api.service`). El `/health` marcará
+  `v0.5.3-django` tras el redeploy.
+
 ## v0.5.2-django — 2026-07-10 (security: Django 5.2.16 — 3 CVEs)
 
 Bump Django `5.2.15 → 5.2.16` (LTS patch) to clear three CVEs the CI

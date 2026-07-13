@@ -184,7 +184,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.2-django, 2026-07-10)
+## State of the project (v0.5.3-django, 2026-07-12)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -212,8 +212,15 @@ verification) closed 7 logic/config findings — env fail-closed (M1),
 enforced `mfa_required` (M2), avatar-IDOR keyed on exact `avatar.name` (L1),
 narrowed `decrypt_secret` (L2), two-step email-cancel (L3), last-active-
 superadmin invariant (L4), honest throttle-atomicity docstring (M3); plus a
-branded favicon and web-font license attribution. All validated on the dev
-server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+branded favicon and web-font license attribution. `v0.5.3` (2026-07-12)
+completes **M3** — the deferred atomic redesign of the per-user login gate:
+reserve-then-verify on a dedicated `login_gate_user` scope turns the soft
+ceiling into a hard one (closing the check-then-act race), with
+reset-on-success wired to `user_logged_in`; the IP gate stays failure-based
+soft by design. Same release adds the `ameli-app template-check` CLI (the
+update-channel "consultar" piece, `DECISIONS.md` #7), a secret-rotation
+runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). All
+validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
