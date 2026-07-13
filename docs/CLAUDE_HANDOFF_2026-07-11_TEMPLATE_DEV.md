@@ -91,8 +91,17 @@ incluye la tabla de `ha-report2` (served = `…-api`, `-web` shipped-pero-
 disabled, `:18080`). Puntero desde `AGENTS.md`. Prompts de sesión **S-09**
 (inicio) / **S-10** (cierre) en `HANDOFF_TEMPLATE.md`. Commits `1854919` +
 `66ba53e` en `dev` (docs-only, retenidos durante el PR para no disparar la
-trampa `paths-ignore`; empujados post-merge). `dev` queda 2 commits de docs
-adelante de `main` → próxima promoción.
+trampa `paths-ignore`; empujados post-merge). `dev` queda adelante de `main`
+en commits de docs → próxima promoción.
+
+**SBOM adjunto al release** (asset `sbom-v0.5.3.cdx.json`, CycloneDX 1.4, 48
+comp, 0 vulns). Hallazgo en el camino: generar el SBOM desde el **venv
+desplegado** marcó un `msgpack 1.2.0` High DoS (GHSA-6v7p-g79w-8964), pero
+`msgpack` es dev-tooling (`pip-audit`→`cachecontrol`; el dev-lock ya está en
+1.2.1) y NO está en `requirements.lock` — el SBOM del **lock** (lo que
+shipea) da 0 vulns. Lección documentada en `OPERATIONS.md` §SBOM: se adjunta
+la forma del lock, no la del venv. El server usa deploy-key (git-only), así
+que el asset se subió vía `scp` al workstation + `gh`.
 
 ## §4. Continuidad / backlog (todo opcional — nada obligatorio pendiente)
 
