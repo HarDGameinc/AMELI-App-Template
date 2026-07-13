@@ -1,10 +1,21 @@
 # Changelog
 
-## v0.5.4-django — 2026-07-13 (security: CSP style-src sin 'unsafe-inline')
+## v0.5.4-django — 2026-07-13 (security: CSP style-src sin 'unsafe-inline' + Pillow CVEs)
 
-Endurecimiento de CSP + docs de cadena de suministro. Validado en server
-(`ha-report2`): el header responde `style-src 'self' https://fonts.googleapis.com`
-(sin `'unsafe-inline'`), render sin cambios.
+Endurecimiento de CSP + parche de seguridad de dependencia + docs de cadena
+de suministro. Validado en server (`ha-report2`): el header responde
+`style-src 'self' https://fonts.googleapis.com` (sin `'unsafe-inline'`),
+render sin cambios.
+
+### Pillow 12.2.0 → 12.3.0 (5 CVEs)
+
+El gate `pip-audit` del PR de promoción detectó **5 vulnerabilidades**
+conocidas en `pillow==12.2.0` (PYSEC-2026-2253..2257), todas corregidas en
+**12.3.0** (dentro del rango `Pillow>=11.3,<13`). Se actualizó
+`requirements.lock` a `pillow==12.3.0` con hashes frescos de PyPI (87
+archivos) — edición manual del bloque (el `pip-compile` no corre en Windows
+por `uvloop`; mismo procedimiento que el bump de Django en v0.5.2),
+verificado por CI (`--require-hashes` + `pip-audit`).
 
 ### CSP `style-src` sin `'unsafe-inline'` (commit `96f6bec`)
 
