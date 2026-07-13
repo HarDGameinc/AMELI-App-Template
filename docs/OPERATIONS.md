@@ -165,31 +165,45 @@ CVEs, because `pip-audit` (already a dev dep + a CI job) emits CycloneDX
 natively (no extra tool):
 
 ```bash
-# From the deployed venv on the server — the SBOM of what is ACTUALLY
-# installed, the most faithful record of the running deploy:
-.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
-
-# Or from the lock (what ships, pre-install) on Linux CI/dev:
+# (A) RELEASE artifact — from the lock = exactly what ships. Attach THIS
+#     to the GitHub release. Runtime-only, matches the CI pip-audit gate:
 pip-audit -r requirements.lock -f cyclonedx-json -o sbom.cdx.json || true
+
+# (B) Running-box audit — from the deployed venv. Faithful to what is
+#     ACTUALLY installed, but INCLUDES dev/audit tooling (pip-audit and its
+#     deps) that is NOT shipped. For inspecting a box, not for the release:
+.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
 ```
 
+- **Attach form (A), not (B), to a release.** Form (B) inventories the whole
+  venv, so it can flag CVEs in tooling that never ships. Seen for real
+  (v0.5.3, 2026-07-12): (B) reported a High `msgpack` DoS — but `msgpack` is
+  only pulled by `pip-audit`→`cachecontrol` (dev tooling; `requirements-dev.
+  lock` already pins the patched 1.2.1), is absent from `requirements.lock`,
+  and (A) reported **0 vulns / 48 components**. The CI gate audits the lock,
+  so (A) is what "green CI" actually certifies.
 - `|| true` because `pip-audit` exits non-zero when it finds a
   vulnerability — the SBOM file is still written (a clean run exits 0).
 - Output is CycloneDX 1.4 JSON: a `components` inventory + a
   `vulnerabilities` section. Use `-f cyclonedx-xml` for the XML flavour.
-- The `-r requirements.lock` form must resolve the lock, so run it on
-  **Linux** (CI or the server); it fails on the Windows workstation
-  (`uvloop` won't build). The installed-venv form works anywhere.
+- Form (A) must resolve the lock, so run it on **Linux** (CI or the server);
+  it fails on the Windows workstation (`uvloop` won't build).
 
 **When to refresh**: after any lock change (i.e. each release — the
 `pip-audit` CI job already re-checks the lock then). **Where it lives**:
-the SBOM is a generated, point-in-time artifact — do NOT commit it. Attach
-it to the GitHub release when a downstream consumer or auditor needs the
-provenance for a version:
+the SBOM is a generated, point-in-time artifact — do NOT commit it
+(`*.cdx.json` is gitignored). Attach it to the GitHub release when a
+downstream consumer or auditor needs the provenance for a version:
 
 ```bash
 gh release upload vX.Y.Z-django sbom.cdx.json
 ```
+
+The dev server authenticates to GitHub with a **deploy key (git-only)**, so
+`gh` / the release-asset API do not work there. Generate the SBOM on the
+server (form A), copy it to a workstation where `gh` is authenticated
+(`scp root@<host>:.../sbom.cdx.json .`), and `gh release upload` from there
+— or `curl -X POST` the uploads API with a PAT (`repo` scope).
 
 ## manage.py auto-loads APP_CONFIG (and app.env)
 
