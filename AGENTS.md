@@ -228,8 +228,16 @@ runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). `v0.5.4`
 46 inline `style=""` across 11 templates moved to utility classes in
 `app.css` (identical declarations, no visual change), leaving `script-src`
 (nonces) and `style-src` (`'self'`) both inline-free; `/django-admin` +
-`/docs` keep `'unsafe-inline'` for framework/CDN styles. All validated on
-the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+`/docs` keep `'unsafe-inline'` for framework/CDN styles. Same release adds
+an `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` env override and flips the HSTS
+`includeSubDomains` **default to OFF (opt-in)**, matching Django — a host no
+longer asserts HSTS for a subtree it was not told it owns (`includeSubDomains`
+only ever scopes the emitting host's own subdomains, per RFC 6797, not
+siblings or the parent). On the live `ha-report2` host HSTS is **Caddy-managed
+per-site**; `dev03.ameli.cl` got `max-age=31536000` (no `includeSubDomains`)
+added to its Caddy block, and the vestigial LAN/VPN ufw allows for the
+loopback-only `18080` were removed. All validated on the dev server / CI; see
+the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

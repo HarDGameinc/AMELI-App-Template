@@ -127,11 +127,33 @@ el del upstream), asi que el knob app-side queda sombreado en este host.
 > (`/etc/caddy/Caddyfile`), no en la app. Backups con timestamp en
 > `/etc/caddy/Caddyfile.bak.*`.
 
+### 3.6. Limpieza ufw + default flip de HSTS (`2f6aeb9`)
+
+- **Host**: borradas las 3 reglas ufw vestigiales del `18080` (LAN
+  `192.168.111.0/24` + `10.100.100.0/24`, VPN `10.11.2.1`). Verificado antes
+  con `ss -tlnp`: `18080` es loopback-only (`127.0.0.1`), así que eran no-ops.
+  `ufw status` → sin reglas 18080.
+- **Repo (`2f6aeb9`)**: revisando el feature HSTS detecté que el fundamento que
+  había escrito ("includeSubDomains rompe a los hermanos") **era falso** (RFC
+  6797: alcanza solo subdominios del host emisor). Corregido en código,
+  mensaje de error, docstrings de tests, `SERVER_HARDENING §9` y §3.5 arriba.
+  Además, por decisión del operador, **flip del default a OFF (opt-in)**, igual
+  que Django. 5 tests, suite **1106 passed / 57 skipped**, ruff limpio.
+
 ## §4. Continuidad / backlog (opcional)
 
-- Host: limpiar reglas ufw vestigiales del 18080 (loopback-only, inofensivas).
-- Repo: **Model C** del update-channel (`ameli-core` + Dependabot, grande;
-  `DECISIONS.md` #7). Nada obligatorio pendiente.
+- ~~Host: limpiar reglas ufw vestigiales del 18080.~~ **HECHO** (§3.6).
+- **Promoción `v0.5.4 → main`**: DIFERIDA hasta el reset de CI (~1-ago) o subir
+  el spending limit. PR #4 abierto, MERGEABLE, checks fallando por billing (no
+  código). No forzar merge sin CI verde.
+- **Roadmap (opcional, per `DECISIONS.md` + `AGENTS.md`):**
+  - Testing gaps: tests de migraciones Django (apply/rollback en CI); auditoría
+    de `aria-live`/screen-reader; unit tests JS de DOM-wiring (jsdom); visual
+    regression. Todos **low priority** (ver `TECH_EVOLUTION.md`).
+  - **Model C** del update-channel (`ameli-core` + Dependabot, `DECISIONS.md`
+    #7): el canal más fuerte pero refactor grande; diferido hasta que la flota
+    lo justifique.
+  - Django LTS: revisitar en 6.2 (~dic-2026), `DECISIONS.md` #1.
 
 ## §5. Restricciones criticas (vigentes)
 
