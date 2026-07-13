@@ -251,11 +251,27 @@ not one config typo away from plaintext cookies or `DEBUG` tracebacks:
 | Behind a TLS proxy | `AMELI_APP_SECURE_PROXY_SSL_HEADER` | `X-Forwarded-Proto=https` |
 | Audit-log HMAC | `AMELI_APP_AUDIT_HMAC_KEY` | a real 32-byte key |
 | MFA secret encryption | `AMELI_APP_MFA_ENCRYPTION_KEY` | a real Fernet key |
-| HSTS | `AMELI_APP_HSTS_SECONDS` | `31536000` (see caveat below) |
+| HSTS | `AMELI_APP_HSTS_SECONDS` | `31536000` (see caveat below) — **but if a reverse proxy already sets HSTS, that is the source of truth; see below** |
 
 > `ha-report2` already sets `DEBUG=false`, Secure cookies, the proxy SSL
-> header, and real audit + MFA keys (verified 2026-07-13). The one gap is
-> HSTS, which defaults to `0` in dev.
+> header, and real audit + MFA keys (verified 2026-07-13). HSTS on this host
+> is **managed by Caddy** (per-site), not the app — see the next section.
+
+### Where HSTS lives: app vs. reverse proxy ⚠️
+
+If a TLS-terminating reverse proxy (Caddy, nginx) sits in front and already
+emits `Strict-Transport-Security`, **the proxy is the source of truth** — its
+`header` directive *replaces* whatever the app sends, so the app-side
+`AMELI_APP_HSTS_*` env vars are shadowed and silently do nothing. Check the
+actual served header before assuming the app controls it:
+
+```bash
+curl -sI https://<host>/ | grep -i strict-transport-security
+```
+
+- **App-managed** (no proxy HSTS): use the `AMELI_APP_HSTS_*` env vars above.
+- **Proxy-managed** (e.g. `ha-report2` / Caddy): edit the HSTS line in the
+  proxy's per-site config; leave the app HSTS vars unset.
 
 ### The `includeSubDomains` caveat on a shared parent domain 🔴
 
@@ -263,18 +279,27 @@ HSTS `includeSubDomains` tells the browser to force **every**
 `*.parent-domain` host onto HTTPS — irreversibly, for the max-age window. On
 a **shared** parent domain (e.g. several `*.ameli.cl` services, some possibly
 still HTTP-only), a single host emitting `includeSubDomains` can break its
-siblings. Because the template defaults `includeSubDomains` **ON** whenever
-HSTS is on, enabling HSTS on such a host needs the opt-out:
+siblings. Enable HSTS **without** `includeSubDomains` unless the deploy owns
+its entire parent domain.
 
-```bash
-# HSTS for THIS host only — does not HTTPS-upgrade the whole *.ameli.cl domain
-AMELI_APP_HSTS_SECONDS=31536000
-AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false
-```
-
-Only leave `includeSubDomains` at its default (or set it `true`) when the
-deploy **owns its entire parent domain**. The flag is never emitted when HSTS
-is off, and a non-boolean value fails closed (the app refuses to boot).
+- **App-managed**: the template defaults `includeSubDomains` **ON** whenever
+  HSTS is on, so opt out explicitly:
+  ```bash
+  # HSTS for THIS host only — does not HTTPS-upgrade the whole parent domain
+  AMELI_APP_HSTS_SECONDS=31536000
+  AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false
+  ```
+  The flag is never emitted when HSTS is off, and a non-boolean value fails
+  closed (the app refuses to boot).
+- **Proxy-managed** (Caddy per-site block): omit the flag from the value.
+  ```caddyfile
+  # in the site's block — ONLY this header, so the app's own
+  # Referrer-Policy / X-Frame-Options / CSP still pass through untouched
+  header Strict-Transport-Security "max-age=31536000"
+  ```
+  > **`ha-report2` (2026-07-13):** `dev03.ameli.cl` had no HSTS; added the
+  > line above to its Caddy site block (no `includeSubDomains`, shared
+  > `*.ameli.cl`). `dev02` keeps its pre-existing `includeSubDomains`.
 
 ---
 

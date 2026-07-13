@@ -92,22 +92,33 @@ internet sobre TLS**). Ya estaba bien: `DEBUG=false`, cookies Secure, proxy
 SSL header, claves audit+MFA reales (verificado con dump de settings). **Unico
 gap: HSTS** (default `0` en dev).
 
-Añadido `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py`: permite
-prender HSTS en un host bajo un **dominio padre compartido** (`*.ameli.cl`)
-sin `includeSubDomains` — que forzaria HTTPS en TODO `*.ameli.cl` (irreversible
-por el max-age) y romperia servicios hermanos HTTP-only. Default preserva el
-comportamiento actual (True cuando HSTS>0); valor no-booleano falla cerrado
-(raise); nunca se emite con HSTS off. **+4 tests, +§9 en `SERVER_HARDENING.md`**
-(checklist de env-vars para instancia publica + caveat del dominio compartido).
-Suite completa **1106 passed / 57 skipped**, ruff limpio. Backend/config puro
-(cubierto por suite local, sin gap de render durante el corte de CI).
+**Feature en el repo (`8ddb0bb`):** añadido `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS`
+en `security_headers.py` — permite prender HSTS app-side en un host bajo un
+**dominio padre compartido** sin `includeSubDomains` (que forzaria HTTPS en TODO
+el dominio, irreversible por el max-age, rompiendo hermanos HTTP-only). Default
+preserva el comportamiento actual (True cuando HSTS>0); valor no-booleano falla
+cerrado (raise); nunca se emite con HSTS off. **+4 tests**, ruff limpio, suite
+**1106 passed / 57 skipped**. Es feature del template para deploys **sin** un
+reverse-proxy que gestione HSTS.
 
-**Accion operador (opcional, para cerrar el gap HSTS en `ha-report2`):** añadir
-a `app.env` de la instancia y reiniciar el servicio:
-```bash
-AMELI_APP_HSTS_SECONDS=31536000
-AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=false   # host-only; *.ameli.cl es compartido
-```
+**Realidad en `ha-report2` (importante):** HSTS **NO lo maneja la app, lo maneja
+Caddy**, por-sitio. El Caddy del host sirve tres sitios bajo `ameli.cl`
+(`dev01/02/03`), cada uno con su bloque. Al intentar aplicar HSTS por `app.env`
+descubrimos que el header lo inyecta Caddy (su directive `header` **reemplaza**
+el del upstream), asi que el knob app-side queda sombreado en este host.
+
+- **dev02**: ya tenia `Strict-Transport-Security "max-age=31536000; includeSubDomains"`.
+- **dev03** (nuestra app): **no tenia HSTS**. **Cerrado 2026-07-13**: agregada la
+  linea `header Strict-Transport-Security "max-age=31536000"` (SIN
+  `includeSubDomains`, por el dominio compartido) **al bloque de dev03 del
+  Caddyfile** — solo esa linea, para no pisar los headers propios de la app
+  (`Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, nosniff, CSP, todos
+  verificados intactos post-cambio). `caddy validate` OK, `systemctl reload caddy`
+  graceful. `app.env` quedo **sin** vars HSTS (fuente de verdad = Caddy).
+
+> Cualquier cambio de HSTS en `ha-report2` va en el **bloque Caddy del sitio**
+> (`/etc/caddy/Caddyfile`), no en la app. Backups con timestamp en
+> `/etc/caddy/Caddyfile.bak.*`.
 
 ## §4. Continuidad / backlog (opcional)
 
