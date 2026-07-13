@@ -37,6 +37,10 @@ verificado por CI (`--require-hashes` + `pip-audit`).
   clarificación de qué forma se adjunta al release.
 - Prompts de sesión S-09/S-10 (inicio/cierre de día) en el handoff template.
 - `test(sri)`: test de invalidación por mtime hecho determinista (flake Windows).
+- `test(migrations)`: `tests/test_migrations.py` — drift (`makemigrations
+  --check` dentro de la suite) + round-trip reverse-a-zero/re-apply que prueba
+  la **reversibilidad** de todas las migraciones first-party (incluidas las 3
+  `RunPython`). Cierra el gap "no migration tests" de `AGENTS.md`.
 
 ### HSTS `includeSubDomains` — override + default opt-in (commit `8ddb0bb`)
 

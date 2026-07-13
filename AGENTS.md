@@ -264,9 +264,13 @@ the latest `docs/CLAUDE_HANDOFF_*`.
   (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
   focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
   Still open: screen-reader announcement audits (`aria-live` coverage)
-- No Django migration tests (apply/rollback of `accounts` migrations in CI).
-  Note: the stack uses **Django migrations only** — there is no Alembic /
-  SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
+- ~~No Django migration tests (apply/rollback in CI).~~ **CLOSED
+  2026-07-13** — `tests/test_migrations.py`: drift (`makemigrations --check`
+  in-suite) + a reverse-to-zero/re-apply round-trip proving every first-party
+  migration (incl. the three `RunPython` data migrations) is reversible. Runs
+  on the shared test DB with `transaction=True` + a `finally` that re-migrates
+  to head. Note: the stack uses **Django migrations only** — there is no
+  Alembic / SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
 - No visual regression tests
 
 ## Source-of-truth files
