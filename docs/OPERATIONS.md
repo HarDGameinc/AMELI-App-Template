@@ -116,6 +116,40 @@ python -m venv /tmp/lock-check
 A mismatched hash exits non-zero with the offending wheel's URL —
 that is the expected behaviour and the protection the lock buys you.
 
+### SBOM (CycloneDX)
+
+Produce a CycloneDX software bill of materials from the hash-pinned deps —
+one artifact that both inventories every shipped component and flags known
+CVEs, because `pip-audit` (already a dev dep + a CI job) emits CycloneDX
+natively (no extra tool):
+
+```bash
+# From the deployed venv on the server — the SBOM of what is ACTUALLY
+# installed, the most faithful record of the running deploy:
+.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
+
+# Or from the lock (what ships, pre-install) on Linux CI/dev:
+pip-audit -r requirements.lock -f cyclonedx-json -o sbom.cdx.json || true
+```
+
+- `|| true` because `pip-audit` exits non-zero when it finds a
+  vulnerability — the SBOM file is still written (a clean run exits 0).
+- Output is CycloneDX 1.4 JSON: a `components` inventory + a
+  `vulnerabilities` section. Use `-f cyclonedx-xml` for the XML flavour.
+- The `-r requirements.lock` form must resolve the lock, so run it on
+  **Linux** (CI or the server); it fails on the Windows workstation
+  (`uvloop` won't build). The installed-venv form works anywhere.
+
+**When to refresh**: after any lock change (i.e. each release — the
+`pip-audit` CI job already re-checks the lock then). **Where it lives**:
+the SBOM is a generated, point-in-time artifact — do NOT commit it. Attach
+it to the GitHub release when a downstream consumer or auditor needs the
+provenance for a version:
+
+```bash
+gh release upload vX.Y.Z-django sbom.cdx.json
+```
+
 ## manage.py auto-loads APP_CONFIG (and app.env)
 
 `manage.py` discovers a sensible `APP_CONFIG` automatically so
@@ -1258,6 +1292,77 @@ AMELI_APP_OPENAPI_SRI_REQUIRED=false
 This is an informed risk acceptance — the docs panel will render
 without SRI even outside `dev`. Document the mirror's own integrity
 controls if you use this path.
+
+## Secret rotation
+
+Four secrets live in `/etc/<instance>/app.env`. Their rotation cost and
+procedure differ — read the row before you rotate. General rules: never
+commit `app.env`; keep the OLD value offline until the new one is verified
+(rollback); restart the api service after every rotation; re-run the
+relevant smoke.
+
+| Secret (env) | Rotating invalidates | Tooling |
+|---|---|---|
+| `AMELI_APP_DJANGO_SECRET_KEY` | active **sessions** + signed URLs (password-reset / email-change links) | set + restart |
+| `AMELI_APP_MFA_ENCRYPTION_KEY` | **every enrolled TOTP secret** (ciphertext the new key can't open) | none shipped — re-enroll or a one-off re-encrypt |
+| `AMELI_APP_AUDIT_HMAC_KEY` | the **audit-chain** verifiability unless re-stamped | `ameli-app rotate-audit-key` (below) |
+| DB password (in `AMELI_APP_DATABASE_URL`) | nothing (just the credential) | `ALTER ROLE` + set + restart |
+
+### `AMELI_APP_DJANGO_SECRET_KEY`
+
+Signs session cookies, CSRF, and time-limited tokens. Rotating logs
+everyone out and voids pending password-reset / email-change links (no
+data loss).
+
+```bash
+NEW=$(.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(64))")
+sed -i "s|^AMELI_APP_DJANGO_SECRET_KEY=.*|AMELI_APP_DJANGO_SECRET_KEY=${NEW}|" /etc/<instance>/app.env
+systemctl restart <instance>-api.service
+```
+
+> **Graceful option (not wired today)**: Django's `SECRET_KEY_FALLBACKS`
+> keeps the old key validating existing sessions during a transition. The
+> template does not set it (rotation = re-login); adding it is a small
+> code enhancement if a zero-logout rotation is ever needed.
+
+### `AMELI_APP_MFA_ENCRYPTION_KEY` — disruptive, read first
+
+TOTP secrets are stored Fernet-encrypted with this key. `decrypt_secret`
+falls back to "treat as plaintext" on `InvalidToken`, so rotating **breaks
+every existing enrollment silently** — enrolled users simply fail TOTP,
+with no error in the logs. Two paths:
+
+- **Re-enroll (simple)**: rotate the key, then have enrolled users re-add
+  their authenticator (an admin can disable MFA per user from the panel so
+  they can re-enroll). Warn users first.
+- **Re-encrypt (no user disruption)**: a one-off script that reads every
+  TOTP secret with the OLD key and re-writes it with the NEW key. Not
+  shipped — run it with both keys in hand, transactionally:
+  1. with the OLD key still active, `decrypt_secret(row)` → plaintext,
+  2. swap `MFA_ENCRYPTION_KEY` to the NEW key, `encrypt_secret(plaintext)`,
+  3. save. Keep both keys only for the migration window.
+
+**Always verify TOTP after rotating this key**: enroll a test user and
+confirm a code validates.
+
+### `AMELI_APP_AUDIT_HMAC_KEY`
+
+Do **not** just change the env — that breaks `verify-audit` on every
+pre-rotation row. Use the built-in re-stamping tool ([Rotating the HMAC
+key](#rotating-the-hmac-key) below): it walks the chain under both keys so
+history stays verifiable.
+
+### DB password
+
+Rotate in Postgres, then update the connection string and restart. The
+backup timer reads the same `DATABASE_URL`, so there is no separate change.
+
+```bash
+su - postgres -c "psql -c \"ALTER ROLE <app_role> WITH PASSWORD '<new>';\""
+sed -i "s|^AMELI_APP_DATABASE_URL=.*|AMELI_APP_DATABASE_URL=postgresql://<app_role>:<new>@127.0.0.1:5432/<db>|" /etc/<instance>/app.env
+systemctl restart <instance>-api.service
+.venv/bin/python manage.py check     # DB reachable
+```
 
 ## Audit chain verification (H6)
 

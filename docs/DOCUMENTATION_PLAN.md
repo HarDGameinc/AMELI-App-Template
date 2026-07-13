@@ -92,9 +92,12 @@ lightweight ADR per entry (Context / Decision / Consequences); point to
 
 ## Create only if going "productive / critical"
 
-- **`SBOM.md`** — low effort, real supply-chain value: `cyclonedx-python-lib`
-  is already a dev dep and the locks are hash-pinned. Document generating
-  the SBOM from the locks, where it lives, and to refresh it on lock change.
+- ~~**`SBOM.md`**~~ **DONE (2026-07-12)** — consolidated, not a new file:
+  [`OPERATIONS.md`](OPERATIONS.md) → "Lockfile / supply chain" now has an
+  "### SBOM (CycloneDX)" subsection. Generated with `pip-audit -f
+  cyclonedx-json` (no new dep — already a dev dep + CI job); refresh on lock
+  change / per release; artifact attached to the GitHub release, not
+  committed (`*.cdx.json` gitignored).
 - **`PRIVACY.md`** — real users → PII. Inventory (user email, avatars,
   audit log, sessions), retention windows (already implemented in the
   `OPERATIONS.md` retention sweep), avatar EXIF/GPS stripping, audit HMAC.

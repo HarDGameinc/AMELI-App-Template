@@ -10,6 +10,7 @@ from ameli_web.accounts.services import (
     bootstrap_superadmin,
     check_login_throttle,
     record_login_failure,
+    reset_login_throttle,
 )
 from ameli_web.audit.models import AuditEvent
 
@@ -41,12 +42,29 @@ def test_check_login_throttle_blocks_after_many_ip_failures(admin_user):
 
 
 @pytest.mark.django_db
-def test_check_login_throttle_locks_account_after_many_user_failures(admin_user):
-    for _ in range(6):
-        record_login_failure(username="admin", ip="10.0.0.7")
+def test_check_login_throttle_locks_account_after_many_user_attempts(admin_user):
+    # Reserve-then-verify: each check counts one attempt. user_max (default
+    # 5) attempts are allowed; the 6th is refused. No record_login_failure
+    # needed — the gate is driven by the check itself now.
+    for _ in range(5):
+        check_login_throttle(username="admin", ip="10.0.0.7")
 
     with pytest.raises(AccountLocked):
-        check_login_throttle(username="admin", ip="10.0.0.8")
+        check_login_throttle(username="admin", ip="10.0.0.7")
+
+
+@pytest.mark.django_db
+def test_check_login_throttle_user_gate_is_atomic_hard_ceiling(admin_user):
+    """The 6th attempt is refused even though nothing recorded a failure —
+    the gate counts attempts atomically, closing the check-then-act race."""
+    from ameli_web.accounts.models import ThrottleCounter
+
+    for _ in range(5):
+        check_login_throttle(username="admin", ip="10.0.0.7")
+    # The gate row exists and holds the reserved count (not the fail scope).
+    assert ThrottleCounter.objects.filter(scope="login_gate_user", key="admin").exists()
+    with pytest.raises(AccountLocked):
+        check_login_throttle(username="admin", ip="10.0.0.7")
 
 
 @pytest.mark.django_db
@@ -61,26 +79,51 @@ def test_check_login_throttle_old_failures_do_not_count(admin_user):
 
     from ameli_web.accounts.models import ThrottleCounter
 
-    # Direct write to the older window so the snapshot read returns 0.
+    # Direct write to the older window on the user GATE scope so the
+    # sliding read (current + previous bucket) does not pick it up.
     ThrottleCounter.objects.create(
-        scope="login_fail_user",
+        scope="login_gate_user",
         key="admin",
         window_start=timezone.now() - timedelta(hours=2),
         count=10,
     )
 
-    # Should not raise — all failures are out of window.
+    # Should not raise — the old bucket is neither current nor previous.
     check_login_throttle(username="admin", ip="10.0.0.1")
 
 
 @pytest.mark.django_db
 @override_settings(LOGIN_LOCKOUT_USER_MAX=2)
 def test_check_login_throttle_respects_django_settings_override(admin_user):
-    for _ in range(2):
-        record_login_failure(username="admin", ip="10.0.0.1")
+    # max=2 → two attempts allowed, the third refused.
+    check_login_throttle(username="admin", ip="10.0.0.1")
+    check_login_throttle(username="admin", ip="10.0.0.1")
 
     with pytest.raises(AccountLocked):
         check_login_throttle(username="admin", ip="10.0.0.1")
+
+
+@pytest.mark.django_db
+def test_reset_login_throttle_clears_user_gate(admin_user):
+    # Push the user gate to the cap, then a successful-login reset clears it
+    # so the next attempt is allowed again.
+    for _ in range(5):
+        check_login_throttle(username="admin", ip="10.0.0.1")
+    reset_login_throttle("admin")
+    check_login_throttle(username="admin", ip="10.0.0.1")  # no raise
+
+
+@pytest.mark.django_db
+def test_successful_login_resets_user_gate(client, admin_user):
+    """The user_logged_in signal clears the gate on a real successful login."""
+    from ameli_web.accounts.models import ThrottleCounter
+
+    for _ in range(3):
+        client.post("/login/", {"username": "admin", "password": "wrong"})
+    assert ThrottleCounter.objects.filter(scope="login_gate_user", key="admin").exists()
+
+    client.post("/login/", {"username": "admin", "password": "AdminPass!12?"})
+    assert not ThrottleCounter.objects.filter(scope="login_gate_user", key="admin").exists()
 
 
 @pytest.mark.django_db

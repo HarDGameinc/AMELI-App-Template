@@ -81,3 +81,32 @@ entry and note it.
 - **Consequences**: adding third-party JS/CSS requires an SRI hash and a
   CSP allowance. See [`SECURITY.md`](SECURITY.md),
   [`THREAT_MODEL.md`](THREAT_MODEL.md) and the ASVS snapshot.
+
+## 7. Template update propagation — git upstream + releases (not a package, yet)
+
+- **Context**: this repo is a **Core template**; new AMELI apps are born
+  by copying it and then diverging. When the Core improves — above all
+  **security fixes** (e.g. the Django 5.2.16 CVE patch, v0.5.2) — those
+  child apps need a way to (a) *know* an update exists and (b) *pull* it.
+  Three models were weighed: **A** git upstream remote (cherry-pick /
+  merge), **B** a Copier template (`copier update`, 3-way merge), **C**
+  extracting the shared Core into a versioned `ameli-core` pip package
+  (updates via `pip install -U` + Dependabot).
+- **Decision**: adopt **model A** for now. Child apps add this repo as a
+  `template` remote and **cherry-pick** security fixes (surgical) or
+  **merge** `template/main` for a broad catch-up; each records its
+  *template lineage* (the `vX.Y.Z-django` release it last synced to). The
+  **query channel** is the per-promotion **GitHub Release + tag** (already
+  published) — checkable via `gh release view` / the `releases.atom` feed.
+  Model B (Copier) and **model C (`ameli-core` package) are explicitly
+  deferred**, not rejected: C is the strongest channel (semver + auto-PRs)
+  but a large refactor that turns the "copy-and-customize template" into a
+  "install-and-extend library". The how-to lives in
+  [`BUILDING_NEW_APP.md`](BUILDING_NEW_APP.md) §6.
+- **Consequences**: propagation is **manual** and conflict-prone in
+  proportion to how much a child app touched the Core — which is *why*
+  `BUILDING_NEW_APP.md` §4 ("what you MUST NOT touch") matters: the less a
+  fork edits the Core, the cheaper every future upstream pull. Security
+  fixes must ship as **tagged releases with a security note** so a child
+  operator can triage fast. Revisit → **model C** once the fleet is large
+  enough that manual merges cost more than the packaging refactor.

@@ -139,6 +139,41 @@ def _read_throttle_counter_sliding(*, scope: str, key: str, window_seconds: int)
     return cur_count + math.ceil(prev_count * prev_weight)
 
 
+def _reserve_throttle_sliding(*, scope: str, key: str, window_seconds: int) -> int:
+    """Reserve-then-verify: atomically count THIS attempt, then return the
+    sliding-window total including it.
+
+    Unlike a plain read, the increment is committed under
+    ``select_for_update`` *before* the read, so concurrent callers each get
+    a distinct, monotonically-growing count — closing the check-then-act
+    race where N concurrent requests all read the same sub-cap value and
+    slip through. The read never under-counts (a concurrent bump only
+    raises the total), so the gate becomes a hard per-window ceiling. The
+    sliding term still folds in the previous bucket so an attacker cannot
+    burst ~2x by straddling a bucket boundary (see
+    :func:`_read_throttle_counter_sliding`).
+    """
+    _bump_throttle_counter(scope=scope, key=key, window_seconds=window_seconds)
+    return _read_throttle_counter_sliding(scope=scope, key=key, window_seconds=window_seconds)
+
+
+def reset_login_throttle(username: str) -> None:
+    """Clear the per-user login gate after a successful authentication.
+
+    Called from the ``user_logged_in`` signal so a user who fumbled a few
+    attempts before getting in does not carry that count into the rest of
+    the window. Only the **user** gate resets — the per-IP rate limit is a
+    coarse anti-flood measure that must survive one account's success (an
+    attacker holding one valid account on a shared IP must not be able to
+    reset the IP budget for brute-forcing others).
+    """
+    if not username:
+        return
+    from ..models import ThrottleCounter
+
+    ThrottleCounter.objects.filter(scope="login_gate_user", key=username.lower()).delete()
+
+
 def record_login_failure(*, username: str = "", ip: str = "") -> None:
     """Increment the failure counters that :func:`check_login_throttle`
     reads. Both keys (IP and username) get their own row so a brute
@@ -446,27 +481,29 @@ def admin_unlock_user(*, actor_username: str, username: str) -> dict[str, Any]:
 
 def check_login_throttle(*, username: str, ip: str) -> None:
     """Raise ``LoginThrottled`` or ``AccountLocked`` if the caller should
-    be refused. Returns silently if the login may proceed.
+    be refused. Returns silently if the login may proceed. Called once per
+    login attempt (the login form + each MFA-verify).
 
-    Reads the counter that :func:`record_login_failure` writes. This is a
-    **check-then-act** gate: the read here is NOT in the same locked
-    transaction as the increment (which only happens *after* an auth
-    failure), so a burst of concurrent requests can each read a stale
-    sub-cap count and slip through in one window before any of them commit
-    a failure — i.e. the per-window cap is a soft ceiling, not a hard one,
-    under high concurrency (M3 security review).
+    Two gates with deliberately different semantics:
 
-    Why this is an accepted bound, not a hole: the counters catch up (no
-    permanent bypass), the **permanent lockout** (``locked_at``, set after
-    a few fully-consumed windows) caps the *total* attempts to a few dozen,
-    and the smallest keyspace this gates — a 6-digit MFA code (10^6) — makes
-    even a burst per window a negligible guessing edge. A hard fix (count
-    attempts, or reserve-then-verify inside one locked txn) would change the
-    lockout semantics and is deferred.
+    - **Per-user** (``login_gate_user``): **reserve-then-verify** — each
+      call atomically counts this attempt and refuses when the sliding
+      count exceeds ``user_max``. Because the increment is committed under
+      a row lock *before* the decision, concurrent requests can no longer
+      all read a stale sub-cap value and slip through — the per-window cap
+      is a **hard** ceiling (closes the M3 review finding). A successful
+      login clears this gate via :func:`reset_login_throttle` (from the
+      ``user_logged_in`` signal) so a user who fumbled a few attempts is
+      not penalised afterwards.
+    - **Per-IP** (``login_fail_ip``): a coarse anti-flood limit that counts
+      *failures* (via :func:`record_login_failure`) with a sliding read.
+      Left as a soft ceiling on purpose — it gates a large, mixed keyspace
+      (rotating usernames), so counting every attempt would needlessly
+      throttle legitimate login bursts from a shared NAT / office IP.
 
     Hard-locked accounts (``locked_at`` set by the permanent-lockout
-    promotion) are always refused regardless of throttle counters until
-    an admin clears the flag.
+    promotion) are always refused regardless of counters until an admin
+    clears the flag.
     """
     cfg = _throttle_settings()
 
@@ -492,12 +529,17 @@ def check_login_throttle(*, username: str, ip: str) -> None:
             )
 
     if username:
-        user_fails = _read_throttle_counter_sliding(
-            scope="login_fail_user",
+        # Reserve-then-verify: atomically count this attempt so the cap is
+        # a hard ceiling under concurrency (M3). Reset on a successful login
+        # via reset_login_throttle(). ``>`` (not ``>=``) keeps the effective
+        # cap identical to the old failure-count model: ``user_max`` attempts
+        # are allowed, the next is refused.
+        user_fails = _reserve_throttle_sliding(
+            scope="login_gate_user",
             key=username.lower(),
             window_seconds=cfg["user_window"],
         )
-        if user_fails >= cfg["user_max"]:
+        if user_fails > cfg["user_max"]:
             raise AccountLocked(
                 _(
                     "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
