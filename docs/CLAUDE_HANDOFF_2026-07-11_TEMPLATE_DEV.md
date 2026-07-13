@@ -123,7 +123,15 @@ que el asset se subió vía `scp` al workstation + `gh`.
   supply chain" → subseccion "SBOM (CycloneDX)": `pip-audit -f
   cyclonedx-json` (sin dep nueva), refresh por release, artefacto adjunto
   al release (no commiteado; `*.cdx.json` gitignored).
-- Refactor inline-styles → utility-classes (cosmetico).
+- ~~Refactor inline-styles → utility-classes~~ **HECHO 12-jul** (`96f6bec`)
+  — resultó **hardening de CSP**, no cosmético: los 46 `style=""` de 11
+  templates pasaron a clases utilitarias en `app.css`, lo que permitió
+  **quitar `'unsafe-inline'` de `style-src`** (era el último que quedaba en
+  el CSP principal; `script-src` ya usaba nonces). Declaraciones idénticas +
+  especificidad analizada (sin conflicto) → cero cambio visual. Suite 1102
+  verde, ruff limpio. Gate de render completo (Playwright e2e + axe a11y) en
+  el PR de promoción. Los CSP de `/django-admin` y `/docs` conservan
+  `'unsafe-inline'` (estilos de framework/CDN fuera de nuestro control).
 - **Modelo C del update-channel** (`ameli-core` package + Dependabot) —
   el canal mas fuerte, refactor grande; adoptar si la flota crece
   (`DECISIONS.md` #7).
