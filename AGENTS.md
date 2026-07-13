@@ -269,8 +269,11 @@ the latest `docs/CLAUDE_HANDOFF_*`.
   silent** (`aria-busy` only) — added a global `#a11y-live` region +
   `announce()` in `app.js` so each swap announces its result summary
   (`tests/test_a11y_live_region.py` + `tests/e2e/test_a11y_announce.py`).
-  Deferred by choice: password strength/match hints are not live-announced
-  (would fire on every keystroke)
+  The four admin-panel action feedbacks (maintenance / create-user /
+  change- & reset-password, updated by `admin-panel.js`) were likewise not
+  live regions — fixed with `role=status aria-live=polite`. Both verified in
+  a real browser. Deferred by choice: password strength/match hints are not
+  live-announced (would fire on every keystroke)
 - ~~No Django migration tests (apply/rollback in CI).~~ **CLOSED
   2026-07-13** — `tests/test_migrations.py`: drift (`makemigrations --check`
   in-suite) + a reverse-to-zero/re-apply round-trip proving every first-party

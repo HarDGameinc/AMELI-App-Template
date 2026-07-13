@@ -167,8 +167,13 @@ el resultado. Agregado: región live global `#a11y-live` (`role=status`,
 `aria-live=polite`, `aria-atomic`) en `base.html` + helper `announce()` en
 `app.js` que anuncia el resumen del panel tras cada swap. Tests:
 `tests/test_a11y_live_region.py` (template, en suite normal) +
-`tests/e2e/test_a11y_announce.py` (e2e, job dedicado). Diferido a propósito:
-hints de fuerza/match de password (serían ruido por cada tecla).
+`tests/e2e/test_a11y_announce.py` (e2e, job dedicado). **Segundo gap** (misma
+clase): los 4 feedbacks de acción del panel admin (mantenimiento, crear
+usuario, cambiar/resetear password) actualizan `textContent` vía
+`admin-panel.js` pero **no eran regiones live** → agregado `role=status
+aria-live=polite` a los cuatro (sudo/perfil ya lo tenían). Verificado en vivo.
+Diferido a propósito: hints de fuerza/match de password (serían ruido por
+cada tecla).
 
 > **Nota e2e**: el e2e no corre en Windows local (`SynchronousOnlyOperation`
 > en el setup de DB — afecta a **todos** los e2e existentes, no solo el nuevo;

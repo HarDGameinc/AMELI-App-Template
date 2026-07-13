@@ -30,3 +30,35 @@ def test_base_template_ships_global_live_region(client):
     assert 'role="status"' in tag, "live region should expose role=status"
     assert 'aria-atomic="true"' in tag, "whole message should be read, not a diff"
     assert 'class="visually-hidden"' in tag, "region is announced, not shown"
+
+
+# Admin-panel action feedbacks are updated by admin-panel.js (maintenance
+# toggle, create user, change/reset password) via ``textContent``. Each must
+# be its own polite live region or a screen-reader user never hears the
+# "Guardando…" / "Operación completada" / error result.
+_ADMIN_FEEDBACK_MARKERS = (
+    "data-maintenance-feedback",
+    'id="create-user-feedback"',
+    'id="admin-password-feedback"',
+    'id="reset-password-feedback"',
+)
+
+
+@pytest.mark.django_db
+def test_admin_action_feedbacks_are_polite_live_regions(client):
+    from django.contrib.auth import get_user_model
+
+    from ameli_web.accounts.services import bootstrap_superadmin
+
+    bootstrap_superadmin(username="a11y-admin", password="AdminPass!12?")
+    client.force_login(get_user_model().objects.get(username="a11y-admin"))
+
+    html = client.get("/admin/").content.decode()
+    assert "admin-users-panel" in html, "sanity: admin panel rendered"
+
+    for marker in _ADMIN_FEEDBACK_MARKERS:
+        tag_match = re.search(r"<[a-zA-Z]+[^>]*" + re.escape(marker) + r"[^>]*>", html)
+        assert tag_match, f"admin feedback element {marker} missing from panel"
+        assert 'aria-live="polite"' in tag_match.group(0), (
+            f"{marker} updates via JS but is not a live region"
+        )

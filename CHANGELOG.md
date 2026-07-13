@@ -51,6 +51,12 @@ verificado por CI (`--require-hashes` + `pip-audit`).
   tras cada swap, anuncia el resumen del panel (`"Mostrando 26–50 de 120"` /
   `"Sin resultados"`). Cubierto por `tests/test_a11y_live_region.py` (template)
   y `tests/e2e/test_a11y_announce.py` (e2e).
+- Los 4 feedbacks de acción del panel admin (toggle de mantenimiento, crear
+  usuario, cambiar/resetear password) actualizan `textContent` vía JS pero
+  **no eran regiones live** — un usuario SR no escuchaba "Guardando…" /
+  "Operación completada" / errores. Agregado `role=status aria-live=polite`
+  a los cuatro (los feedbacks de sudo/perfil ya lo tenían). Verificado en
+  browser real + `tests/test_a11y_live_region.py`.
 
 ### HSTS `includeSubDomains` — override + default opt-in (commit `8ddb0bb`)
 
