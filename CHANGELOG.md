@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.5.4-django — 2026-07-13 (security: CSP style-src sin 'unsafe-inline')
+
+Endurecimiento de CSP + docs de cadena de suministro. Validado en server
+(`ha-report2`): el header responde `style-src 'self' https://fonts.googleapis.com`
+(sin `'unsafe-inline'`), render sin cambios.
+
+### CSP `style-src` sin `'unsafe-inline'` (commit `96f6bec`)
+
+- Los **46 `style=""` inline de 11 templates** pasaron a clases utilitarias
+  en `app.css` (declaraciones idénticas, especificidad analizada → cero
+  cambio visual), lo que permitió **quitar `'unsafe-inline'` de `style-src`**
+  del CSP principal — el último token inseguro que quedaba (`script-src` ya
+  usaba nonces). Los CSP de `/django-admin` y `/docs` conservan
+  `'unsafe-inline'` (estilos de framework/CDN fuera de nuestro control).
+- Nota: un gestor de contraseñas del navegador que inyecte estilos inline
+  verá su overlay bloqueado por el CSP (comportamiento correcto; la app no
+  tiene violaciones propias).
+
+### Docs / supply-chain
+
+- `OPERATIONS.md` → "Deployed instance — ground truth": referencia canónica
+  del deploy en `ha-report2` (paths/units/puertos computados, no adivinados).
+- `OPERATIONS.md` → SBOM (CycloneDX) via `pip-audit -f cyclonedx-json`;
+  clarificación de qué forma se adjunta al release.
+- Prompts de sesión S-09/S-10 (inicio/cierre de día) en el handoff template.
+- `test(sri)`: test de invalidación por mtime hecho determinista (flake Windows).
+
 ## v0.5.3-django — 2026-07-12 (security: throttle atómico M3 + template-check CLI)
 
 Completa **M3**: el rediseño atómico del throttle de login que en `v0.5.1`

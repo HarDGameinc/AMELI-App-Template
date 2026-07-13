@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.3-django, 2026-07-12)
+## State of the project (v0.5.4-django, 2026-07-13)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -223,8 +223,13 @@ ceiling into a hard one (closing the check-then-act race), with
 reset-on-success wired to `user_logged_in`; the IP gate stays failure-based
 soft by design. Same release adds the `ameli-app template-check` CLI (the
 update-channel "consultar" piece, `DECISIONS.md` #7), a secret-rotation
-runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). All
-validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). `v0.5.4`
+(2026-07-13): dropped `'unsafe-inline'` from the main CSP `style-src` — the
+46 inline `style=""` across 11 templates moved to utility classes in
+`app.css` (identical declarations, no visual change), leaving `script-src`
+(nonces) and `style-src` (`'self'`) both inline-free; `/django-admin` +
+`/docs` keep `'unsafe-inline'` for framework/CDN styles. All validated on
+the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
