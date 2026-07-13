@@ -68,6 +68,32 @@ rotativos), contar todos los intentos penalizaría ráfagas legítimas de una
 IP compartida (NAT/oficina). `record_login_failure` + la alerta de
 auth-failures **sin cambios**. Suite completa **1101 pass**; CI verde.
 
+### 3.3. v0.5.3-django — corte, promoción y endurecimiento de docs (2026-07-12)
+
+Se cortó **v0.5.3-django** empaquetando M3 (§3.2) + template-check (§3.1) +
+runbook de rotación + SBOM. Ritual de 4 archivos (VERSION/pyproject/
+CHANGELOG/AGENTS) en `2040cd9`. PR de promoción #3 verde — matriz completa
+(3.11–3.14) + e2e + **test-postgres**, que ejercita `select_for_update` en
+Postgres real (prueba atómica autoritativa de M3). Merge commit `2efe4ba` a
+`main`, tag + GitHub release publicados. **`main` ahora en `v0.5.3-django`.**
+
+**Validación en `ha-report2`** (pre-merge, registrada): `APP_ENV=dev bash
+scripts/validate_installation.sh` → **OK=25 / WARN=0 / FAIL=0**;
+`/health/deep` → OPERATIVO (db_write 2ms, fs_write ok); `verify-audit` →
+`checked:404 ok:true`.
+
+**Endurecimiento de docs** (a raíz de un tropiezo: un agente adivinó el
+service del server — `ameli-app-web.service`, inactivo — en vez de
+derivarlo). `OPERATIONS.md` abre ahora con "Deployed instance — ground
+truth (never guess)": paths/units/puerto se derivan de `_common.sh`
+(`resolve_systemd_profile`) y `validate_installation.sh` los reporta;
+incluye la tabla de `ha-report2` (served = `…-api`, `-web` shipped-pero-
+disabled, `:18080`). Puntero desde `AGENTS.md`. Prompts de sesión **S-09**
+(inicio) / **S-10** (cierre) en `HANDOFF_TEMPLATE.md`. Commits `1854919` +
+`66ba53e` en `dev` (docs-only, retenidos durante el PR para no disparar la
+trampa `paths-ignore`; empujados post-merge). `dev` queda 2 commits de docs
+adelante de `main` → próxima promoción.
+
 ## §4. Continuidad / backlog (todo opcional — nada obligatorio pendiente)
 
 ### Host (operador) — trivial
