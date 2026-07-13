@@ -50,10 +50,34 @@ render 2FA/login intacto. El unico error en consola era de una **extension
 del navegador** (autofill overlay) — el CSP bloqueando inyeccion de estilos
 de terceros, comportamiento correcto, no de la app.
 
-### 3.3. Promocion `dev → main`
+### 3.3. Pillow CVE detectado por el gate + parchado en server (`a11a897`)
 
-(A completar tras el merge: PR, CI verde, merge commit, tag/release
-`v0.5.4-django`, sync del server.)
+Al abrir el **PR #4** (`dev → main`), el gate **`pip-audit`** detecto **5
+CVEs en `pillow==12.2.0`** (PYSEC-2026-2253..2257), fix en **12.3.0** (dentro
+del rango `Pillow>=11.3,<13`). Se bumpeo `requirements.lock` a `pillow==12.3.0`
+con hashes frescos de PyPI (87 archivos) — **edicion manual del bloque**
+(pip-compile no corre en Windows por uvloop; mismo procedimiento que el bump
+de Django en v0.5.2). El `test_lockfile_hashes` valida la estructura; la
+correccion de hashes se **probo en el re-deploy del server**: el
+`pip install --require-hashes` descargo/instalo `pillow-12.3.0` manylinux
+(hash coincidio) → edicion del lock correcta. Server ahora corre
+`Pillow 12.3.0`, `/health` `v0.5.4-django` OPERATIVO. **Las 5 CVEs quedaron
+parchadas en la instancia viva (que es publica sobre TLS).**
+
+### 3.4. Promocion a `main` — DIFERIDA (billing de CI)
+
+El re-run del CI del PR #4 (tras el fix de Pillow) fallo con **todos** los
+jobs abortando en <10s: anotacion de GitHub = *"The job was not started
+because recent account payments have failed or your spending limit needs to
+be increased"* → **Actions bloqueado por billing** (probable: agotados los
+2000 min/mes del plan Free en repo privado). **No es fallo de codigo.**
+
+Por la regla "`main` solo por PR con CI verde", la promocion queda
+**PAUSADA** hasta que el operador resuelva el billing (GitHub → Settings →
+Billing & plans: subir spending limit / metodo de pago, o esperar el reset
+mensual). Estado: **`dev` en `v0.5.4`** (CSP + Pillow, verde local, corriendo
+en server); **`main` en `v0.5.3`**; PR #4 abierto listo para re-disparar CI
++ merge cuando Actions vuelva. Ningun agente debe forzar el merge sin CI.
 
 ## §4. Continuidad / backlog (opcional)
 
