@@ -272,16 +272,19 @@ if (typeof window !== "undefined") {
 // A single visually-hidden polite live region (``#a11y-live`` in base.html).
 // Client-side DOM swaps (pagination / filter) announce a concise summary here
 // so screen-reader users are told the content changed — ``aria-busy`` alone
-// does NOT announce the new content. Clearing then re-setting textContent on
-// the next frame forces assistive tech to re-announce even an identical
-// message (e.g. paging back and forth to the same result count).
+// does NOT announce the new content. Clearing then re-setting textContent
+// after a short timeout forces assistive tech to re-announce even an
+// identical consecutive message (e.g. paging back and forth to the same
+// result count). ``setTimeout`` — not ``requestAnimationFrame`` — because rAF
+// is paused/throttled in background or non-painting tabs, which would drop
+// the announcement.
 function announce(message) {
   const region = document.getElementById("a11y-live");
   if (!region || !message) return;
   region.textContent = "";
-  window.requestAnimationFrame(() => {
+  window.setTimeout(() => {
     region.textContent = message;
-  });
+  }, 50);
 }
 
 async function swapPanelTo(panel, targetUrl) {

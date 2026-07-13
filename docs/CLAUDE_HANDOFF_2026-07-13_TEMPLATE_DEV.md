@@ -175,6 +175,13 @@ hints de fuerza/match de password (serían ruido por cada tecla).
 > es ambiental, corre en el job de CI Linux). Verificación local vía el test
 > de template + suite completa **1109 passed / 58 skipped**, ruff limpio.
 
+> **Verificación en vivo (browser real, runserver + 31 usuarios seed):** el
+> click en "Siguiente" anuncia `"Mostrando 26–31 de 31"` en `#a11y-live`;
+> volver a pág. 1 anuncia `"Mostrando 1–25 de 31"`. **La verificación atrapó
+> un bug**: la primera versión usaba `requestAnimationFrame`, que **no dispara
+> en tabs sin pintado/en fondo** (el anuncio se perdía). Cambiado a
+> `setTimeout(50)` — más robusto para live regions y verificado funcionando.
+
 ## §4. Continuidad / backlog (opcional)
 
 - ~~Host: limpiar reglas ufw vestigiales del 18080.~~ **HECHO** (§3.6).
