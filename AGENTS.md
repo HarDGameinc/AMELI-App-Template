@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.4-django, 2026-07-13)
+## State of the project (v0.5.5-django, 2026-07-14)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -241,8 +241,19 @@ gaps — Django **migration reversibility + drift** tests plus the
 `0012` MFA-secret encrypt/decrypt **data-backfill** coverage, and an
 **`aria-live` announcement** pass (global `#a11y-live` region + `announce()`
 for the admin pagination/filter swaps, and `aria-live` on the four admin
-action feedbacks). All validated on the dev server / CI; see the latest
-`docs/CLAUDE_HANDOFF_*`.
+action feedbacks). `v0.5.5` (2026-07-14) is a **security release**: the repo
+went **public** (which makes GitHub Actions, CodeQL and Dependabot free), and
+CodeQL's very first run found a real weakness in the second factor — the
+6-digit email MFA code was digested with a bare SHA-256 into
+`MFAEmailChallenge.code_hash`, so a DB-**read** compromise (SQLi, leaked
+backup) could exhaust the 10⁶ space in milliseconds and recover the live code.
+It is now a keyed HMAC (`salted_hmac` over `SECRET_KEY`, which never lives in
+the DB) — the same reasoning that already encrypts the TOTP secret at rest.
+Same release stops three handlers echoing raw SMTP exceptions to unprivileged
+(and pre-MFA) callers. `pip` is deliberately excluded from Dependabot: the
+hash-pinned `requirements*.lock` are already audited more precisely by
+`pip-audit` on every push and on the weekly cron. All validated on the dev
+server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
