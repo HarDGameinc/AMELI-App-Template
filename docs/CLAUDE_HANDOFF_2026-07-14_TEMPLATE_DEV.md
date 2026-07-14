@@ -74,11 +74,14 @@ https://github.com/HarDGameinc/AMELI-App-Template/releases/tag/v0.5.4-django
 
 ## §4. Pendiente / proximos pasos
 
-- **Sync del server** (opcional): `ha-report2` sigue en `a11a897`. Para
-  llevarlo a v0.5.4: `cd /opt/<instance> && git pull` (de `dev`) + reinstalar
-  deps si cambió el lock + restart del `-api.service`. Lo corre el operador en
-  la caja. Los cambios de v0.5.4 no-promovidos-aun-en-server son
-  test/config/a11y sin efecto runtime critico en el host Caddy-managed.
+- **Sync del server: HECHO.** `ha-report2` pulleado a v0.5.4 (branch `dev`,
+  `3038588`), `-api.service` reiniciado, `/health` → `v0.5.4-django` OPERATIVO,
+  region a11y `#a11y-live` verificada servida en `/login/`. Runtime deps sin
+  cambio (no reinstall); estaticos servidos desde el source dir (no
+  collectstatic). **Fix de estado git:** el `dev` local de la caja no tenia
+  upstream → `git pull` caia al HEAD del remoto (`main`) y aterrizo en el merge
+  commit `a4db2af`; se corrigio con `git branch --set-upstream-to=origin/dev
+  dev` (+ se borro un `main` local espurio). Ahora `dev` trackea `origin/dev`.
 - **Historial git**: quedó con el ground-truth viejo; decision de aceptar (no
   purgar). Si en el futuro se quiere purgar → `git filter-repo` + force-push
   (destructivo, coordinar).
