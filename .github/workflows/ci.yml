@@ -63,7 +63,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -161,7 +161,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'schedule'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -198,7 +198,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -264,13 +264,13 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'schedule'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        # v6 runs on the node24 action runtime — v4 targeted the
-        # deprecated node20 (GitHub forces it onto node24 with a
-        # warning). checkout@v5 / setup-python@v6 are already on node24.
-        uses: actions/setup-node@v6
+        # All actions here run on the node24 action runtime (older majors
+        # targeted the deprecated node20, which GitHub force-migrates with a
+        # warning). Kept current via Dependabot's github-actions updates.
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -320,7 +320,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
