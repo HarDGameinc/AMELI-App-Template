@@ -19,27 +19,31 @@
    cd "$APP_DIR" && APP_ENV=<env> bash scripts/validate_installation.sh
    ```
 
-### Live template deploy on `ha-report2`
+### Live deployment ground truth — derived on the box, not committed
 
-`APP_INSTANCE=ameli-app-template-dev` · `APP_ENV=dev` · profile
-`api-worker-maintenance`. Resolved ground truth (confirmed 2026-07-12):
+The concrete facts of any live deployment (host, public URL, resolved paths,
+service/timer unit names, bound ports) are **intentionally not hardcoded in
+this public repo** — they are operational-reconnaissance detail an operator
+keeps in a private ops note, not something a template consumer needs. This is
+exactly why the two sources of truth above exist: **derive them on the box**
+rather than reading them here.
 
-| Fact | Value |
-|---|---|
-| Checkout (`APP_DIR`) | `/opt/ameli-app-template-dev` |
-| venv | `/opt/ameli-app-template-dev/.venv` |
-| Config / env | `/etc/ameli-app-template-dev/{app.yaml,app.env}` |
-| Data / logs | `/var/lib/…` · `/var/log/ameli-app-template-dev` |
-| **Served process** | **`ameli-app-template-dev-api.service`** (uvicorn → `ameli_web.asgi:application`) |
-| Also enabled | `…-notifier.service`; timers: `worker`, `maintenance`, `backup`, `verify-audit` |
-| Shipped but **disabled** | `…-web.service` — this profile serves via `-api`; **do not restart `-web`** |
-| Loopback bind | `127.0.0.1:18080` (`DEFAULT_API_PORT`, loopback-only behind the proxy) |
-| Health | `curl http://127.0.0.1:18080/health` (JSON: `version`, `ok`, `status`, `checks`) — see [Health checks](#health-checks) |
+```bash
+cd "$APP_DIR" && APP_ENV=<env> bash scripts/validate_installation.sh
+```
+
+`validate_installation.sh` prints the resolved `APP_INSTANCE`, the real paths,
+DB status, the `manage.py check` result, and every enabled service/timer unit
+— the same facts that would otherwise be tabulated here, but computed live so
+they can never drift. With the default slug the instance resolves to
+`APP_SLUG-APP_ENV` (e.g. `<slug>-dev`), the API binds loopback-only on
+`DEFAULT_API_PORT` behind the TLS reverse proxy, and the served unit is
+`<instance>-api.service` (the `-web` unit ships disabled under the
+`api-worker-maintenance` profile — **do not restart `-web`**).
 
 Deploy + restart commands live in
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server"
-(canonical, already names `ameli-app-template-dev-api.service`). The bump
-ritual is in [`RELEASE.md`](RELEASE.md).
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server". The
+bump ritual is in [`RELEASE.md`](RELEASE.md).
 
 ## Local validation
 
@@ -229,7 +233,7 @@ Python-native parser that handles values containing `(`, `)`,
 gotcha that breaks `set -a; . app.env; set +a`. Existing env
 vars are never overridden — explicit beats file.
 
-This means a wire test on `ha-report2` now reduces to:
+This means a wire test on the deployed box now reduces to:
 
 ```bash
 cd /opt/ameli-app-template-dev

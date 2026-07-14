@@ -285,7 +285,7 @@ adds scope for no benefit. Enable `includeSubDomains` **only** when the host
 owns and HTTPS-serves every subdomain beneath it.
 
 > Note: a sibling emitting `includeSubDomains` does **not** affect you — e.g.
-> `dev02.ameli.cl`'s flag covers `*.dev02.ameli.cl`, never `dev03.ameli.cl`.
+> `other.example.com`'s flag covers `*.other.example.com`, never `app.example.com`.
 > The cross-host risk only exists when the header is set on a *parent* domain.
 
 - **App-managed**: `includeSubDomains` defaults **OFF** (opt-in, matching
@@ -302,10 +302,10 @@ owns and HTTPS-serves every subdomain beneath it.
   # Referrer-Policy / X-Frame-Options / CSP still pass through untouched
   header Strict-Transport-Security "max-age=31536000"
   ```
-  > **`ha-report2` (2026-07-13):** `dev03.ameli.cl` (a leaf, no subdomains of
+  > **`ha-report2` (2026-07-13):** `app.example.com` (a leaf, no subdomains of
   > its own) had no HSTS; added the line above to its Caddy site block without
-  > `includeSubDomains`. `dev02` keeps its pre-existing `includeSubDomains`
-  > (which only ever scoped `*.dev02.ameli.cl`, so it never touched dev03).
+  > `includeSubDomains`. `other.example.com` keeps its pre-existing `includeSubDomains`
+  > (which only ever scoped `*.other.example.com`, so it never touched app.example.com).
 
 ---
 
@@ -351,14 +351,14 @@ root:<run_group>`.
   enabled it — fixed in-repo (now enabled by every profile) and enabled live
   on the box (`systemctl enable --now …-verify-audit.timer`).
 - ✅ **TLS front (§2) — P2 fully closed**: the app is loopback-only
-  (`127.0.0.1:18080`) and fronted by Caddy at `dev03.ameli.cl:18480` with a
+  (`127.0.0.1:18080`) and fronted by Caddy at `app.example.com:8443` with a
   real wildcard cert (`/etc/ssl/ameli/wildcard-*`, not the internal CA),
   proxying with `X-Forwarded-Proto https`. The app-side config had a silent
   bug — `AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` never
   matched Django's WSGI META key, so `request.is_secure()` stayed False
   behind the TLS. Fixed in-repo (the parser now normalizes the wire name)
   and in `app.env` (canonical value + `SESSION_COOKIE_SECURE=true` +
-  `CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480`, stale `0.0.0.0` bind
+  `CSRF_TRUSTED_ORIGINS=https://app.example.com:8443`, stale `0.0.0.0` bind
   removed). Verified: HTTPS login works and the browser shows
   `__Host-ameli_csrf` + `Secure` on both cookies (proof `is_secure()` is now
   True).
@@ -376,5 +376,5 @@ root:<run_group>`.
 ### Still pending (not urgent)
 
 - **Vestigial ufw**: the `18080` LAN/VPN allow rules are now moot (18080 is
-  loopback-only; clients reach the app via `dev03.ameli.cl:18480`). Harmless;
+  loopback-only; clients reach the app via `app.example.com:8443`). Harmless;
   clean up when convenient (one rule at a time — see the ufw gotcha above).

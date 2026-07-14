@@ -234,7 +234,7 @@ an `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` env override and flips the HSTS
 longer asserts HSTS for a subtree it was not told it owns (`includeSubDomains`
 only ever scopes the emitting host's own subdomains, per RFC 6797, not
 siblings or the parent). On the live `ha-report2` host HSTS is **Caddy-managed
-per-site**; `dev03.ameli.cl` got `max-age=31536000` (no `includeSubDomains`)
+per-site**; `app.example.com` got `max-age=31536000` (no `includeSubDomains`)
 added to its Caddy block, and the vestigial LAN/VPN ufw allows for the
 loopback-only `18080` were removed. The same release also closes two testing
 gaps — Django **migration reversibility + drift** tests plus the
