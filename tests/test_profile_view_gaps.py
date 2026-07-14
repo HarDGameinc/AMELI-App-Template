@@ -274,7 +274,42 @@ def test_send_profile_test_email_view_maps_smtp_exception_to_502(
     assert response.status_code == 502
     body = response.json()
     assert body["ok"] is False
-    assert "SMTP" in body["error"] or "smtp" in body["error"].lower()
+    assert body["error"], "the client still gets an actionable message"
+    # ``user`` is ROLE_PUBLIC: the backend detail must NOT be echoed to a
+    # non-superadmin. Surfacing it is an operator affordance, but this view is
+    # only ``@login_required`` — see the superadmin case below.
+    # (CodeQL py/stack-trace-exposure, 2026-07-14.)
+    assert "smtp gone" not in body["error"].lower()
+    assert "RuntimeError" not in body["error"]
+
+
+@pytest.mark.django_db
+def test_send_profile_test_email_view_surfaces_smtp_detail_to_superadmin(
+    client, monkeypatch,
+):
+    """The mail-backend detail stays available **to a superadmin** — the
+    deliberate operator affordance (debug the email backend without digging
+    into the journal). A superadmin already holds full access, so this discloses
+    nothing they could not otherwise reach.
+    """
+    from ameli_web.accounts.views import profile as profile_module
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("smtp gone")
+
+    monkeypatch.setattr(profile_module, "send_profile_test_email", boom)
+    admin = User.objects.create_user(
+        username="root-probe",
+        password=USER_PASSWORD,
+        role=User.ROLE_SUPERADMIN,
+        email="root-probe@example.com",
+    )
+    client.force_login(admin)
+
+    response = client.post("/profile/email/test/")
+
+    assert response.status_code == 502
+    assert "smtp gone" in response.json()["error"].lower()
 
 
 @pytest.mark.django_db

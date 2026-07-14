@@ -168,8 +168,12 @@ def test_mfa_email_start_view_maps_smtp_exception_to_502(
     client, viewer_user, monkeypatch,
 ):
     """Generic ``except Exception`` branch fires when the mail
-    backend raises anything other than ``ValueError``. Property:
-    502 with readable error, not a 500."""
+    backend raises anything other than ``ValueError``. Property: 502 with a
+    readable error, not a 500 — and the raw backend exception must NOT reach
+    the client. This view is only ``@login_required``, so echoing it would hand
+    mail-host names and auth/TLS failures to any authenticated user. The detail
+    stays in the journal via ``logger.exception``.
+    (CodeQL py/stack-trace-exposure, 2026-07-14.)"""
     from ameli_web.accounts.views import mfa as mfa_views
 
     def boom(*_args, **_kwargs):
@@ -185,7 +189,11 @@ def test_mfa_email_start_view_maps_smtp_exception_to_502(
     )
 
     assert response.status_code == 502
-    assert "smtp" in response.json()["error"].lower()
+    error = response.json()["error"]
+    assert error, "the client still gets an actionable message"
+    # The backend exception must not be echoed.
+    assert "smtp gone" not in error.lower()
+    assert "RuntimeError" not in error
 
 
 @pytest.mark.django_db

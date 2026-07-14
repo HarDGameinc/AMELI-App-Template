@@ -374,7 +374,15 @@ def verify_mfa_resend_view(request: HttpRequest) -> JsonResponse:
         result = send_mfa_email_login_code(user)
     except ValueError as exc:
         return _json_error(str(exc), status=429)
-    except Exception as exc:
+    except Exception:
+        # Do NOT echo the SMTP exception. This endpoint is reachable in the
+        # PRE-MFA login state (@require_POST only), so the detail — mail-host
+        # names, auth/TLS failures, backend internals — would leak to a caller
+        # who has not completed the second factor. The operator gets the full
+        # traceback from ``logger.exception`` in the journal.
         logger.exception("login mfa resend delivery failed for %s", user.username)
-        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
+        return _json_error(
+            "no pudimos enviar el codigo por email; reintenta en unos minutos",
+            status=502,
+        )
     return JsonResponse(result)

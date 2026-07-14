@@ -1,0 +1,38 @@
+# Dependabot — automated dependency-update PRs.
+#
+# Only the ``github-actions`` ecosystem is enabled, and that is deliberate.
+#
+# WHY github-actions: nothing else in this repo keeps the CI action versions
+# patched. A stale or compromised action runs with the workflow's token — a
+# real supply-chain vector — and there is no other gate for it.
+#
+# WHY NOT pip (do not "fix" this by adding a pip entry):
+#   Runtime deps are installed from hash-pinned, pip-compile-generated
+#   lockfiles (``requirements.lock`` / ``requirements-dev.lock``, installed
+#   with ``--require-hashes``). Dependabot's pip ecosystem discovers
+#   ``requirements*.txt`` — our loose INPUT files — and does not know about
+#   the ``.lock`` files. It would open PRs bumping a constraint while leaving
+#   the lockfile (what actually ships) stale: red CI, and a ``pip-audit`` that
+#   still sees the old pin. Broken PRs are worse than none.
+#
+#   The Python supply chain is already gated *more precisely* by ``pip-audit``
+#   running against the real lockfile — on every push/PR **and** on the weekly
+#   cron in ``ci.yml`` (Mondays 06:00 UTC), which exists exactly so
+#   freshly-disclosed CVEs surface without a push. That gate is what caught
+#   PYSEC-2026-3447 (setuptools) on 2026-07-14.
+#
+#   If the lockfile workflow ever moves to a Dependabot-native layout
+#   (``requirements.txt`` as the compiled output), revisit this.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - dependencies

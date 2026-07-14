@@ -15,6 +15,11 @@ import secrets
 import pyotp
 import qrcode
 import qrcode.image.svg
+from django.utils.crypto import salted_hmac
+
+# Domain separator for the email-code HMAC. Keeps this digest from ever
+# colliding with another ``salted_hmac`` use derived from the same SECRET_KEY.
+EMAIL_CODE_KEY_SALT = "ameli_web.accounts.mfa.email_code"
 
 # Alphabet without easily-confused characters (0/O, 1/I/l). Used for
 # recovery codes only; the TOTP secret itself uses base32 via pyotp.
@@ -100,9 +105,30 @@ def generate_email_code() -> str:
 
 
 def hash_email_code(code: str) -> str:
-    """SHA-256 hex digest of the candidate email code (digits only)."""
+    """Keyed HMAC of the candidate email code (digits only).
+
+    Deliberately **not** a bare SHA-256. The email code is only
+    ``EMAIL_CODE_LENGTH`` digits (10**6 ≈ 2**20 possibilities), so an unkeyed
+    fast digest stored in ``MFAEmailChallenge.code_hash`` is exhaustible in
+    milliseconds by anyone who can read that table: a DB-read compromise (SQL
+    injection, a leaked backup, a stolen dump) would hand over the live MFA
+    code and defeat the second factor. Keying the digest on the server-side
+    ``SECRET_KEY`` — which never lives in the database — makes the stored hash
+    useless on its own. This mirrors the reasoning that already encrypts the
+    TOTP ``mfa_secret`` at rest; the email code was the remaining gap.
+
+    ``salted_hmac`` is Django's own primitive for exactly this and
+    domain-separates via ``EMAIL_CODE_KEY_SALT``.
+
+    Note ``hash_recovery_code`` keeps a bare SHA-256 **on purpose**: recovery
+    codes carry ~60 bits of entropy (32-char alphabet x 12 chars), so brute
+    force is infeasible and a keyed digest would invalidate every recovery
+    code already issued.
+
+    Found by CodeQL (``py/weak-sensitive-data-hashing``), 2026-07-14.
+    """
     candidate = "".join(ch for ch in code if ch.isdigit())
-    return hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    return salted_hmac(EMAIL_CODE_KEY_SALT, candidate, algorithm="sha256").hexdigest()
 
 
 def email_codes_match(stored_hash: str, candidate: str) -> bool:

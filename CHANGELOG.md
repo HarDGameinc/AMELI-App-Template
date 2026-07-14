@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.5.5-django — 2026-07-14 (SECURITY: hash del código MFA por email + info disclosure SMTP)
+
+> ### 🔴 NOTA DE SEGURIDAD — acción requerida para apps hijas
+>
+> **Actualizá.** Esta release corrige una debilidad **real** en el segundo
+> factor por email.
+>
+> **Qué pasaba:** el código MFA por email es de **6 dígitos** (10⁶ ≈ 2²⁰
+> posibilidades) y su digest se persistía en `MFAEmailChallenge.code_hash` con
+> **SHA-256 plano**. Cualquiera capaz de **leer esa tabla** — SQL injection, un
+> backup filtrado, un dump robado, una réplica comprometida — podía **agotar el
+> espacio en milisegundos** y recuperar el código MFA vivo, **derrotando el
+> segundo factor**. Contradecía el propio modelo de amenaza del template: el
+> secreto TOTP (`mfa_secret`) ya se cifra at-rest justamente para que un
+> compromiso de *solo lectura* de la DB no diera bypass de MFA; el código de
+> email era el hueco que quedaba.
+>
+> **Fix:** el digest ahora es un **HMAC keyeado** (`django.utils.crypto.salted_hmac`)
+> sobre `SECRET_KEY` — que **nunca vive en la base de datos** — con domain
+> separation. El hash almacenado, por sí solo, ya no sirve para nada.
+>
+> **Impacto al actualizar:** los challenges **en vuelo** dejan de validar (TTL
+> 10 min, single-use). El usuario simplemente pide un código nuevo. **No hace
+> falta migración de datos.**
+>
+> Descubierto por **CodeQL** (`py/weak-sensitive-data-hashing`) en su primera
+> corrida, 2026-07-14.
+
+### Info disclosure: excepciones de SMTP ecoadas al cliente
+
+Tres handlers (`views/auth.py`, `views/mfa.py`, `views/profile.py`) devolvían
+`f"...{exc.__class__.__name__}: {exc}"` al cliente. `auth.py` es alcanzable en
+estado **pre-MFA** (solo `@require_POST`) y los otros dos son apenas
+`@login_required` — así que nombres de mail-host y fallos de auth/TLS se
+filtraban a usuarios sin privilegio. El comentario de `profile.py` afirmaba que
+era una afordancia de operador, pero **la vista no estaba gateada a superadmin**.
+
+`auth` y `mfa` ahora devuelven un mensaje genérico; `profile` **conserva el
+detalle solo para superadmins** (que ya tienen acceso total), preservando la
+afordancia de debug. `logger.exception` sigue registrando el traceback completo
+en el journal en los tres casos.
+
+### Tooling de seguridad: CodeQL + Dependabot
+
+Gratis al pasar el repo a público. **CodeQL** (SAST, Python + JS) corre en cada
+push/PR + sweep semanal; encontró el hallazgo de arriba en su primera corrida
+(16 alertas → 1 real + 1 rastreada desde el sink; 14 FPs descartados con razón
+auditable). **Dependabot** solo para `github-actions` — **`pip` queda
+deliberadamente deshabilitado** (documentado en `dependabot.yml`): los locks son
+`requirements*.lock` hash-pinneados que Dependabot no descubre, y `pip-audit` ya
+los audita en cada push **y** en el cron semanal, con más precisión.
+
+### Docs
+
+- `SERVER_HARDENING.md §2`: corregido un claim **falso** (decía que la app
+  "currently binds `0.0.0.0:18080` over plain HTTP"). El template **shippea
+  loopback por default** (`api.host: "127.0.0.1"`); la sección se contradecía
+  con su propio appendix (P2 CLOSED).
+- Ground-truth del deploy sanitizado del repo público.
+
 ## v0.5.4-django — 2026-07-13 (security: CSP style-src sin 'unsafe-inline' + Pillow CVEs)
 
 Endurecimiento de CSP + parche de seguridad de dependencia + docs de cadena

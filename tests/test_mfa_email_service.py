@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 
 import pytest
@@ -86,6 +87,47 @@ def test_email_codes_match_constant_time():
 
     assert mfa_lib.email_codes_match(stored, "987654") is True
     assert mfa_lib.email_codes_match(stored, "987655") is False
+
+
+# ---- email-code digest must be KEYED (CodeQL py/weak-sensitive-data-hashing) ----
+
+
+def test_email_code_hash_is_not_an_unkeyed_sha256():
+    """The email code is 6 digits — only 10**6 candidates. If ``code_hash``
+    were a bare SHA-256, anyone able to read ``MFAEmailChallenge`` (SQL
+    injection, a leaked backup, a stolen dump) could exhaust that space in
+    milliseconds and recover the live second factor. The digest must be keyed.
+    """
+    code = "123456"
+    assert mfa_lib.hash_email_code(code) != hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def test_email_code_hash_depends_on_the_server_secret_key(settings):
+    """Proof the digest is keyed on ``SECRET_KEY`` — which never lives in the
+    database. An attacker holding the DB row but not the key cannot brute-force
+    the 10**6 space, because they cannot compute a candidate digest at all.
+    """
+    code = "246810"
+
+    settings.SECRET_KEY = "unit-test-secret-key-one"
+    under_first_key = mfa_lib.hash_email_code(code)
+
+    settings.SECRET_KEY = "unit-test-secret-key-two"
+    under_second_key = mfa_lib.hash_email_code(code)
+
+    assert under_first_key != under_second_key
+
+
+def test_recovery_code_hash_stays_an_unkeyed_sha256():
+    """Locks in the deliberate asymmetry with ``hash_email_code``: recovery
+    codes carry ~60 bits of entropy (32-char alphabet x 12 chars), so brute
+    force is infeasible and a fast unkeyed digest is correct. Keying them would
+    also invalidate every recovery code already issued to users.
+    """
+    canonical = mfa_lib.normalize_recovery_code("ABCD-EFGH-JKLM")
+    expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    assert mfa_lib.hash_recovery_code("ABCD-EFGH-JKLM") == expected
 
 
 # ---- start_mfa_email_enrollment ----

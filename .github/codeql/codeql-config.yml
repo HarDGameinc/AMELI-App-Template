@@ -1,0 +1,11 @@
+name: "AMELI App Template — CodeQL config"
+
+# Keep the signal high: third-party and generated artefacts are not our code
+# and would only produce noise in the Security tab.
+paths-ignore:
+  # Vendored axe-core (MPL-2.0, minified) used only as an e2e test asset.
+  - tests/e2e/vendor/**
+  - "**/*.min.js"
+  # Django-generated migrations are mechanical; the hand-written data
+  # migrations they contain are covered by tests/test_migration_mfa_backfill.py.
+  - "**/migrations/**"

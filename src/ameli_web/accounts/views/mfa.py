@@ -147,9 +147,15 @@ def mfa_email_start_view(request: HttpRequest) -> JsonResponse:
         result = start_mfa_email_enrollment(request.user.username, current_password=current_password)
     except ValueError as exc:
         return _json_error(str(exc))
-    except Exception as exc:
+    except Exception:
+        # Do NOT echo the SMTP exception: this view is only @login_required,
+        # so any authenticated (non-privileged) user would otherwise receive
+        # mail-backend internals. Detail stays in the journal for the operator.
         logger.exception("email mfa enrollment delivery failed for %s", request.user.username)
-        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
+        return _json_error(
+            "no pudimos enviar el codigo por email; reintenta en unos minutos",
+            status=502,
+        )
     return JsonResponse(result)
 
 

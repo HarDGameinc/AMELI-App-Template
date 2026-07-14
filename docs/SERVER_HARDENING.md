@@ -95,12 +95,20 @@ journalctl -u ameli-app-template-dev-api.service -n 30 --no-pager
 
 ## 2. Network exposure 🔴 ⚙️
 
-The app currently binds **`0.0.0.0:18080` over plain HTTP** (verified: the
-browser reaches `http://<host>:18080` directly, "Not secure"). For any
-non-dev deploy:
+The template **ships a loopback bind by default** — `api.host: "127.0.0.1"`
+in `config/app.yaml.example`, and the same `127.0.0.1` fallback in
+`ameli_app/config.py` — so out of the box the app is reachable only through a
+reverse proxy, never directly from the network. The hardening requirement is
+to **keep it that way**: an operator who overrides the bind to `0.0.0.0`
+exposes the app over plain HTTP. (The reference deployment did exactly that
+early on; **closed 2026-07-09**, see the appendix P2 — it is loopback-only
+behind Caddy TLS today.)
 
-1. **Bind to loopback**: set `api.host` / `AMELI_APP_HOST=127.0.0.1` so the
-   app is only reachable through the reverse proxy, never directly.
+For any non-dev deploy:
+
+1. **Keep the loopback bind**: leave `api.host` / `AMELI_APP_HOST` at
+   `127.0.0.1` so the app is only reachable through the reverse proxy, never
+   directly.
 2. **TLS reverse proxy**: put Caddy in front (see
    [`docs/TLS_WITH_CADDY.md`](TLS_WITH_CADDY.md)). Caddy terminates TLS on
    443 and proxies to `127.0.0.1:18080`. Set the app's
@@ -373,8 +381,16 @@ root:<run_group>`.
   > (an OMEGA `8106/tcp` allow), which was restored. Prefer `ufw status
   > numbered` immediately before each single `ufw delete <n>`.
 
-### Still pending (not urgent)
+### Closed 2026-07-13
 
-- **Vestigial ufw**: the `18080` LAN/VPN allow rules are now moot (18080 is
-  loopback-only; clients reach the app via `app.example.com:8443`). Harmless;
-  clean up when convenient (one rule at a time — see the ufw gotcha above).
+- **Vestigial ufw (CLOSED)**: the three `18080` LAN/VPN allow rules were moot
+  (the app is loopback-only; clients reach it through the TLS proxy) and have
+  been removed. Verified loopback-only first (`ss -tlnp | grep 18080` →
+  `127.0.0.1:18080`), then deleted **by rule specification** rather than by
+  number — `ufw delete allow from <cidr> to any port 18080 proto tcp` — which
+  sidesteps the renumbering gotcha above entirely. `ufw status` now shows no
+  `18080` rules.
+
+### Still pending
+
+Nothing open on this host.
