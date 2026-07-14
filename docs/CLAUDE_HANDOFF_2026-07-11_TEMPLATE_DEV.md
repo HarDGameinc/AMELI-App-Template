@@ -68,6 +68,41 @@ rotativos), contar todos los intentos penalizaría ráfagas legítimas de una
 IP compartida (NAT/oficina). `record_login_failure` + la alerta de
 auth-failures **sin cambios**. Suite completa **1101 pass**; CI verde.
 
+### 3.3. v0.5.3-django — corte, promoción y endurecimiento de docs (2026-07-12)
+
+Se cortó **v0.5.3-django** empaquetando M3 (§3.2) + template-check (§3.1) +
+runbook de rotación + SBOM. Ritual de 4 archivos (VERSION/pyproject/
+CHANGELOG/AGENTS) en `2040cd9`. PR de promoción #3 verde — matriz completa
+(3.11–3.14) + e2e + **test-postgres**, que ejercita `select_for_update` en
+Postgres real (prueba atómica autoritativa de M3). Merge commit `2efe4ba` a
+`main`, tag + GitHub release publicados. **`main` ahora en `v0.5.3-django`.**
+
+**Validación en `ha-report2`** (pre-merge, registrada): `APP_ENV=dev bash
+scripts/validate_installation.sh` → **OK=25 / WARN=0 / FAIL=0**;
+`/health/deep` → OPERATIVO (db_write 2ms, fs_write ok); `verify-audit` →
+`checked:404 ok:true`.
+
+**Endurecimiento de docs** (a raíz de un tropiezo: un agente adivinó el
+service del server — `ameli-app-web.service`, inactivo — en vez de
+derivarlo). `OPERATIONS.md` abre ahora con "Deployed instance — ground
+truth (never guess)": paths/units/puerto se derivan de `_common.sh`
+(`resolve_systemd_profile`) y `validate_installation.sh` los reporta;
+incluye la tabla de `ha-report2` (served = `…-api`, `-web` shipped-pero-
+disabled, `:18080`). Puntero desde `AGENTS.md`. Prompts de sesión **S-09**
+(inicio) / **S-10** (cierre) en `HANDOFF_TEMPLATE.md`. Commits `1854919` +
+`66ba53e` en `dev` (docs-only, retenidos durante el PR para no disparar la
+trampa `paths-ignore`; empujados post-merge). `dev` queda adelante de `main`
+en commits de docs → próxima promoción.
+
+**SBOM adjunto al release** (asset `sbom-v0.5.3.cdx.json`, CycloneDX 1.4, 48
+comp, 0 vulns). Hallazgo en el camino: generar el SBOM desde el **venv
+desplegado** marcó un `msgpack 1.2.0` High DoS (GHSA-6v7p-g79w-8964), pero
+`msgpack` es dev-tooling (`pip-audit`→`cachecontrol`; el dev-lock ya está en
+1.2.1) y NO está en `requirements.lock` — el SBOM del **lock** (lo que
+shipea) da 0 vulns. Lección documentada en `OPERATIONS.md` §SBOM: se adjunta
+la forma del lock, no la del venv. El server usa deploy-key (git-only), así
+que el asset se subió vía `scp` al workstation + `gh`.
+
 ## §4. Continuidad / backlog (todo opcional — nada obligatorio pendiente)
 
 ### Host (operador) — trivial
@@ -88,7 +123,15 @@ auth-failures **sin cambios**. Suite completa **1101 pass**; CI verde.
   supply chain" → subseccion "SBOM (CycloneDX)": `pip-audit -f
   cyclonedx-json` (sin dep nueva), refresh por release, artefacto adjunto
   al release (no commiteado; `*.cdx.json` gitignored).
-- Refactor inline-styles → utility-classes (cosmetico).
+- ~~Refactor inline-styles → utility-classes~~ **HECHO 12-jul** (`96f6bec`)
+  — resultó **hardening de CSP**, no cosmético: los 46 `style=""` de 11
+  templates pasaron a clases utilitarias en `app.css`, lo que permitió
+  **quitar `'unsafe-inline'` de `style-src`** (era el último que quedaba en
+  el CSP principal; `script-src` ya usaba nonces). Declaraciones idénticas +
+  especificidad analizada (sin conflicto) → cero cambio visual. Suite 1102
+  verde, ruff limpio. Gate de render completo (Playwright e2e + axe a11y) en
+  el PR de promoción. Los CSP de `/django-admin` y `/docs` conservan
+  `'unsafe-inline'` (estilos de framework/CDN fuera de nuestro control).
 - **Modelo C del update-channel** (`ameli-core` package + Dependabot) —
   el canal mas fuerte, refactor grande; adoptar si la flota crece
   (`DECISIONS.md` #7).

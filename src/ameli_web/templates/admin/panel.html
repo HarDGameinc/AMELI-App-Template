@@ -66,7 +66,7 @@
   </div>
 </section>
 
-<section class="summary-cards-compact" style="margin-bottom:16px;">
+<section class="summary-cards-compact mb-16">
   <article class="summary-card-compact">
     <span class="metric-label">Total</span>
     <strong>{{ user_summary.total }}</strong>
@@ -89,7 +89,7 @@
   </article>
 </section>
 
-<section class="panel" id="admin-maintenance-card" style="margin-bottom:16px;">
+<section class="panel mb-16" id="admin-maintenance-card">
   <div class="panel-header">
     <div>
       <div class="metric-label">Modo mantenimiento</div>
@@ -103,7 +103,7 @@
       </span>
     </div>
   </div>
-  <div class="form-grid-split" style="margin-top:8px;">
+  <div class="form-grid-split mt-8">
     <article class="form-card">
       <div class="modal-form-row">
         <label class="modal-form-label" for="id_maintenance_message">Mensaje para el usuario (opcional)</label>
@@ -112,18 +112,17 @@
                value="{{ maintenance_state.message|default:'' }}"
                data-maintenance-message>
       </div>
-      <div class="modal-form-row" style="display:flex;gap:12px;align-items:center;">
+      <div class="modal-form-row flex-row-center">
         <button class="primary" type="button" data-maintenance-enable>Activar</button>
         <button class="src-badge" type="button" data-maintenance-disable>Desactivar</button>
-        <span class="muted" data-maintenance-feedback></span>
+        <span class="muted" data-maintenance-feedback role="status" aria-live="polite"></span>
       </div>
     </article>
   </div>
 </section>
 
-<section class="panel" id="admin-email-queue-card"
-         data-refresh-url="/admin/metrics/email-queue"
-         style="margin-bottom:16px;">
+<section class="panel mb-16" id="admin-email-queue-card"
+         data-refresh-url="/admin/metrics/email-queue">
   <div class="panel-header">
     <div>
       <div class="metric-label">Cola de email saliente</div>
@@ -131,7 +130,7 @@
     </div>
     <span class="muted" data-email-queue-updated>Actualizando…</span>
   </div>
-  <div class="summary-cards-compact" style="margin-top:8px;">
+  <div class="summary-cards-compact mt-8">
     <article class="summary-card-compact">
       <span class="metric-label">Pendientes</span>
       <strong data-eq-pending>{{ email_queue_summary.pending }}</strong>
@@ -153,7 +152,7 @@
       <span class="muted">TTL vencido</span>
     </article>
   </div>
-  <div class="muted panel-copy" style="margin-top:8px;">
+  <div class="muted panel-copy mt-8">
     <span data-eq-oldest>
       {% if email_queue_summary.oldest_pending_age_seconds %}
         Mas vieja pendiente: {{ email_queue_summary.oldest_pending_age_seconds }}s.
@@ -248,7 +247,7 @@
             <div class="modal-actions-row">
               <button class="primary" type="submit" data-password-submit>Crear usuario</button>
             </div>
-            <p class="muted" id="create-user-feedback" data-password-feedback></p>
+            <p class="muted" id="create-user-feedback" data-password-feedback role="status" aria-live="polite"></p>
           </form>
         </article>
 
@@ -313,7 +312,7 @@
             <div class="modal-actions-row">
               <button class="primary" type="submit" data-password-submit>Actualizar contrasena</button>
             </div>
-            <p class="muted" id="admin-password-feedback" data-password-feedback></p>
+            <p class="muted" id="admin-password-feedback" data-password-feedback role="status" aria-live="polite"></p>
           </form>
         </article>
       </div>
@@ -437,7 +436,7 @@
         <button type="button" class="icon-action" data-modal-close>Cancelar</button>
         <button class="primary" type="submit" data-password-submit>Guardar nueva clave</button>
       </div>
-      <p class="muted" id="reset-password-feedback" data-password-feedback></p>
+      <p class="muted" id="reset-password-feedback" data-password-feedback role="status" aria-live="polite"></p>
     </form>
   </div>
 </div>
@@ -517,7 +516,7 @@
         <label class="modal-form-label" for="sudo-mfa-code">Codigo 2FA</label>
         <input id="sudo-mfa-code" class="modal-input" type="text" name="mfa_code" autocomplete="one-time-code" inputmode="numeric" placeholder="123 456 o XXXX-XXXX-XXXX">
         <div class="modal-form-help" id="sudo-mfa-help">App de autenticacion o codigo de respaldo.</div>
-        <div class="modal-actions-row" id="sudo-email-actions" hidden style="margin-top:8px;">
+        <div class="modal-actions-row mt-8" id="sudo-email-actions" hidden>
           <button class="icon-action" type="button" id="sudo-send-email">
             <span class="material-symbols-rounded icon-glyph" aria-hidden="true">mail</span>
             <span>Recibir codigo por email</span>

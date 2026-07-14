@@ -1,5 +1,92 @@
 # Changelog
 
+## v0.5.4-django — 2026-07-13 (security: CSP style-src sin 'unsafe-inline' + Pillow CVEs)
+
+Endurecimiento de CSP + parche de seguridad de dependencia + docs de cadena
+de suministro. Validado en server (`ha-report2`): el header responde
+`style-src 'self' https://fonts.googleapis.com` (sin `'unsafe-inline'`),
+render sin cambios.
+
+### Pillow 12.2.0 → 12.3.0 (5 CVEs)
+
+El gate `pip-audit` del PR de promoción detectó **5 vulnerabilidades**
+conocidas en `pillow==12.2.0` (PYSEC-2026-2253..2257), todas corregidas en
+**12.3.0** (dentro del rango `Pillow>=11.3,<13`). Se actualizó
+`requirements.lock` a `pillow==12.3.0` con hashes frescos de PyPI (87
+archivos) — edición manual del bloque (el `pip-compile` no corre en Windows
+por `uvloop`; mismo procedimiento que el bump de Django en v0.5.2),
+verificado por CI (`--require-hashes` + `pip-audit`).
+
+### setuptools 82.0.1 → 83.0.0 (PYSEC-2026-3447)
+
+Al re-correr el CI (repo ahora público → Actions gratis), `pip-audit` detectó
+`PYSEC-2026-3447` en `setuptools==82.0.1` (dep de build en
+`requirements-dev.lock`, no en lo que se despliega), fix en **83.0.0**. Bump
+manual del bloque con hashes de PyPI (wheel + sdist).
+
+### CSP `style-src` sin `'unsafe-inline'` (commit `96f6bec`)
+
+- Los **46 `style=""` inline de 11 templates** pasaron a clases utilitarias
+  en `app.css` (declaraciones idénticas, especificidad analizada → cero
+  cambio visual), lo que permitió **quitar `'unsafe-inline'` de `style-src`**
+  del CSP principal — el último token inseguro que quedaba (`script-src` ya
+  usaba nonces). Los CSP de `/django-admin` y `/docs` conservan
+  `'unsafe-inline'` (estilos de framework/CDN fuera de nuestro control).
+- Nota: un gestor de contraseñas del navegador que inyecte estilos inline
+  verá su overlay bloqueado por el CSP (comportamiento correcto; la app no
+  tiene violaciones propias).
+
+### Docs / supply-chain
+
+- `OPERATIONS.md` → "Deployed instance — ground truth": referencia canónica
+  del deploy en `ha-report2` (paths/units/puertos computados, no adivinados).
+- `OPERATIONS.md` → SBOM (CycloneDX) via `pip-audit -f cyclonedx-json`;
+  clarificación de qué forma se adjunta al release.
+- Prompts de sesión S-09/S-10 (inicio/cierre de día) en el handoff template.
+- `test(sri)`: test de invalidación por mtime hecho determinista (flake Windows).
+- `test(migrations)`: `tests/test_migrations.py` — drift (`makemigrations
+  --check` dentro de la suite) + round-trip reverse-a-zero/re-apply que prueba
+  la **reversibilidad** de todas las migraciones first-party (incluidas las 3
+  `RunPython`). Cierra el gap "no migration tests" de `AGENTS.md`.
+- `test(migration-backfill)`: `tests/test_migration_mfa_backfill.py` — cubre la
+  lógica de datos de `0012_mfa_secret_encrypt` (antes solo ejercitada como
+  no-op sin clave): con clave, encripta filas plaintext, salta las ya
+  encriptadas (idempotente), el reverse desencripta, y sin clave es no-op.
+  Código sensible: un bug dejaría secretos TOTP en claro o bloquearía usuarios.
+
+### a11y — anuncio SR de swaps de paginación/filtro
+
+- Los paneles del admin reemplazan su contenido in-place (`swapPanelTo` en
+  `app.js`) con `aria-busy` pero **sin anunciar** el resultado al lector de
+  pantalla. Agregada una región live global oculta (`#a11y-live`, `role=status`
+  `aria-live=polite` `aria-atomic`) en `base.html` + helper `announce()` que,
+  tras cada swap, anuncia el resumen del panel (`"Mostrando 26–50 de 120"` /
+  `"Sin resultados"`). Cubierto por `tests/test_a11y_live_region.py` (template)
+  y `tests/e2e/test_a11y_announce.py` (e2e).
+- Los 4 feedbacks de acción del panel admin (toggle de mantenimiento, crear
+  usuario, cambiar/resetear password) actualizan `textContent` vía JS pero
+  **no eran regiones live** — un usuario SR no escuchaba "Guardando…" /
+  "Operación completada" / errores. Agregado `role=status aria-live=polite`
+  a los cuatro (los feedbacks de sudo/perfil ya lo tenían). Verificado en
+  browser real + `tests/test_a11y_live_region.py`.
+
+### HSTS `includeSubDomains` — override + default opt-in (commit `8ddb0bb`)
+
+- Nuevo env-var `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` en `security_headers.py`
+  para controlar la directiva `includeSubDomains` de HSTS.
+- **Cambio de default:** `includeSubDomains` pasa a **OFF (opt-in)**, igual que
+  el default de Django. Antes se prendía implícitamente cuando `HSTS_SECONDS>0`.
+  Un deploy que hoy tenga HSTS activo y dependa del `includeSubDomains` implícito
+  debe ahora setear `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true` para conservarlo.
+- Motivo: `includeSubDomains` extiende la política solo a los **subdominios del
+  host que lo emite** (no a hermanos ni al padre); activarlo sin ser dueño de
+  todo el subárbol —o con hijos HTTP-only, o vía preload— bloquea navegadores en
+  HTTPS de forma irreversible por el `max-age`. Opt-in es la postura conservadora.
+- Valor no-booleano falla cerrado (raise); nunca se emite con HSTS off. +5 tests.
+- Nota operativa: en deploys detrás de un reverse-proxy que ya emite HSTS (p. ej.
+  Caddy), el proxy es la fuente de verdad y estas vars quedan sombreadas
+  (ver `SERVER_HARDENING.md` §9).
+
 ## v0.5.3-django — 2026-07-12 (security: throttle atómico M3 + template-check CLI)
 
 Completa **M3**: el rediseño atómico del throttle de login que en `v0.5.1`

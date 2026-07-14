@@ -43,8 +43,13 @@
     {# Skip-link for keyboard users; first focusable element in body. #}
     {# Visible only when focused (CSS ``.skip-link:focus`` reveals). #}
     <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+    {# Global polite live region. Client-side DOM swaps (pagination / filter #}
+    {# in app.js) write a concise summary here so screen-reader users are #}
+    {# told the content changed — visually-hidden but present in the a11y #}
+    {# tree. ``aria-atomic`` so the whole message is read, not a diff. #}
+    <div id="a11y-live" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     {% if request.maintenance_state.active %}
-    <div role="status" aria-live="polite" style="background:#d6336c;color:#fff;padding:10px 16px;font-weight:600;text-align:center;">
+    <div role="status" aria-live="polite" class="maintenance-banner">
       Mantenimiento activo{% if request.maintenance_state.message %}: {{ request.maintenance_state.message }}{% else %}. Algunas acciones estaran temporalmente deshabilitadas.{% endif %}
     </div>
     {% endif %}

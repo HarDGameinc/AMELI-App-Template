@@ -1,5 +1,50 @@
 # Operations
 
+## Deployed instance — ground truth (never guess)
+
+> **For any AI or operator touching a server: derive the instance facts,
+> do not hardcode or guess them.** Service names, paths and ports are
+> **computed**, not fixed — guessing `ameli-app-web.service` or `/opt/ameli`
+> will target the wrong unit. There are two sources of truth:
+
+1. **`scripts/_common.sh`** derives every path and unit name from
+   `APP_INSTANCE` (= `APP_SLUG-APP_ENV`, e.g. `ameli-app-template-dev`).
+   `resolve_systemd_profile()` picks which services/timers are enabled from
+   `APP_SYSTEMD_PROFILE` — so *which* process is served is profile-dependent.
+2. **`scripts/validate_installation.sh`** runs those on the box and prints
+   `[OK]/[WARN]/[FAIL]` for paths, config, DB, `manage.py check`, and every
+   enabled service/timer unit. **Run it first** — it *tells you* the real
+   unit names instead of you guessing:
+   ```bash
+   cd "$APP_DIR" && APP_ENV=<env> bash scripts/validate_installation.sh
+   ```
+
+### Live deployment ground truth — derived on the box, not committed
+
+The concrete facts of any live deployment (host, public URL, resolved paths,
+service/timer unit names, bound ports) are **intentionally not hardcoded in
+this public repo** — they are operational-reconnaissance detail an operator
+keeps in a private ops note, not something a template consumer needs. This is
+exactly why the two sources of truth above exist: **derive them on the box**
+rather than reading them here.
+
+```bash
+cd "$APP_DIR" && APP_ENV=<env> bash scripts/validate_installation.sh
+```
+
+`validate_installation.sh` prints the resolved `APP_INSTANCE`, the real paths,
+DB status, the `manage.py check` result, and every enabled service/timer unit
+— the same facts that would otherwise be tabulated here, but computed live so
+they can never drift. With the default slug the instance resolves to
+`APP_SLUG-APP_ENV` (e.g. `<slug>-dev`), the API binds loopback-only on
+`DEFAULT_API_PORT` behind the TLS reverse proxy, and the served unit is
+`<instance>-api.service` (the `-web` unit ships disabled under the
+`api-worker-maintenance` profile — **do not restart `-web`**).
+
+Deploy + restart commands live in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server". The
+bump ritual is in [`RELEASE.md`](RELEASE.md).
+
 ## Local validation
 
 ```bash
@@ -124,31 +169,45 @@ CVEs, because `pip-audit` (already a dev dep + a CI job) emits CycloneDX
 natively (no extra tool):
 
 ```bash
-# From the deployed venv on the server — the SBOM of what is ACTUALLY
-# installed, the most faithful record of the running deploy:
-.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
-
-# Or from the lock (what ships, pre-install) on Linux CI/dev:
+# (A) RELEASE artifact — from the lock = exactly what ships. Attach THIS
+#     to the GitHub release. Runtime-only, matches the CI pip-audit gate:
 pip-audit -r requirements.lock -f cyclonedx-json -o sbom.cdx.json || true
+
+# (B) Running-box audit — from the deployed venv. Faithful to what is
+#     ACTUALLY installed, but INCLUDES dev/audit tooling (pip-audit and its
+#     deps) that is NOT shipped. For inspecting a box, not for the release:
+.venv/bin/pip-audit -f cyclonedx-json -o sbom.cdx.json || true
 ```
 
+- **Attach form (A), not (B), to a release.** Form (B) inventories the whole
+  venv, so it can flag CVEs in tooling that never ships. Seen for real
+  (v0.5.3, 2026-07-12): (B) reported a High `msgpack` DoS — but `msgpack` is
+  only pulled by `pip-audit`→`cachecontrol` (dev tooling; `requirements-dev.
+  lock` already pins the patched 1.2.1), is absent from `requirements.lock`,
+  and (A) reported **0 vulns / 48 components**. The CI gate audits the lock,
+  so (A) is what "green CI" actually certifies.
 - `|| true` because `pip-audit` exits non-zero when it finds a
   vulnerability — the SBOM file is still written (a clean run exits 0).
 - Output is CycloneDX 1.4 JSON: a `components` inventory + a
   `vulnerabilities` section. Use `-f cyclonedx-xml` for the XML flavour.
-- The `-r requirements.lock` form must resolve the lock, so run it on
-  **Linux** (CI or the server); it fails on the Windows workstation
-  (`uvloop` won't build). The installed-venv form works anywhere.
+- Form (A) must resolve the lock, so run it on **Linux** (CI or the server);
+  it fails on the Windows workstation (`uvloop` won't build).
 
 **When to refresh**: after any lock change (i.e. each release — the
 `pip-audit` CI job already re-checks the lock then). **Where it lives**:
-the SBOM is a generated, point-in-time artifact — do NOT commit it. Attach
-it to the GitHub release when a downstream consumer or auditor needs the
-provenance for a version:
+the SBOM is a generated, point-in-time artifact — do NOT commit it
+(`*.cdx.json` is gitignored). Attach it to the GitHub release when a
+downstream consumer or auditor needs the provenance for a version:
 
 ```bash
 gh release upload vX.Y.Z-django sbom.cdx.json
 ```
+
+The dev server authenticates to GitHub with a **deploy key (git-only)**, so
+`gh` / the release-asset API do not work there. Generate the SBOM on the
+server (form A), copy it to a workstation where `gh` is authenticated
+(`scp root@<host>:.../sbom.cdx.json .`), and `gh release upload` from there
+— or `curl -X POST` the uploads API with a PAT (`repo` scope).
 
 ## manage.py auto-loads APP_CONFIG (and app.env)
 
@@ -174,7 +233,7 @@ Python-native parser that handles values containing `(`, `)`,
 gotcha that breaks `set -a; . app.env; set +a`. Existing env
 vars are never overridden — explicit beats file.
 
-This means a wire test on `ha-report2` now reduces to:
+This means a wire test on the deployed box now reduces to:
 
 ```bash
 cd /opt/ameli-app-template-dev

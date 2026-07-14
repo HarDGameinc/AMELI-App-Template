@@ -176,14 +176,14 @@ AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https
 # 2. Origenes confiables para CSRF (scheme://host[:puerto]). REQUERIDO en
 #    cuanto is_secure() es True: sin esto, todo POST (login) falla el
 #    chequeo estricto de origen. Lista separada por comas.
-AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480
+AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS=https://app.example.com:8443
 
 # 3. Cookies solo por HTTPS (+ prefijo __Host- en la de CSRF).
 AMELI_APP_SESSION_COOKIE_SECURE=true
 
 # 4. Hosts que responde la app. En dev el default es "*"; fuera de dev
 #    (o si lo restringis) tiene que incluir el hostname del sitio Caddy.
-# AMELI_APP_DJANGO_ALLOWED_HOSTS=dev03.ameli.cl,127.0.0.1
+# AMELI_APP_DJANGO_ALLOWED_HOSTS=app.example.com,127.0.0.1
 ```
 
 > **Footgun del #1**: Django compara contra `request.META[name]`, cuyas

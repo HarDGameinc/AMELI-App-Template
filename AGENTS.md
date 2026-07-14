@@ -161,6 +161,10 @@ manage.py               # Django management entrypoint (autodiscover config)
 - **Validate:** `scripts/validate_installation.sh` — CLI + Django health + PostgreSQL check
 - **Lockfile:** `requirements.lock` with `--require-hashes` (ASVS V14.2.3)
 - **Systemd:** 16 unit files in `deploy/systemd/`, configurable via `APP_SYSTEMD_PROFILE`
+- **Server facts (never guess):** paths/unit names/port are *derived* from
+  `APP_INSTANCE`, not fixed — see `docs/OPERATIONS.md` → "Deployed instance —
+  ground truth" before any server op. Run `validate_installation.sh` to have
+  the box report them; don't hardcode a service name or `/opt/...` path.
 
 ## Testing
 
@@ -184,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.3-django, 2026-07-12)
+## State of the project (v0.5.4-django, 2026-07-13)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -219,8 +223,26 @@ ceiling into a hard one (closing the check-then-act race), with
 reset-on-success wired to `user_logged_in`; the IP gate stays failure-based
 soft by design. Same release adds the `ameli-app template-check` CLI (the
 update-channel "consultar" piece, `DECISIONS.md` #7), a secret-rotation
-runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). All
-validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+runbook and a CycloneDX SBOM procedure (both in `OPERATIONS.md`). `v0.5.4`
+(2026-07-13): dropped `'unsafe-inline'` from the main CSP `style-src` — the
+46 inline `style=""` across 11 templates moved to utility classes in
+`app.css` (identical declarations, no visual change), leaving `script-src`
+(nonces) and `style-src` (`'self'`) both inline-free; `/django-admin` +
+`/docs` keep `'unsafe-inline'` for framework/CDN styles. Same release adds
+an `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` env override and flips the HSTS
+`includeSubDomains` **default to OFF (opt-in)**, matching Django — a host no
+longer asserts HSTS for a subtree it was not told it owns (`includeSubDomains`
+only ever scopes the emitting host's own subdomains, per RFC 6797, not
+siblings or the parent). On the live `ha-report2` host HSTS is **Caddy-managed
+per-site**; `app.example.com` got `max-age=31536000` (no `includeSubDomains`)
+added to its Caddy block, and the vestigial LAN/VPN ufw allows for the
+loopback-only `18080` were removed. The same release also closes two testing
+gaps — Django **migration reversibility + drift** tests plus the
+`0012` MFA-secret encrypt/decrypt **data-backfill** coverage, and an
+**`aria-live` announcement** pass (global `#a11y-live` region + `announce()`
+for the admin pagination/filter swaps, and `aria-live` on the four admin
+action feedbacks). All validated on the dev server / CI; see the latest
+`docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)
@@ -246,10 +268,24 @@ validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
   stop; login form is reachable) plus admin dialog focus management
   (role=dialog/aria-modal, Tab trapped inside the modal, Escape closes,
   focus restored to the trigger) — `tests/e2e/test_accessibility.py`.
-  Still open: screen-reader announcement audits (`aria-live` coverage)
-- No Django migration tests (apply/rollback of `accounts` migrations in CI).
-  Note: the stack uses **Django migrations only** — there is no Alembic /
-  SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
+  **`aria-live` coverage audited 2026-07-13**: flash messages + maintenance
+  banner (`role=status` in `base.html`) and the MFA / email / sudo JS
+  feedbacks already announce; the admin **pagination/filter swaps were
+  silent** (`aria-busy` only) — added a global `#a11y-live` region +
+  `announce()` in `app.js` so each swap announces its result summary
+  (`tests/test_a11y_live_region.py` + `tests/e2e/test_a11y_announce.py`).
+  The four admin-panel action feedbacks (maintenance / create-user /
+  change- & reset-password, updated by `admin-panel.js`) were likewise not
+  live regions — fixed with `role=status aria-live=polite`. Both verified in
+  a real browser. Deferred by choice: password strength/match hints are not
+  live-announced (would fire on every keystroke)
+- ~~No Django migration tests (apply/rollback in CI).~~ **CLOSED
+  2026-07-13** — `tests/test_migrations.py`: drift (`makemigrations --check`
+  in-suite) + a reverse-to-zero/re-apply round-trip proving every first-party
+  migration (incl. the three `RunPython` data migrations) is reversible. Runs
+  on the shared test DB with `transaction=True` + a `finally` that re-migrates
+  to head. Note: the stack uses **Django migrations only** — there is no
+  Alembic / SQLAlchemy (verified 2026-07-06, see `TECH_EVOLUTION.md`)
 - No visual regression tests
 
 ## Source-of-truth files
@@ -270,7 +306,7 @@ validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/DECISIONS.md` | Architecture decisions (ADR-lite): the durable "why" |
 | `docs/ARCHITECTURE.md` | Technical structure |
 | `docs/FIRST_INSTALL_DJANGO.md` | First install guide |
-| `docs/OPERATIONS.md` | Operational procedures |
+| `docs/OPERATIONS.md` | Operational procedures (starts with "Deployed instance — ground truth": derive server paths/units, never guess) |
 | `docs/SECURITY.md` | Security posture |
 | `docs/THREAT_MODEL.md` | STRIDE threat model |
 | `docs/COMPLIANCE_ASVS_L2_*.md` | ASVS L2 compliance snapshots |

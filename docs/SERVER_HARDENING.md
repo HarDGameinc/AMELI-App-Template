@@ -235,6 +235,80 @@ systemctl status unattended-upgrades 2>/dev/null | head -3
 
 ---
 
+## 9. Hardening a publicly-exposed dev/staging instance ⚙️
+
+A dev/staging box reachable from the public internet over TLS (not just a
+LAN/VPN sandbox) needs the production security posture even though it runs
+`APP_ENV=dev`. The `_IS_DEV_ENV` gate makes several settings *default* to a
+laxer value in dev — but each one has an env override that wins regardless of
+`APP_ENV`. Set these on the instance (in `app.env`) so a public dev host is
+not one config typo away from plaintext cookies or `DEBUG` tracebacks:
+
+| Concern | Env var | Value for a public dev host |
+| --- | --- | --- |
+| Debug tracebacks off | `AMELI_APP_DJANGO_DEBUG` | `false` |
+| Secure (HTTPS-only) cookies | `AMELI_APP_SESSION_COOKIE_SECURE` | `true` |
+| Behind a TLS proxy | `AMELI_APP_SECURE_PROXY_SSL_HEADER` | `X-Forwarded-Proto=https` |
+| Audit-log HMAC | `AMELI_APP_AUDIT_HMAC_KEY` | a real 32-byte key |
+| MFA secret encryption | `AMELI_APP_MFA_ENCRYPTION_KEY` | a real Fernet key |
+| HSTS | `AMELI_APP_HSTS_SECONDS` | `31536000` (see caveat below) — **but if a reverse proxy already sets HSTS, that is the source of truth; see below** |
+
+> `ha-report2` already sets `DEBUG=false`, Secure cookies, the proxy SSL
+> header, and real audit + MFA keys (verified 2026-07-13). HSTS on this host
+> is **managed by Caddy** (per-site), not the app — see the next section.
+
+### Where HSTS lives: app vs. reverse proxy ⚠️
+
+If a TLS-terminating reverse proxy (Caddy, nginx) sits in front and already
+emits `Strict-Transport-Security`, **the proxy is the source of truth** — its
+`header` directive *replaces* whatever the app sends, so the app-side
+`AMELI_APP_HSTS_*` env vars are shadowed and silently do nothing. Check the
+actual served header before assuming the app controls it:
+
+```bash
+curl -sI https://<host>/ | grep -i strict-transport-security
+```
+
+- **App-managed** (no proxy HSTS): use the `AMELI_APP_HSTS_*` env vars above.
+- **Proxy-managed** (e.g. `ha-report2` / Caddy): edit the HSTS line in the
+  proxy's per-site config; leave the app HSTS vars unset.
+
+### The `includeSubDomains` caveat 🔴
+
+`includeSubDomains` extends the HSTS policy to every subdomain **of the host
+that sends it** — for `app.example.com` that is `*.app.example.com`, **not**
+siblings like `other.example.com` and **not** the parent `example.com`. The
+footgun is turning it on for a host that has (or will have) HTTP-only hosts
+beneath it, or submitting to the HSTS **preload** list, which hardcodes the
+whole subtree into browsers. On a leaf host with no subdomains of its own it
+adds scope for no benefit. Enable `includeSubDomains` **only** when the host
+owns and HTTPS-serves every subdomain beneath it.
+
+> Note: a sibling emitting `includeSubDomains` does **not** affect you — e.g.
+> `other.example.com`'s flag covers `*.other.example.com`, never `app.example.com`.
+> The cross-host risk only exists when the header is set on a *parent* domain.
+
+- **App-managed**: `includeSubDomains` defaults **OFF** (opt-in, matching
+  Django). Turn HSTS on, and opt into subdomains only if you own the subtree:
+  ```bash
+  AMELI_APP_HSTS_SECONDS=31536000
+  # AMELI_APP_HSTS_INCLUDE_SUBDOMAINS=true   # ONLY if this host owns *.its-subtree
+  ```
+  The flag is never emitted when HSTS is off, and a non-boolean value fails
+  closed (the app refuses to boot).
+- **Proxy-managed** (Caddy per-site block): omit the flag from the value.
+  ```caddyfile
+  # in the site's block — ONLY this header, so the app's own
+  # Referrer-Policy / X-Frame-Options / CSP still pass through untouched
+  header Strict-Transport-Security "max-age=31536000"
+  ```
+  > **`ha-report2` (2026-07-13):** `app.example.com` (a leaf, no subdomains of
+  > its own) had no HSTS; added the line above to its Caddy site block without
+  > `includeSubDomains`. `other.example.com` keeps its pre-existing `includeSubDomains`
+  > (which only ever scoped `*.other.example.com`, so it never touched app.example.com).
+
+---
+
 ## Appendix — `ha-report2` host status (dev box)
 
 Audit + remediation performed with the operator (Debian 13 "trixie",
@@ -277,14 +351,14 @@ root:<run_group>`.
   enabled it — fixed in-repo (now enabled by every profile) and enabled live
   on the box (`systemctl enable --now …-verify-audit.timer`).
 - ✅ **TLS front (§2) — P2 fully closed**: the app is loopback-only
-  (`127.0.0.1:18080`) and fronted by Caddy at `dev03.ameli.cl:18480` with a
+  (`127.0.0.1:18080`) and fronted by Caddy at `app.example.com:8443` with a
   real wildcard cert (`/etc/ssl/ameli/wildcard-*`, not the internal CA),
   proxying with `X-Forwarded-Proto https`. The app-side config had a silent
   bug — `AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` never
   matched Django's WSGI META key, so `request.is_secure()` stayed False
   behind the TLS. Fixed in-repo (the parser now normalizes the wire name)
   and in `app.env` (canonical value + `SESSION_COOKIE_SECURE=true` +
-  `CSRF_TRUSTED_ORIGINS=https://dev03.ameli.cl:18480`, stale `0.0.0.0` bind
+  `CSRF_TRUSTED_ORIGINS=https://app.example.com:8443`, stale `0.0.0.0` bind
   removed). Verified: HTTPS login works and the browser shows
   `__Host-ameli_csrf` + `Secure` on both cookies (proof `is_secure()` is now
   True).
@@ -302,5 +376,5 @@ root:<run_group>`.
 ### Still pending (not urgent)
 
 - **Vestigial ufw**: the `18080` LAN/VPN allow rules are now moot (18080 is
-  loopback-only; clients reach the app via `dev03.ameli.cl:18480`). Harmless;
+  loopback-only; clients reach the app via `app.example.com:8443`). Harmless;
   clean up when convenient (one rule at a time — see the ufw gotcha above).

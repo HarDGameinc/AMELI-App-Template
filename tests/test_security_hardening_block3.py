@@ -231,6 +231,21 @@ def test_csp_header_carries_a_nonce_in_script_src(client):
 
 
 @pytest.mark.django_db
+def test_csp_style_src_has_no_unsafe_inline(client):
+    """style-src dropped ``'unsafe-inline'`` (2026-07-12): every template
+    inline ``style=""`` attribute was moved to a utility/semantic class in
+    ``static/css/app.css``, so a reflected-markup XSS cannot smuggle styles
+    either. The Google Fonts stylesheet stays allowed via its origin, not
+    via unsafe-inline."""
+    response = client.get("/")
+    csp = response["Content-Security-Policy"]
+    assert "style-src" in csp
+    style_src = csp.split("style-src", 1)[1].split(";", 1)[0]
+    assert "'unsafe-inline'" not in style_src
+    assert "https://fonts.googleapis.com" in style_src
+
+
+@pytest.mark.django_db
 def test_csp_nonce_changes_on_every_request(client):
     """The nonce is per response; two consecutive GETs from the same
     client must observe different values so a captured nonce cannot be

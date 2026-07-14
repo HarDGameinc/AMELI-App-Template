@@ -12,7 +12,7 @@ rest of the app is degraded.
   <div class="panel-header">
     <div>
       <div class="metric-label">Error {{ status_code }}</div>
-      <h1 style="margin:8px 0 6px 0;">{{ title }}</h1>
+      <h1 class="error-title">{{ title }}</h1>
       <p class="muted panel-copy">{{ description }}</p>
     </div>
   </div>
@@ -23,7 +23,7 @@ rest of the app is degraded.
     </span>
   </div>
   {% endif %}
-  <div style="margin-top:18px;">
+  <div class="mt-18">
     <a class="icon-action" href="/">
       <span class="material-symbols-rounded icon-glyph" aria-hidden="true">home</span>
       <span>Volver al inicio</span>
