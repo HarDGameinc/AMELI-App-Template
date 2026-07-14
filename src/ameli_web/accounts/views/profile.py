@@ -25,7 +25,7 @@ from ..forms import (
     ProfilePasswordForm,
     ProfilePreferencesForm,
 )
-from ..permissions import can_access_admin_panel
+from ..permissions import can_access_admin_panel, is_superadmin
 from ..services import (
     delete_avatar,
     paginate_user_sessions,
@@ -231,10 +231,23 @@ def send_profile_test_email_view(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return _json_error(str(exc))
     except Exception as exc:
-        # SMTP/socket/auth errors land here. Surface them so the operator
-        # can debug the email backend without having to dig into the journal.
+        # SMTP/socket/auth errors land here. Surfacing the backend detail is a
+        # deliberate operator affordance (debug the mail backend without
+        # digging into the journal) — but this view is only ``@login_required``,
+        # NOT superadmin-gated, so echoing it to everyone leaked mail-host
+        # names and auth/TLS failures to any authenticated user. Keep the
+        # affordance for superadmins (who already hold full access) and give
+        # everyone else a generic message; the traceback is in the journal
+        # either way. (CodeQL py/stack-trace-exposure, 2026-07-14.)
         logger.exception("test email delivery failed for %s", request.user.username)
-        return _json_error(f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502)
+        if is_superadmin(request.user):
+            return _json_error(
+                f"el SMTP rechazo el envio: {exc.__class__.__name__}: {exc}", status=502
+            )
+        return _json_error(
+            "no pudimos enviar el email de prueba; reintenta en unos minutos",
+            status=502,
+        )
     request.session[PROFILE_TEST_EMAIL_SESSION_KEY] = result["sent_at"]
     return JsonResponse(result)
 
