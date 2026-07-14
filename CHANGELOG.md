@@ -17,6 +17,13 @@ archivos) — edición manual del bloque (el `pip-compile` no corre en Windows
 por `uvloop`; mismo procedimiento que el bump de Django en v0.5.2),
 verificado por CI (`--require-hashes` + `pip-audit`).
 
+### setuptools 82.0.1 → 83.0.0 (PYSEC-2026-3447)
+
+Al re-correr el CI (repo ahora público → Actions gratis), `pip-audit` detectó
+`PYSEC-2026-3447` en `setuptools==82.0.1` (dep de build en
+`requirements-dev.lock`, no en lo que se despliega), fix en **83.0.0**. Bump
+manual del bloque con hashes de PyPI (wheel + sdist).
+
 ### CSP `style-src` sin `'unsafe-inline'` (commit `96f6bec`)
 
 - Los **46 `style=""` inline de 11 templates** pasaron a clases utilitarias

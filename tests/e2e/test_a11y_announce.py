@@ -11,7 +11,10 @@ independent of how much data exists, so the test needs no seeded volume.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
+from playwright.sync_api import expect
 
 pytestmark = pytest.mark.django_db
 
@@ -43,13 +46,10 @@ def test_pagination_swap_announces_to_live_region(page, live_url, e2e_admin):
     select.select_option(other)
 
     # After the swap the region carries the panel's result summary
-    # ("Mostrando …" / "Sin resultados"), proving announce() ran.
-    page.wait_for_function(
-        "document.getElementById('a11y-live').textContent.trim().length > 0",
-        timeout=5000,
-    )
-    announced = page.locator("#a11y-live").inner_text().strip()
-    assert announced, "swap did not announce anything to the live region"
-    assert ("Mostrando" in announced) or ("resultados" in announced), (
-        f"unexpected announcement text: {announced!r}"
+    # ("Mostrando …" / "Sin resultados"), proving announce() ran. Use an
+    # ``expect`` locator assertion (polls via the CDP channel) rather than
+    # ``wait_for_function`` — the latter evaluates a string in the page, which
+    # the app's strict CSP (no ``'unsafe-eval'``) blocks.
+    expect(page.locator("#a11y-live")).to_contain_text(
+        re.compile(r"Mostrando|resultados"), timeout=5000
     )
