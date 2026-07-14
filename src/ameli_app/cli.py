@@ -26,6 +26,15 @@ EXIT_ENV_WRITE_FAILED = 4
 
 
 def _json(data: object) -> None:
+    # ``print`` writes through the console encoding (cp1252 on a default
+    # Windows console), which raises ``UnicodeEncodeError`` on non-ASCII
+    # output — e.g. the emoji in a release note surfaced by ``template-check``.
+    # That crashed the very channel a child app uses to learn about a security
+    # release. Force UTF-8 on a real console; captured / piped streams (tests)
+    # have no ``reconfigure`` and are already text-safe.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="replace")
     print(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False))
 
 
@@ -491,7 +500,17 @@ def _handle_template_check(args: argparse.Namespace) -> int:
         with urllib.request.urlopen(request, timeout=args.timeout) as resp:  # noqa: S310  # nosec B310
             data = json.load(resp)
     except urllib.error.HTTPError as exc:
-        hint = " (private repo or no release yet? set GITHUB_TOKEN)" if exc.code == 404 else ""
+        # 403 with the rate-limit header exhausted is the common failure for an
+        # UNauthenticated caller: GitHub allows only 60 req/hour per IP, so a
+        # cron — or several child apps behind one NAT — hits it fast. Say so,
+        # and point at the fix, instead of an opaque "github api 403".
+        remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+        if exc.code in (403, 429) and remaining == "0":
+            hint = " rate-limited (anonymous GitHub API is 60/hour per IP); set GITHUB_TOKEN to raise the limit"
+        elif exc.code == 404:
+            hint = " (private repo or no release yet? set GITHUB_TOKEN)"
+        else:
+            hint = ""
         _json(
             {"ok": False, "error": f"github api {exc.code}{hint}", "repo": repo, "current": current}
         )

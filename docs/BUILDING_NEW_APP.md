@@ -80,27 +80,38 @@ re-implement.
 
 ---
 
-## 2. What to rename
+## 2. Naming
 
-The template uses two Python packages and a slug. A real fork
-must change all three.
+> ### ⚠️ Renaming the Python packages is OPTIONAL and cosmetic — do NOT start here
+>
+> This section used to say a fork **must** rename the `ameli_app` /
+> `ameli_web` packages. A **dry run on 2026-07-14 — the first time the
+> procedure was actually executed — disproved that**:
+>
+> - A child that **keeps the package names** (only `[project].name` in
+>   `pyproject.toml` changed) passes the **full suite (1118), `ruff`, and
+>   `manage.py check` (0 issues) out of the box**. Nothing functional depends
+>   on the package name — the deployed identity is env-driven (`APP_SLUG`,
+>   `APP_PACKAGE`, `APP_NAME`; see the deploy table below).
+> - Following the old 5-row "rename" table left **~740 references across ~250
+>   files** untouched (every `from ameli_web…`, the tests, and
+>   `DJANGO_SETTINGS_MODULE`), so the app **would not even start**. It was
+>   never a 5-item manual edit.
+> - The old verification tip (`pytest` after rename) **gives a false pass**
+>   when the template is `pip install -e`'d in your venv: imports resolve to
+>   the template's `src/`, not your fork's. It hid the breakage entirely.
+>
+> **Recommended default: keep the package names.** The only naming you need is
+> the env-driven deploy identity below — no source edits.
 
-### Source rename (one-time, manual)
-
-| From | To | Where |
-|---|---|---|
-| `src/ameli_app/` | `src/your_app/` (snake_case) | Python source root for runtime + CLI + workers |
-| `src/ameli_web/` | `src/your_web/` (snake_case) | Django project package: settings, urls, accounts, audit, dashboard |
-| `ameli_app.cli:main` | `your_app.cli:main` | `pyproject.toml` `[project.scripts]` |
-| `ameli-app-template` | `your-app-name` | `pyproject.toml` `[project].name` |
-| `ameli-app` | `your-app` | `[project.scripts]` entry-point key (the CLI command) |
-
-After rename, the CLI command becomes `your-app version` /
-`your-app config-check` / etc.
-
-> **TIP**: do the renames in one commit so the diff is reviewable
-> as a unit. After rename, run `pytest tests/ --ignore=tests/e2e`
-> to confirm no missed import paths.
+**If you still want to rebrand the packages** (purely cosmetic — operator-facing
+`ameli_*` in stack traces), treat it as a scripted refactor, not a manual edit:
+`grep -rl 'ameli_app\|ameli_web' src tests scripts pyproject.toml manage.py`
+then `git mv` the two package dirs and `sed` every reference (packages, all
+`from …` imports, `DJANGO_SETTINGS_MODULE`, `[tool.setuptools.package-data]`,
+the mypy/django-stubs settings-module keys, and the tests). Verify in a **clean
+venv** (`pip install -e .` of the FORK, template uninstalled) or the `pytest`
+pass is meaningless.
 
 ### Deploy / config rename (env-var driven, NO source change)
 
