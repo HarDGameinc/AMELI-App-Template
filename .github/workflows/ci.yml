@@ -270,7 +270,7 @@ jobs:
         # v6 runs on the node24 action runtime — v4 targeted the
         # deprecated node20 (GitHub forces it onto node24 with a
         # warning). checkout@v5 / setup-python@v6 are already on node24.
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
