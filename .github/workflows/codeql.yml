@@ -1,0 +1,73 @@
+name: CodeQL
+
+# Static application security testing (SAST). Free for public repositories.
+#
+# This COMPLEMENTS, not duplicates, the existing gates:
+#   * ruff's ``S`` rules (bandit-equivalent) flag known-insecure patterns
+#     file-by-file;
+#   * ``pip-audit`` gates the dependency supply chain;
+#   * CodeQL does interprocedural **dataflow / taint tracking** across the
+#     whole codebase — the class of bug (untrusted input reaching a sink
+#     through several hops) that a per-file linter structurally cannot see.
+#
+# Results land in the repo's Security tab (code scanning alerts).
+
+on:
+  push:
+    branches: [main, dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main, dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  # Weekly sweep so newly-published CodeQL queries also get run against
+  # existing code, not just against new commits. Offset from the ci.yml
+  # sweep (06:00) so the two do not contend.
+  schedule:
+    - cron: '30 6 * * 1'   # Mondays 06:30 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload the SARIF results
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # ``python`` covers src/ + tests/; ``javascript-typescript`` covers the
+        # hand-written vanilla JS in src/ameli_app/static/js/ (there is no
+        # bundler — see DECISIONS.md #2).
+        language: [python, javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Interpreted languages need no compilation step.
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+          # ``security-extended`` widens the default security suite without
+          # pulling in the ``quality`` queries (style nits that would drown
+          # the real findings). Widen to ``security-and-quality`` later if the
+          # signal-to-noise holds.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
