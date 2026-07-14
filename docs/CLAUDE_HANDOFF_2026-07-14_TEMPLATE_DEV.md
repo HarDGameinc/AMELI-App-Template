@@ -118,6 +118,48 @@ es IP-allowlisted; el resto son asserts de test). **Security tab: 0 abiertas.**
 
 Suite **1118 passed / 58 skipped**, ruff limpio.
 
+### 3.7. Release de seguridad v0.5.5 (`57ba3c0`) + server sync
+
+Cortado y promovido **v0.5.5-django** (bump ritual: VERSION+pyproject+
+CHANGELOG+AGENTS) con el fix de MFA de §3.6 como headline. Validado en server
+(`manage.py check` 0 issues, arranque limpio, `/health` OK), PR #5 **CI 8/8
+verde incluido el E2E de email-MFA** (que ejercita el flujo con el hash
+keyeado nuevo), merge commit + release con **nota de seguridad** para apps
+hijas (per `DECISIONS.md #7`). `main` = `v0.5.5-django`; server pulleado y
+corriendo v0.5.5.
+
+### 3.8. Dependabot encarrilado (`cd7c0f4`)
+
+Dependabot abrio sus primeros 3 PRs (bumps de actions) — todos verdes 11/11
+pero **apuntando a `main`** (saltea el flujo). Aplicados los bumps en `dev`
+(checkout v5→v7, codeql-action v3→v4, setup-node v6→v7) + `target-branch: dev`
+en `dependabot.yml` para que futuros PRs sigan la promocion. PRs #6/#7/#8
+cerrados como superseded.
+
+### 3.9. Dry-run "build a child app" — 3 bugs reales (`2bfe6ad`)
+
+**El camino que justifica el template nunca se habia ejecutado.** Dry-run
+completo (app hija en scratch, siguiendo `BUILDING_NEW_APP.md`):
+- **§2 estaba mal**: decia que el rename de paquetes `ameli_app`/`ameli_web`
+  era obligatorio (tabla de 5 filas). Realidad: **conservar los nombres
+  funciona out-of-the-box** (1118 tests + ruff + `check` 0 issues); seguir la
+  tabla deja **~740 refs rotas en ~250 archivos** y la app **ni arranca**. Y
+  el tip de verificacion (`pytest` post-rename) da **falso positivo** si el
+  template esta `pip install -e` en el venv (caimos en la trampa). Reencuadrado:
+  keep-names = default; rename = opcional/cosmetico, refactor scripteado en
+  venv limpio.
+- **`cli._json()` crasheaba** con output no-ASCII (`print` + consola cp1252) →
+  `UnicodeEncodeError`. **Ironia**: el 🔴 de nuestras notas de v0.5.5 rompia
+  `template-check`, la herramienta con la que una hija se entera de esa misma
+  nota. Fix: reconfigure UTF-8.
+- **`template-check`** daba `github api 403` opaco al ratelimitear (anon =
+  60/h por IP). Fix: detecta `X-RateLimit-Remaining: 0` → mensaje accionable
+  (set `GITHUB_TOKEN`).
+- El **diseño del update-channel es correcto** (con token: reporta current/
+  latest/status/URL/excerpt). Solo los bordes estaban rotos.
+
++2 tests de regresion. Suite **1120 passed**, ruff limpio.
+
 ## §4. Pendiente / proximos pasos
 
 - **Sync del server: HECHO.** `ha-report2` pulleado a v0.5.4 (branch `dev`,
@@ -128,8 +170,16 @@ Suite **1118 passed / 58 skipped**, ruff limpio.
   upstream → `git pull` caia al HEAD del remoto (`main`) y aterrizo en el merge
   commit `a4db2af`; se corrigio con `git branch --set-upstream-to=origin/dev
   dev` (+ se borro un `main` local espurio). Ahora `dev` trackea `origin/dev`.
-- **Historial git**: quedó con el ground-truth viejo; decision de aceptar (no
-  purgar). Si en el futuro se quiere purgar → `git filter-repo` + force-push
-  (destructivo, coordinar).
+- **Sync del server a v0.5.5: HECHO** (§3.7). Pendiente: pullear
+  `2bfe6ad` (fixes del dry-run) — todo docs/CLI, sin efecto runtime; puede
+  esperar a la proxima release.
+- **Toggles del repo (tuyos, no los toca el agente):** al cierre la API
+  reportaba `secret_scanning`, `push_protection` y `dependabot_security_updates`
+  = **disabled**. Activar en Settings → Code security: secret scanning + push
+  protection + **Dependabot alerts** (NO las *security updates* automaticas —
+  chocan con el lockfile hash-pinneado) + Private Vulnerability Reporting.
+- **Historial git**: ground-truth viejo; decision = aceptar (no purgar).
 - **Backlog** (bajo valor): jsdom DOM-wiring, visual regression, Model C
-  update-channel, Django LTS 6.2 (~dic-2026).
+  update-channel (`ameli-core` paquete), Django LTS 6.2 (~dic-2026).
+- **No hay apps hijas todavia.** El camino de fork quedo **probado y
+  corregido** (§3.9) — la primera hija real deberia arrancar sin sorpresas.
