@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.5-django, 2026-07-14)
+## State of the project (v0.5.6-django, 2026-07-15)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -252,8 +252,15 @@ the DB) — the same reasoning that already encrypts the TOTP secret at rest.
 Same release stops three handlers echoing raw SMTP exceptions to unprivileged
 (and pre-MFA) callers. `pip` is deliberately excluded from Dependabot: the
 hash-pinned `requirements*.lock` are already audited more precisely by
-`pip-audit` on every push and on the weekly cron. All validated on the dev
-server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+`pip-audit` on every push and on the weekly cron. `v0.5.6` (2026-07-15) is a
+**maintenance** release (no app-runtime change): the first real dry run of the
+"build a child app" path corrected `BUILDING_NEW_APP §2` (keeping the package
+names is the recommended default and works out of the box — the old "must
+rename" procedure left ~740 broken references and its verification step gave a
+false pass) and fixed two `template-check` CLI bugs it surfaced (a non-ASCII
+`UnicodeEncodeError` that broke the security-note channel, and an opaque
+rate-limit error), plus the CI action bumps and pointing Dependabot at `dev`.
+All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

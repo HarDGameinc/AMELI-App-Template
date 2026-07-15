@@ -102,3 +102,40 @@ def test_template_check_404_hints_token(monkeypatch, capsys):
     assert rc == 2
     assert "404" in out["error"]
     assert "GITHUB_TOKEN" in out["error"]
+
+
+def test_template_check_403_rate_limit_is_actionable(monkeypatch, capsys):
+    """An anonymous caller gets 60 req/hour per IP; when exhausted GitHub
+    returns 403 with X-RateLimit-Remaining: 0. The message must name the cause
+    and the fix, not just echo an opaque 'github api 403'.
+    """
+    def _raise(*_a, **_k):
+        raise urllib.error.HTTPError(
+            "url", 403, "Forbidden", {"X-RateLimit-Remaining": "0"}, None
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise)
+    rc = cli._handle_template_check(_args())
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 2
+    assert "rate-limited" in out["error"]
+    assert "GITHUB_TOKEN" in out["error"]
+
+
+def test_template_check_survives_non_ascii_release_notes(monkeypatch, capsys):
+    """Regression: a release note with a non-ASCII char (the emoji in a
+    security note) must not crash ``_json`` on a non-UTF-8 console. This is the
+    channel a child app uses to LEARN about a security release, so a crash here
+    hides exactly the update it is meant to surface.
+    """
+    monkeypatch.setenv("AMELI_APP_TEMPLATE_LINEAGE", "v1.0.0-django")
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *a, **k: _FakeResp(
+            {"tag_name": "v1.0.0-django", "html_url": "u", "body": "🔴 SECURITY — actualizá"}
+        ),
+    )
+    rc = cli._handle_template_check(_args())
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert "🔴" in out["notes_excerpt"]

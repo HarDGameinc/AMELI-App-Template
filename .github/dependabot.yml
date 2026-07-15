@@ -27,6 +27,12 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    # Open PRs against ``dev``, not the default branch (``main``). ``main`` is
+    # the release line and advances only by a promotion PR from ``dev`` with
+    # green CI (see RELEASE.md); a Dependabot PR straight to ``main`` would
+    # bypass that flow and diverge the two branches. Landing on ``dev`` lets
+    # the bump ride the normal promotion.
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
