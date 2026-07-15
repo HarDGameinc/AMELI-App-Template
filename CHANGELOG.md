@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.5.6-django — 2026-07-15 (mantenimiento: camino de fork + tooling de CI)
+
+Release de mantenimiento — **sin cambios de runtime de la app** (el código del
+servicio es idéntico a v0.5.5). Corrige el camino de "crear una app hija" y
+pone al día el tooling de CI. Validado en server (`template-check` corre limpio
+en la caja; `/health` `v0.5.5-django` OPERATIVO, servicio intacto).
+
+### Camino de fork — corregido (primer dry-run real, ver v0.5.5 §3.9)
+
+El camino que justifica el template (`BUILDING_NEW_APP.md`) nunca se había
+ejecutado. Un dry-run completo destapó tres bugs reales:
+
+- **`BUILDING_NEW_APP §2`**: decía que renombrar los paquetes `ameli_app`/
+  `ameli_web` era **obligatorio** (tabla de 5 filas). Falso: **conservar los
+  nombres funciona out-of-the-box** (suite completa + ruff + `manage.py check`
+  0 issues) porque la identidad desplegada es env-driven (`APP_SLUG`/
+  `APP_PACKAGE`/`APP_NAME`). Seguir la tabla dejaba **~740 referencias rotas en
+  ~250 archivos** (imports, `DJANGO_SETTINGS_MODULE`, tests) → la app **ni
+  arrancaba**. Y el tip de verificación (`pytest` post-rename) daba **falso
+  positivo** con el template instalado editable en el venv. Reencuadrado:
+  keep-names = default recomendado; el rename es opcional/cosmético y, si se
+  hace, es un refactor scripteado verificado en venv limpio.
+- **`cli._json()` crasheaba con salida no-ASCII** (`print` sobre consola
+  cp1252 → `UnicodeEncodeError`). Ese es el canal (`template-check`) con el que
+  una app hija se entera de una security release — y el 🔴 de las notas de
+  v0.5.5 lo rompía. Fix: reconfigura stdout a UTF-8 (protegido para streams
+  capturados/piped).
+- **`template-check` daba `github api 403` opaco** al agotar el rate limit
+  anónimo de GitHub (60/hora por IP). Fix: detecta `X-RateLimit-Remaining: 0`
+  y da un mensaje accionable (setear `GITHUB_TOKEN`).
+
+Tests de regresión para el rate-limit y el camino no-ASCII.
+
+### Tooling de CI
+
+- Bump de actions pinneadas: `actions/checkout` v5→v7, `github/codeql-action`
+  v3→v4, `actions/setup-node` v6→v7 (todas verificadas verdes por Dependabot).
+- **Dependabot ahora apunta a `dev`** (`target-branch: dev`), no a `main`, para
+  que los bumps de deps sigan la promoción normal en vez de abrir contra la
+  rama de release.
+
 ## v0.5.5-django — 2026-07-14 (SECURITY: hash del código MFA por email + info disclosure SMTP)
 
 > ### 🔴 NOTA DE SEGURIDAD — acción requerida para apps hijas
