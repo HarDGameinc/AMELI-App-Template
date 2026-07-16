@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
+
+Release de mantenimiento — **sin cambios de runtime de la app** (`src/` y el
+path systemd/prod intactos; solo el path Docker/dev + line-endings). El primer
+dry-run real de Docker de la **app hija (Starlink)** encontró 5 bugs, todos
+verificados y ahora corregidos en el template para que la flota los herede.
+
+### Fixes (handoff 2026-07-15 §5)
+
+1. **`docker-compose.yml`: env vars con nombres inertes.** El código lee
+   `AMELI_APP_DJANGO_{SECRET_KEY,DEBUG,ALLOWED_HOSTS}` (`config.py`/`base.py`);
+   el compose seteaba las formas sin el infijo `DJANGO_` → inertes → caía al
+   `SECRET_KEY` default inseguro + `DEBUG=False`. Renombradas en `api` +
+   `notifier`, más `APP_ENV=dev` y una `AMELI_APP_MFA_ENCRYPTION_KEY` (Fernet dev).
+2. **`Dockerfile`: `ModuleNotFoundError: ameli_web`.** El `.pth` del editable
+   apuntaba a `/build/src` (no existe en runtime). Fix: `PYTHONPATH=/app/src`.
+3. **`Dockerfile`: instalaba rangos, no el lock.** `pip install -r
+   requirements.txt` (podía traer Django 6 vs el `5.2.16` pinneado) y sin
+   dev-deps. Ahora `--require-hashes -r requirements.lock` (paridad prod,
+   ASVS V14.2.3) + un target **`dev`** que agrega `requirements-dev.lock` para
+   `docker compose run --rm api pytest`; la imagen `runtime`/prod queda lean.
+4. **`Dockerfile`: no copiaba `VERSION`** → `/health` reportaba `v0.0.0-dev`.
+   Fix: `COPY VERSION ./VERSION`.
+5. **Falta `.gitattributes`** → un clone Windows con `autocrlf=true` checkouteaba
+   los `.sh` en CRLF y rompía `source _common.sh` en contenedores Linux.
+   Agregado (`* text=auto eol=lf`; `.ps1/.bat/.cmd` CRLF; binarios incl. `*.gif`).
+
+Extras: corregido el comentario del compose (`.venv/bin/ameli-app` →
+`ameli-app`; el venv vive en `/opt/venv`). **+6 tests de regresión** en
+`test_docker_stack.py` fijan cada fix contra drift. Suite **1126 passed**, CI verde.
+
 ## v0.5.6-django — 2026-07-15 (mantenimiento: camino de fork + tooling de CI)
 
 Release de mantenimiento — **sin cambios de runtime de la app** (el código del
