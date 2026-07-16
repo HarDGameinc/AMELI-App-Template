@@ -74,6 +74,11 @@ the Linux CI/deploy:
   `AMELI_APP_DJANGO_SECRET_KEY`, `DATABASE_URL=""`, `AMELI_APP_SQLITE_PATH`,
   `APP_CONFIG`, `DJANGO_SETTINGS_MODULE=ameli_web.settings`. The pytest
   suite sets sane defaults via `tests/conftest.py`.
+- **Need Linux parity** (the win32-skipped shell/systemd tests, the
+  hash-pinned lock with `uvloop`, or a faster Docker build)? Use **WSL2**,
+  not Docker-in-the-loop — clone into the Linux filesystem (`~/…`, not
+  `/mnt/c/…`) and make a venv from `requirements.lock`. Rationale +
+  the tiered Windows/WSL2/Docker strategy: [`DECISIONS.md`](docs/DECISIONS.md) #8.
 
 ## Releases
 

@@ -110,3 +110,40 @@ entry and note it.
   fixes must ship as **tagged releases with a security note** so a child
   operator can triage fast. Revisit → **model C** once the fleet is large
   enough that manual merges cost more than the packaging refactor.
+
+## 8. Dev-environment tiers — Windows daily, WSL2 for parity, Docker out of the loop
+
+- **Context**: the dev workstation is **native Windows**, which has only
+  partial Linux parity: `uvloop` is POSIX-only (so the local venv installs
+  from the *ranges*, pulling Django 6 / Pillow 12 locally vs the pinned
+  `5.2.16` that ships), ~18 shell/systemd/backup tests `skipif(win32)`, and
+  mypy's compiled DLL is blocked by Windows App Control. Docker Desktop was
+  weighed for full parity but is **expensive in an agent-driven loop**: on
+  Windows it already runs a WSL2 VM *plus* an image layer, C-extension
+  wheels rebuild on image changes, and cross-filesystem bind mounts
+  (Windows ↔ container, the `:cached` hint) are slow — rebuilds burn
+  time/plan budget the moment Docker enters the inner loop.
+- **Decision**: a **tiered** dev environment, not one tool for everything.
+  1. **Windows direct = the default daily loop** (app `src/` code + tests).
+     Cheapest and fastest; the Linux CI (full matrix + e2e + `test-postgres`)
+     is authoritative for the win32-skipped tests and lock/`uvloop` parity.
+  2. **WSL2 (native Linux) = Linux parity on demand** — run the shell/systemd
+     tests, install the hash-pinned lock with `uvloop`, or build Docker far
+     faster than Docker Desktop's Windows path. **Clone into the Linux
+     filesystem (`~/…`), never `/mnt/c/…`** (the cross-fs I/O is the same
+     slowdown as a bind mount); keep it in sync via plain `git pull`.
+  3. **Docker stays OUT of the routine/agent loop** — it validates the
+     *Docker artifacts themselves*, not day-to-day app work.
+     `test_docker_stack.py` (parses the manifests, no build) + CI are the
+     routine guard; the Dockerfile/compose get an end-to-end build only
+     occasionally/manually (e.g. the v0.5.7 §5 fixes were validated this way,
+     without a local build).
+- **Consequences**: the Windows dep/skip drift is **accepted** — the suite is
+  green on both stacks and CI is the source of truth for Linux-only paths.
+  Agent sessions should **not** spin up Docker in the inner loop; reserve
+  builds for artifact validation. WSL2 is the recommended second environment
+  when parity is needed (setup: `wsl --install`, then a Linux-fs clone +
+  venv from `requirements.lock`); see `CONTRIBUTING.md` "Windows notes" and
+  the `windows-local-dev-env` memory. Revisit if the primary dev machine
+  moves to Linux — then native/WSL2 becomes the default and the Windows
+  caveats disappear.
