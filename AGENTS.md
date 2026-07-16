@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.6-django, 2026-07-15)
+## State of the project (v0.5.7-django, 2026-07-16)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -260,6 +260,17 @@ rename" procedure left ~740 broken references and its verification step gave a
 false pass) and fixed two `template-check` CLI bugs it surfaced (a non-ASCII
 `UnicodeEncodeError` that broke the security-note channel, and an opaque
 rate-limit error), plus the CI action bumps and pointing Dependabot at `dev`.
+`v0.5.7` (2026-07-16) is a **maintenance** release fixing the **dev
+Docker/compose path** (no app-runtime change; `src/` and the systemd/prod
+deploy untouched): the child-app Docker dry-run surfaced 5 bugs — compose env
+vars used inert un-prefixed names (falling back to the insecure default
+`SECRET_KEY` + `DEBUG=False`), the editable-install `.pth` broke `import
+ameli_web` at runtime (fixed with `PYTHONPATH=/app/src`), the image installed
+the loose `requirements.txt` ranges instead of the hash-pinned lock (now
+`--require-hashes -r requirements.lock` + a `dev` build target for in-container
+pytest), `VERSION` was not copied (so `/health` read `v0.0.0-dev`), and a
+missing `.gitattributes` let a Windows autocrlf clone break `.sh` in Linux
+containers. +6 regression tests in `test_docker_stack.py` guard the fixes.
 All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
