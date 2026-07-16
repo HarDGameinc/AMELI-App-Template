@@ -2,7 +2,7 @@
 #
 #   docker compose up         — api + notifier + postgres
 #   docker compose run --rm api pytest     — run the suite in-container
-#   docker compose exec api .venv/bin/ameli-app verify-audit
+#   docker compose exec api ameli-app verify-audit
 #
 # This is intentionally NOT a production manifest — no TLS termination,
 # no resource limits, the SECRET_KEY is a placeholder, and the
@@ -29,15 +29,29 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # ``dev`` target = runtime image + dev-deps (pytest et al.) so
+      # ``docker compose run --rm api pytest`` works. A prod build uses
+      # ``--target runtime`` for a lean image without the test toolchain.
+      target: dev
     image: ameli-app-template:dev
     depends_on:
       db:
         condition: service_healthy
     environment:
       DJANGO_SETTINGS_MODULE: ameli_web.settings
-      AMELI_APP_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
-      AMELI_APP_ALLOWED_HOSTS: "*"
-      AMELI_APP_DEBUG: "true"
+      # APP_ENV=dev relaxes the prod boot guards (SECRET_KEY/DEBUG/hosts,
+      # MFA key). app.yaml.example already sets environment: dev, but pin
+      # it here too so the stack does not depend on file discovery order.
+      APP_ENV: dev
+      # The code reads the AMELI_APP_DJANGO_* names (config.py, base.py);
+      # the un-prefixed forms are inert and silently fall back to the
+      # insecure default SECRET_KEY + DEBUG=False.
+      AMELI_APP_DJANGO_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
+      AMELI_APP_DJANGO_ALLOWED_HOSTS: "*"
+      AMELI_APP_DJANGO_DEBUG: "true"
+      # Dev-only Fernet key (required outside dev; harmless placeholder here
+      # so TOTP enrol/decrypt works if the stack is run with APP_ENV!=dev).
+      AMELI_APP_MFA_ENCRYPTION_KEY: vhviIz7_eX7DP2palWYXf7sr6837UcAhTiLVbk9Rwuk=
       AMELI_APP_TRUSTED_PROXIES: "127.0.0.1"
       AMELI_APP_AUDIT_HMAC_KEY: dev-audit-key
       DATABASE_URL: postgres://ameli:ameli_dev_only@db:5432/ameli
@@ -65,8 +79,10 @@ services:
         condition: service_healthy
     environment:
       DJANGO_SETTINGS_MODULE: ameli_web.settings
-      AMELI_APP_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
-      AMELI_APP_ALLOWED_HOSTS: "*"
+      APP_ENV: dev
+      AMELI_APP_DJANGO_SECRET_KEY: dev-secret-key-do-not-use-in-prod-xxxxxxxxxxxx
+      AMELI_APP_DJANGO_ALLOWED_HOSTS: "*"
+      AMELI_APP_MFA_ENCRYPTION_KEY: vhviIz7_eX7DP2palWYXf7sr6837UcAhTiLVbk9Rwuk=
       AMELI_APP_TRUSTED_PROXIES: "127.0.0.1"
       AMELI_APP_AUDIT_HMAC_KEY: dev-audit-key
       DATABASE_URL: postgres://ameli:ameli_dev_only@db:5432/ameli

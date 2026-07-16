@@ -82,3 +82,60 @@ def test_dockerignore_excludes_volatile_paths():
     text = DOCKERIGNORE.read_text(encoding="utf-8")
     for path in (".git", ".venv", "__pycache__", "*.sqlite3"):
         assert path in text, f".dockerignore must exclude {path}"
+
+
+# ---- regression guards for the 2026-07-15 dry-run fixes (handoff §5) ----
+
+
+def test_compose_uses_django_prefixed_env_names():
+    """The code reads AMELI_APP_DJANGO_{SECRET_KEY,DEBUG,ALLOWED_HOSTS}
+    (config.py / base.py). The un-prefixed names are inert and silently
+    fall back to the insecure default SECRET_KEY + DEBUG=False."""
+    data = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    for svc in ("api", "notifier"):
+        env = data["services"][svc]["environment"]
+        assert "AMELI_APP_DJANGO_SECRET_KEY" in env, svc
+        assert "AMELI_APP_SECRET_KEY" not in env, f"{svc}: inert un-prefixed name"
+        assert env.get("APP_ENV") == "dev", svc
+        assert "AMELI_APP_MFA_ENCRYPTION_KEY" in env, svc
+
+
+def test_dockerfile_installs_hash_pinned_lock():
+    """Parity with the prod deploy (ASVS V14.2.3): the image installs the
+    hash-pinned lock, not the loose ``requirements.txt`` ranges (which could
+    pull a different Django than the lock pins)."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "--require-hashes -r requirements.lock" in text
+    assert "pip install -r requirements.txt" not in text
+
+
+def test_dockerfile_sets_pythonpath_to_app_src():
+    """The editable install's .pth points at the builder's /build/src, which
+    does not exist in the runtime image; PYTHONPATH=/app/src makes
+    ``import ameli_web`` resolve instead of ModuleNotFoundError."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert 'PYTHONPATH="/app/src"' in text
+
+
+def test_dockerfile_copies_version_file():
+    """version.py resolves ``parents[2]/VERSION``; without copying it the
+    image reports ``v0.0.0-dev`` at /health."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "COPY VERSION" in text
+
+
+def test_dockerfile_has_dev_target_for_tests():
+    """A ``dev`` target layers the dev-deps (pytest) on top of runtime so
+    ``docker compose run --rm api pytest`` works without bloating prod."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "AS dev" in text
+    data = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    assert data["services"]["api"]["build"].get("target") == "dev"
+
+
+def test_gitattributes_forces_lf_on_shell_scripts():
+    """A Windows clone with autocrlf=true otherwise checks out *.sh with
+    CRLF, breaking ``source _common.sh`` inside Linux containers."""
+    ga = ROOT / ".gitattributes"
+    assert ga.exists(), ".gitattributes must exist"
+    assert "eol=lf" in ga.read_text(encoding="utf-8")

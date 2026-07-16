@@ -1,0 +1,26 @@
+# Normalize line endings so shell scripts stay LF on every platform.
+#
+# Without this, a Windows clone with the default ``core.autocrlf=true``
+# checks out ``*.sh`` with CRLF, and bash then fails to source
+# ``scripts/_common.sh`` inside Linux/containers (``$'\r': command not
+# found``). The repo blobs are already LF; ``eol=lf`` pins that on
+# checkout regardless of the client's autocrlf setting.
+
+# Default: let git decide text vs binary, but force LF on checkout for text.
+* text=auto eol=lf
+
+# Windows-only scripts must stay CRLF or cmd/PowerShell mis-parse them.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never touch line endings.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.svg  text eol=lf
+*.woff binary
+*.woff2 binary
+*.pdf  binary
+*.sqlite3 binary
