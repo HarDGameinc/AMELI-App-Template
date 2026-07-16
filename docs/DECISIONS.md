@@ -142,8 +142,13 @@ entry and note it.
   green on both stacks and CI is the source of truth for Linux-only paths.
   Agent sessions should **not** spin up Docker in the inner loop; reserve
   builds for artifact validation. WSL2 is the recommended second environment
-  when parity is needed (setup: `wsl --install`, then a Linux-fs clone +
-  venv from `requirements.lock`); see `CONTRIBUTING.md` "Windows notes" and
-  the `windows-local-dev-env` memory. Revisit if the primary dev machine
+  when parity is needed (setup: `wsl --install -d Ubuntu-24.04`, a Linux-fs
+  clone, then a venv from **both** locks — `requirements.lock` (runtime:
+  `uvicorn[standard]`, `uvloop`, …) **and** `requirements-dev.lock` (tooling:
+  pytest, ruff, mypy, …). They are **complementary, not superset/subset**;
+  `django` appears in both only because `pytest-django` pulls it). Verified
+  2026-07-16: the Linux suite runs **1156 passed / 28 skipped** vs Windows'
+  1126 / 58 — the ~30 extra are the shell/systemd/backup tests win32 skips.
+  See `CONTRIBUTING.md` "Windows notes" and the `windows-local-dev-env` memory. Revisit if the primary dev machine
   moves to Linux — then native/WSL2 becomes the default and the Windows
   caveats disappear.
