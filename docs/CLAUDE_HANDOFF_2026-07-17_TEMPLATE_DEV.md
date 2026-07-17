@@ -75,6 +75,26 @@ Referencias actualizadas:
 - `AGENTS.md` → indice de docs (entre SECURITY.md y THREAT_MODEL.md).
 - `CHANGELOG.md` — seccion `## Unreleased (dev)`.
 
+### 3.2. Corte v0.5.8-django (`af540a4`, PR #11)
+
+Elegido por el operador tras cerrar PRIVACY.md: **tagear** el bundle de docs
+para que la hija Starlink lo herede desde un tag limpio, en vez de esperar
+al proximo release funcional.
+
+Contenido del release (6 commits en `dev` desde v0.5.7):
+- `dd69c2f` PRIVACY.md
+- `b1e0649` handoff (cierre 07-16 + apertura 07-17)
+- `a5ccf3d` DECISIONS #8 — Windows/WSL2/Docker
+- `88700d3` two-locks correction (Dockerfile comment + DECISIONS #8 +
+  CONTRIBUTING)
+- `9ab1202` handoff 07-16 v0.5.7
+
+Ritual: bump 4 archivos (VERSION + pyproject + CHANGELOG + AGENTS state
+line). `chore(release): af540a4`. PR #11 abierto contra `main`.
+**No requiere validacion en server** (cero cambio de runtime prod, como
+v0.5.7). CI dispara porque `VERSION` y `pyproject.toml` estan fuera de
+`paths-ignore` (comportamiento intencional del `RELEASE.md`).
+
 ## §4. Decisiones tomadas
 
 - **PRIVACY.md documenta lo existente, no agrega runtime.** Nada en `src/`
@@ -84,6 +104,10 @@ Referencias actualizadas:
   porque el bucket original la marcaba como "operator-per-deploy".
 - **Audit NO cascade-borrado por default.** Trade-off explicito en §8 del
   documento (integridad de cadena vs erasure completo).
+- **Cortar v0.5.8 solo para docs.** Justificado porque la hija Starlink
+  quiere heredar PRIVACY + DECISIONS #8 + two-locks desde un tag limpio;
+  esperar al proximo release funcional obligaria a la hija a cherry-pickear
+  varios commits sueltos.
 
 ## §5. Metricas al cierre
 
