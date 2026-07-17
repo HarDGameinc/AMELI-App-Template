@@ -77,6 +77,51 @@ test-postgres + CodeQL + pip-audit), merge commit `216a6e7` + tag/release. Se le
 paso al operador un **prompt autocontenido** para que la sesion de la hija aplique
 u obtenga los fixes.
 
+### 3.5. DECISIONS #8 — estrategia de entorno de dev (`a5ccf3d`)
+
+A raiz de la pregunta del operador ("Docker consume mucho del plan, ¿directo en
+Windows, Windows+Docker, o VM Linux?"), quedo formalizada en `DECISIONS.md` #8
+la **estrategia por capas**: **Windows directo** es el loop diario por defecto
+(mas barato/rapido; CI Linux respalda lo que win32 skipea); **WSL2** para
+paridad Linux on-demand (tests shell/systemd, lock hash-pinneado con `uvloop`,
+builds Docker mas rapidos — clonar en filesystem Linux, no en `/mnt/c`); **Docker
+FUERA del loop del agente** (`test_docker_stack.py` + CI son el guard de
+rutina; builds ocasionales/manuales para validar los artefactos). Puntero desde
+"Windows notes" de `CONTRIBUTING.md`. No se duplico en memoria: la decision
+durable vive en el repo.
+
+### 3.6. Setup WSL2 + correccion two-locks (`88700d3`)
+
+Instalado **Ubuntu 24.04.4 LTS** (WSL v2.7, kernel 6.18) via `wsl --install
+-d Ubuntu-24.04 --no-launch` (evita el prompt de crear usuario). Usuario
+`hardg` (uid 1000, sudo passwordless, sin contrasena — no se manejaron
+credenciales), default en `/etc/wsl.conf`. Repo clonado a **filesystem Linux**
+(`/home/hardg/ameli-app-template`) desde `/mnt/c/...`, con `origin` apuntado
+al HTTPS publico. Venv desde el lock con `--require-hashes`; **paridad real
+verificada**: `uvloop==0.22.1` (imposible en Windows) + `django==5.2.16` (el
+pinneado que shipea, no el 6.x que Windows saca de los rangos). El `file`
+sobre `scripts/_common.sh` confirmo **LF** (fix #5 validado end-to-end en un
+checkout Linux real).
+
+**Hallazgo importante en el camino:** los dos locks son **complementarios,
+no superset/subset** (yo habia inferido superset). `requirements.lock` trae
+el runtime (`uvicorn[standard]`, `uvloop`, `httptools`); `requirements-dev.
+lock` trae el tooling (pytest/ruff/mypy/pip-audit); **`django` esta en ambos
+solo porque `pytest-django` lo arrastra** — de ahi la confusion. Un env dev
+completo necesita **ambos**. Se corrigio: comentario del `Dockerfile` (el
+*comportamiento* siempre fue correcto — el target `dev` hereda de `builder`,
+asi que ambos locks quedan en la imagen), `DECISIONS.md` #8 y `CONTRIBUTING.
+md` con el procedimiento correcto y numeros medidos.
+
+**Suite completa en WSL2: `1156 passed / 28 skipped`** — 30 tests mas que en
+Windows (1126/58): los shell/systemd/backup que win32 skipea, ahora todos
+verdes en Linux nativo.
+
+Prompt de adopcion para la app hija Starlink entregado al operador (WSL2 ya
+esta machine-wide → la hija solo hace su propio clone Linux-fs y aplica el
+mismo procedimiento de ambos locks; incluye el gotcha two-locks para
+ahorrarles el mismo tropiezo).
+
 ## §4. Decisiones tomadas
 
 - **Docker #3 = target `dev` separado** (no solo corregir el comentario): el
@@ -87,13 +132,22 @@ u obtenga los fixes.
   avatares acepta `image/gif`).
 - **v0.5.7 no requiere validacion en server ni redeploy**: cero cambio de runtime
   de prod (solo path Docker/dev). SBOM omitido (deps sin cambio vs v0.5.6).
+- **DECISIONS #8 — Windows/WSL2/Docker por capas** (ver §3.5). Trade-off aceptado:
+  el drift de Windows (Django 6, ~30 tests skipeados) queda cubierto por CI Linux
+  como fuente de verdad; agentes no meten Docker en el inner loop.
+- **Ubuntu 24.04 LTS como distro WSL** (no 22.04 ni 26.04): Python 3.12 default,
+  matchea el `PYTHON_VERSION=3.12` del Dockerfile.
 
 ## §5. Metricas al cierre
 
-- Tests: `1120 → 1126` (+6 regresion Docker). 58 skipped (win32).
+- Tests (Windows): `1120 → 1126` (+6 regresion Docker). 58 skipped (win32).
+- Tests (**WSL2 nuevo**): **1156 passed / 28 skipped** — 30 tests mas que Windows
+  (shell/systemd/backup, ahora corriendo en Linux nativo).
 - CI del PR: **green** (full matrix + E2E + test-postgres + CodeQL + pip-audit).
 - Migraciones: `+0`. Deps: `unchanged`. Cambio de runtime prod: `ninguno`.
 - ASVS L2: `unchanged` (151 PASS).
+- **Entornos de dev activos**: Windows nativo (loop diario) + WSL2 Ubuntu 24.04
+  (paridad Linux); Docker fuera del loop.
 
 ## §6. Hallazgos / findings
 
@@ -118,6 +172,11 @@ u obtenga los fixes.
 **8a. Estado del servidor `ha-report2`.** En **v0.5.6-django**, `active`. v0.5.7
 **no requiere redeploy** (cero runtime prod); `/health` sube a v0.5.7 en el
 proximo `git pull` sin urgencia.
+
+**8a-bis. Entorno WSL2 en el workstation.** Ubuntu 24.04 LTS operativo,
+`/home/hardg/ameli-app-template` (branch `dev`, HEAD `88700d3`, venv desde
+ambos locks, uvloop presente, suite 1156/28). Entrar con `wsl -d Ubuntu-24.04`
+(o solo `wsl`, es default); sync por `git pull` normal.
 
 **8b. Orden recomendado.**
 1. Si retomas la hija: usar el prompt entregado (revisar diff → copiar los 3
