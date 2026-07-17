@@ -84,8 +84,6 @@ las herede juntas.
 
 ## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 
-## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
-
 Release de mantenimiento — **sin cambios de runtime de la app** (`src/` y el
 path systemd/prod intactos; solo el path Docker/dev + line-endings). El primer
 dry-run real de Docker de la **app hija (Starlink)** encontró 5 bugs, todos
