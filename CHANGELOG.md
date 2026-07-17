@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.5.9-django — 2026-07-17 (correccion same-day de la estrategia de dev)
+
+Release de mantenimiento — **sin cambios de runtime de la app** (`src/`,
+Dockerfile, systemd/prod path sin cambios). Corrige la estrategia de entorno
+de dev que v0.5.8 shipeo con la orientacion equivocada.
+
+### Correccion
+
+- **`DECISIONS.md` #9 supersede a #8.** #8 (que v0.5.8 llevo al tag)
+  planteaba un modelo "Windows daily + WSL2 para paridad" que fuerza
+  **double work**: dos venvs, dos locks, dos suites, dos sets de deps
+  mantenidos en sincronia manual. El objetivo real es lo contrario: un
+  **unico** entorno de dev que iguale a produccion.
+- **`#9`**: WSL2 Ubuntu 24.04 **es** el entorno de dev. Un clone en
+  `/home/hardg/ameli-app-template`, un venv desde ambos locks
+  hash-pinneados (mismos deps que shipea a prod), un solo loop. WSL2
+  tambien alberga el despliegue local (`python -m ameli_app.api`
+  directo, sin Docker — este operador emula el server directamente en
+  WSL2). Produccion sigue siendo la VM Linux `ha-report2`. El venv
+  Windows-nativo queda como fallback (mypy DLL / emergencias) pero **no
+  es el loop diario**; el clone en `C:\` se trata como archivado.
+  Edicion desde Windows via UNC `\\wsl.localhost\Ubuntu-24.04\...` (VS
+  Code Remote-WSL es transparente).
+- **`CONTRIBUTING.md`** invertida: setup de WSL2 al frente (incluye
+  Postgres local para emular el server), Windows-nativo movido a
+  subseccion "fallback deprecated".
+- **`AGENTS.md`** anota inline que #8 fue mismo-dia supersedido por #9,
+  asi un lector siguiendo la narrativa de estado no adopta la
+  estrategia equivocada.
+
+### Multi-maquina
+
+Sin cambios en el modelo de colaboracion: `origin` (GitHub) sigue siendo
+el canonico global. Cada maquina (otro laptop del operador, un segundo
+dev) instala WSL2 + su propio clone Linux-fs; sync por `git push`/`pull`
+como cualquier repo. La regla "WSL2 canonico" es **per-maquina**.
+
+### Deploy
+
+- **Sin migraciones ni deps nuevas.** Solo docs. Como v0.5.7 y v0.5.8, no
+  requiere validacion en server ni redeploy. La hija Starlink adopta la
+  estrategia correcta cherry-pickeando este tag en lugar de v0.5.8.
+
 ## v0.5.8-django — 2026-07-17 (mantenimiento: docs — PRIVACY + WSL2 strategy + two-locks)
 
 Release de mantenimiento — **sin cambios de runtime de la app** (`src/`,

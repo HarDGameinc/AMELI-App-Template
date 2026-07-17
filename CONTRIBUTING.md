@@ -90,13 +90,19 @@ with the Remote-WSL extension is transparent). Terminals run inside WSL.
 The Windows path `C:\Users\...\AMELI_APP_TEMPLATE` is treated as archived —
 see [`DECISIONS.md`](docs/DECISIONS.md) #9.
 
-**Local deployment** (pre-promotion smoke, inside WSL2):
+**Local deployment** (pre-promotion smoke, inside WSL2). WSL2 emulates the
+production server directly — no Docker in the loop. Set up Postgres once
+(`sudo apt install postgresql && sudo -u postgres createuser --pwprompt
+ameli && sudo -u postgres createdb -O ameli ameli_dev`), then run the app
+the same way `ameli-app-template-dev-api.service` does on `ha-report2`:
 ```bash
-docker compose up                       # full stack: api + notifier + postgres
-# or direct against a local Postgres:
-DATABASE_URL="postgresql+psycopg://ameli:ameli@localhost/ameli_dev" \
+DATABASE_URL="postgresql+psycopg://ameli:PASSWORD@localhost/ameli_dev" \
     APP_ENV=dev .venv/bin/python -m ameli_app.api
 ```
+This is the closest local pre-promotion smoke — same code path, same
+uvicorn launcher, same Postgres backend as the server. If you don't need
+Postgres parity (fast suite runs), the SQLite fallback still works via
+`AMELI_APP_SQLITE_PATH` (see Windows fallback below for the env vars).
 
 ### Windows-native fallback (deprecated, keep only for edge cases)
 

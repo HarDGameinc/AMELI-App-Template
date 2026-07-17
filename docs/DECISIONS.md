@@ -176,14 +176,18 @@ entry and note it.
      **complementary, not superset/subset**; `django` overlaps only
      because `pytest-django` pulls it. Same dependency set the prod
      deploy ships — no Windows drift, no version games.
-  2. **Local deployment lives here too.** Running `python -m ameli_app.
-     api` (or `docker compose up` for the full stack including Postgres)
-     from inside WSL2 is a legitimate pre-promotion smoke, faster than
-     round-tripping to `ha-report2` for every change. Docker, when used,
-     runs *inside* WSL2 (docker-ce native) — the "expensive Docker"
-     complaint in #8 was specific to Docker Desktop bridging Windows ↔
-     container filesystems; that overhead does not exist for docker-ce
-     inside a WSL2 kernel.
+  2. **Local deployment lives here too.** WSL2 emulates the production
+     server directly — same `python -m ameli_app.api` under uvicorn,
+     against a local Postgres in the same WSL — as the pre-promotion
+     smoke. Faster than round-tripping to `ha-report2` for every change
+     and matches the prod code path (no container layer between the code
+     and the runtime). **Docker is not used locally.** The `docker
+     compose up` path documented in the repo remains valid for anyone
+     who wants it (and would run inside WSL2 native, not via Docker
+     Desktop — the "expensive Docker" complaint in #8 was specific to
+     Docker Desktop bridging Windows ↔ container filesystems), but this
+     operator does not adopt it. `test_docker_stack.py` + CI stay as the
+     anti-drift guard on the Docker artifacts themselves.
   3. **Production = Linux VM (`ha-report2`)**, deployed via `git pull` +
      systemd restart. Unchanged; the change is only "which local
      environment feeds it".
