@@ -74,6 +74,21 @@ the Linux CI/deploy:
   `AMELI_APP_DJANGO_SECRET_KEY`, `DATABASE_URL=""`, `AMELI_APP_SQLITE_PATH`,
   `APP_CONFIG`, `DJANGO_SETTINGS_MODULE=ameli_web.settings`. The pytest
   suite sets sane defaults via `tests/conftest.py`.
+- **Need Linux parity** (the win32-skipped shell/systemd tests, the
+  hash-pinned lock with `uvloop`, or a faster Docker build)? Use **WSL2**,
+  not Docker-in-the-loop — clone into the Linux filesystem (`~/…`, **not**
+  `/mnt/c/…`: the cross-fs I/O is as slow as a bind mount) and install
+  **both** locks into the venv:
+  ```bash
+  python3 -m venv .venv && .venv/bin/pip install --upgrade pip
+  .venv/bin/pip install --require-hashes -r requirements.lock      # runtime (uvloop, uvicorn)
+  .venv/bin/pip install --require-hashes -r requirements-dev.lock  # tooling (pytest, ruff)
+  .venv/bin/pip install -e . --no-deps
+  ```
+  The two locks are **complementary, not superset/subset** — installing only
+  the dev one leaves you without `uvloop`/`uvicorn`. On Linux the suite runs
+  **1156 passed / 28 skipped** (vs 1126 / 58 on Windows). Rationale + the
+  tiered Windows/WSL2/Docker strategy: [`DECISIONS.md`](docs/DECISIONS.md) #8.
 
 ## Releases
 

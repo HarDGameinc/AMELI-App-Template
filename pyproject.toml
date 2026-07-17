@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ameli-app-template"
-version = "0.5.7"
+version = "0.5.8"
 description = "AMELI Django-first operational app template"
 requires-python = ">=3.11"
 license = "MIT"

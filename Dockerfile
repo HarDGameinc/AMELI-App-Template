@@ -45,8 +45,11 @@ RUN pip install --upgrade pip \
 
 # ----- builder-dev (adds dev deps to the venv for the dev image) -----
 FROM builder AS builder-dev
-# requirements-dev.lock is a superset of the runtime lock; the runtime
-# packages are already satisfied — this layer adds pytest/ruff/pip-audit/etc.
+# The two locks are COMPLEMENTARY, not superset/subset: requirements.lock has
+# the runtime (uvicorn[standard], uvloop, httptools...), requirements-dev.lock
+# has the tooling (pytest, ruff, mypy, pip-audit...). ``django`` appears in
+# both only because pytest-django pulls it. A full dev env needs BOTH — which
+# is why this stage builds ON TOP of ``builder`` instead of replacing it.
 RUN pip install --require-hashes -r requirements-dev.lock
 
 # ----- runtime (lean prod image; DEFAULT target) -----
