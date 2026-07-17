@@ -49,46 +49,83 @@ CI/branch-protection detail.
 
 Coverage floor is 85% (`pyproject.toml`); mypy and ruff floors are zero.
 
-## Local dev environment (Windows notes)
+## Local dev environment — WSL2 primary
 
-The operator's workstation is native Windows; a few things differ from
-the Linux CI/deploy:
+Per [`DECISIONS.md`](docs/DECISIONS.md) #9, the dev environment is **WSL2
+Ubuntu 24.04** — one clone, one venv, one loop. Same hash-pinned lock the
+prod deploy ships, so there is no Windows/Linux drift.
 
-- **Create the venv from the ranges, NOT `requirements.lock`.** The lock
-  pins `uvloop` (POSIX-only, no Windows wheel) with no platform marker, so
-  `pip install --require-hashes -r requirements.lock` fails to build it on
-  Windows. Installing from `requirements.txt` / `requirements-dev.txt`
-  lets `uvicorn` omit `uvloop`. (This also pulls Django 6 / Pillow 12
-  locally; the suite is green on both stacks. The server stays on the
-  hash-locked Django 5.2 LTS.)
-- **mypy**: Windows "App Control" can block the compiled mypyc DLL
+**Setup (once per machine):**
+```powershell
+# host: PowerShell as admin
+wsl --install -d Ubuntu-24.04
+```
+```bash
+# inside WSL2 (Ubuntu-24.04):
+sudo apt-get install -y python3-venv python3-dev build-essential \
+    libffi-dev libjpeg-dev libpq-dev zlib1g-dev git
+cd ~ && git clone https://github.com/HarDGameinc/AMELI-App-Template.git ameli-app-template
+cd ameli-app-template
+python3 -m venv .venv && .venv/bin/pip install --upgrade pip
+# BOTH locks — they are complementary, not superset/subset.
+# django overlaps only because pytest-django pulls it. Installing only the
+# dev lock leaves you without uvloop/uvicorn.
+.venv/bin/pip install --require-hashes -r requirements.lock       # runtime
+.venv/bin/pip install --require-hashes -r requirements-dev.lock   # tooling
+.venv/bin/pip install -e . --no-deps
+```
+
+**Daily loop (inside WSL2):**
+```bash
+wsl                                     # (Ubuntu-24.04 is the default distro)
+cd ~/ameli-app-template
+APP_ENV=dev .venv/bin/pytest -q         # 1156 passed / 28 skipped
+.venv/bin/ruff check .
+.venv/bin/mypy src
+```
+
+**Editing from Windows-side tools** reaches the WSL clone via
+`\\wsl.localhost\Ubuntu-24.04\home\hardg\ameli-app-template\` (VS Code
+with the Remote-WSL extension is transparent). Terminals run inside WSL.
+The Windows path `C:\Users\...\AMELI_APP_TEMPLATE` is treated as archived —
+see [`DECISIONS.md`](docs/DECISIONS.md) #9.
+
+**Local deployment** (pre-promotion smoke, inside WSL2). WSL2 emulates the
+production server directly — no Docker in the loop. Set up Postgres once
+(`sudo apt install postgresql && sudo -u postgres createuser --pwprompt
+ameli && sudo -u postgres createdb -O ameli ameli_dev`), then run the app
+the same way `ameli-app-template-dev-api.service` does on `ha-report2`:
+```bash
+DATABASE_URL="postgresql+psycopg://ameli:PASSWORD@localhost/ameli_dev" \
+    APP_ENV=dev .venv/bin/python -m ameli_app.api
+```
+This is the closest local pre-promotion smoke — same code path, same
+uvicorn launcher, same Postgres backend as the server. If you don't need
+Postgres parity (fast suite runs), the SQLite fallback still works via
+`AMELI_APP_SQLITE_PATH` (see Windows fallback below for the env vars).
+
+### Windows-native fallback (deprecated, keep only for edge cases)
+
+Kept during the transition for the mypy-DLL edge case and quick emergency
+edits when WSL is unreachable. Not the daily loop.
+
+- **Create the venv from the ranges** (`requirements.txt` / `requirements-
+  dev.txt`), NOT `requirements.lock` — the lock pins `uvloop` (POSIX-only)
+  unconditionally. The ranges pull Django 6 / Pillow 12 locally; suite is
+  green but drifts from what ships.
+- **mypy** — Windows "App Control" can block the compiled mypyc DLL
   (`ImportError: DLL load failed`). Reinstall pure-Python per venv:
   `pip install --no-binary mypy --force-reinstall --no-deps "mypy==2.1.0"`.
   One Windows-only false positive remains (`socket.AF_UNIX` in
-  `accounts/av.py`); the Linux CI reports zero mypy errors.
-- **Shell/POSIX tests** (`test_common_sh_slug_autodetect`,
-  `test_systemd_profile`, parts of `test_backup_restore`) are
-  `skipif(sys.platform == "win32")` — they exercise `bash`/`tar`/`geteuid`
-  and run on the Linux CI.
+  `accounts/av.py`).
+- **Shell/POSIX tests** are `skipif(sys.platform == "win32")` — they exercise
+  `bash`/`tar`/`geteuid` and run on the Linux CI (and in the WSL loop).
 - **Run env vars** for a local SQLite run:
   `AMELI_APP_DJANGO_SECRET_KEY`, `DATABASE_URL=""`, `AMELI_APP_SQLITE_PATH`,
   `APP_CONFIG`, `DJANGO_SETTINGS_MODULE=ameli_web.settings`. The pytest
   suite sets sane defaults via `tests/conftest.py`.
-- **Need Linux parity** (the win32-skipped shell/systemd tests, the
-  hash-pinned lock with `uvloop`, or a faster Docker build)? Use **WSL2**,
-  not Docker-in-the-loop — clone into the Linux filesystem (`~/…`, **not**
-  `/mnt/c/…`: the cross-fs I/O is as slow as a bind mount) and install
-  **both** locks into the venv:
-  ```bash
-  python3 -m venv .venv && .venv/bin/pip install --upgrade pip
-  .venv/bin/pip install --require-hashes -r requirements.lock      # runtime (uvloop, uvicorn)
-  .venv/bin/pip install --require-hashes -r requirements-dev.lock  # tooling (pytest, ruff)
-  .venv/bin/pip install -e . --no-deps
-  ```
-  The two locks are **complementary, not superset/subset** — installing only
-  the dev one leaves you without `uvloop`/`uvicorn`. On Linux the suite runs
-  **1156 passed / 28 skipped** (vs 1126 / 58 on Windows). Rationale + the
-  tiered Windows/WSL2/Docker strategy: [`DECISIONS.md`](docs/DECISIONS.md) #8.
+- Suite on Windows-native: **1126 passed / 58 skipped** (30 fewer than
+  WSL because of the win32 skips).
 
 ## Releases
 

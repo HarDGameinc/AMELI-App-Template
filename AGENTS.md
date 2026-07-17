@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.8-django, 2026-07-17)
+## State of the project (v0.5.9-django, 2026-07-17)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -278,12 +278,20 @@ user rights — access/rectification/self-service erasure via
 decide per deploy: legal basis, DPO, cross-border, portability, consent),
 **`DECISIONS.md` #8** (tiered Windows/WSL2/Docker dev-environment strategy —
 Windows daily loop, WSL2 for Linux parity on demand, Docker out of the agent
-loop), and a correction that `requirements.lock` and `requirements-dev.lock`
+loop; **superseded same-day by #9**: WSL2 IS the single dev environment,
+Windows-native is fallback only, no double work), and a correction that
+`requirements.lock` and `requirements-dev.lock`
 are **complementary, not superset/subset** (the earlier "superset" claim was
 plausible only because `pytest-django` pulls `django` into both — a full dev
 env needs installing both; verified on WSL2 Ubuntu 24.04: Linux suite runs
-**1156 passed / 28 skipped** vs Windows 1126 / 58). All validated on the dev
-server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+**1156 passed / 28 skipped** vs Windows 1126 / 58). `v0.5.9` (2026-07-17,
+same day) ships the **`DECISIONS.md` #9 correction of #8**: WSL2 is THE
+single dev environment (one clone, one venv, same hash-pinned lock that
+ships to prod), local deployment runs directly under WSL2 (`python -m
+ameli_app.api` against a local Postgres — no Docker), production stays on
+the Linux VM `ha-report2`, and Windows-native is fallback only. `CONTRIBUTING.
+md` inverted accordingly. All validated on the dev server / CI; see the
+latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

@@ -113,6 +113,11 @@ entry and note it.
 
 ## 8. Dev-environment tiers — Windows daily, WSL2 for parity, Docker out of the loop
 
+> **Superseded by #9 (2026-07-17, same day).** #8 framed a tiered
+> Windows/WSL2 model that forces double work (two venvs, two locks,
+> two suites kept in manual sync) — the opposite of the intent. Kept
+> here for the audit trail; the current strategy is in **#9**.
+
 - **Context**: the dev workstation is **native Windows**, which has only
   partial Linux parity: `uvloop` is POSIX-only (so the local venv installs
   from the *ranges*, pulling Django 6 / Pillow 12 locally vs the pinned
@@ -152,3 +157,71 @@ entry and note it.
   See `CONTRIBUTING.md` "Windows notes" and the `windows-local-dev-env` memory. Revisit if the primary dev machine
   moves to Linux — then native/WSL2 becomes the default and the Windows
   caveats disappear.
+
+## 9. Dev environment — WSL2 primary, single loop (supersedes #8)
+
+- **Context**: #8 (same day, earlier) framed the environment as tiered —
+  Windows daily loop with WSL2 for parity — which forces **double work**:
+  two venvs, two locks, two suites, two divergent dep sets kept in sync
+  manually. That is the opposite of the intent. The actual goal is a
+  single dev environment that matches production and eliminates the
+  Windows/Linux drift entirely.
+- **Decision**: **WSL2 Ubuntu 24.04 is THE dev environment** — one clone,
+  one venv, one loop.
+  1. **Dev + tests + local deployment all live in WSL2**, per-machine at
+     `/home/hardg/ameli-app-template` (Linux fs). The venv installs from
+     **both** hash-pinned locks — `requirements.lock` (runtime:
+     `uvicorn[standard]`, `uvloop`, `httptools`) and `requirements-dev.
+     lock` (tooling: pytest, ruff, mypy, pip-audit). They are
+     **complementary, not superset/subset**; `django` overlaps only
+     because `pytest-django` pulls it. Same dependency set the prod
+     deploy ships — no Windows drift, no version games.
+  2. **Local deployment lives here too.** WSL2 emulates the production
+     server directly — same `python -m ameli_app.api` under uvicorn,
+     against a local Postgres in the same WSL — as the pre-promotion
+     smoke. Faster than round-tripping to `ha-report2` for every change
+     and matches the prod code path (no container layer between the code
+     and the runtime). **Docker is not used locally.** The `docker
+     compose up` path documented in the repo remains valid for anyone
+     who wants it (and would run inside WSL2 native, not via Docker
+     Desktop — the "expensive Docker" complaint in #8 was specific to
+     Docker Desktop bridging Windows ↔ container filesystems), but this
+     operator does not adopt it. `test_docker_stack.py` + CI stay as the
+     anti-drift guard on the Docker artifacts themselves.
+  3. **Production = Linux VM (`ha-report2`)**, deployed via `git pull` +
+     systemd restart. Unchanged; the change is only "which local
+     environment feeds it".
+  4. **Windows-native venv is fallback only** — kept during the
+     transition for the mypy-DLL edge case (see `mypy-windows-dll-block`
+     memory) and quick emergency edits when WSL is unreachable. Not the
+     daily loop. Will be archived / deleted once the WSL flow is stable.
+  5. **Editing from Windows-side tools reaches WSL** via the UNC path
+     `\\wsl.localhost\Ubuntu-24.04\home\hardg\ameli-app-template\` (VS
+     Code with Remote-WSL opens it transparently). Terminals run inside
+     WSL. The Windows path `C:\Users\hardg\AMELI APPS\AMELI_APP_TEMPLATE`
+     is treated as archived — do not edit it after the migration; the
+     canonical copy of any change lives in the WSL clone.
+  6. **Multi-machine collaboration**: `origin` (GitHub) is the sole
+     shared canonical. Each machine (a second laptop, a colleague,
+     anything) installs WSL2 + its own Linux-fs clone; sync is by
+     `git push`/`git pull` — same as any repo. WSL2 changes nothing
+     about the collaboration model.
+- **Consequences**:
+  - **No dep drift** — the local venv installs the same hash-pinned lock
+    that ships to production. Bugs that only reproduce with `uvloop` /
+    `django==5.2.16` surface locally instead of in CI.
+  - **No double work** — one venv, one suite, one edit path, one set of
+    dependencies. When a lock changes, exactly one env needs the update.
+  - **Docker is cheap again** — inside WSL2 it does not carry the Docker
+    Desktop overhead; `docker compose up` for local pre-prod smoke is a
+    normal step. `test_docker_stack.py` + CI stay as the anti-drift
+    guard on the Docker artifacts themselves.
+  - **Windows-native venv is deprecated** — a follow-up will remove
+    `.venv` from the Windows clone once the migration is confirmed. The
+    `windows-local-dev-env` memory notes the shift and points here.
+  - **This supersedes #8.** #8 shipped in `v0.5.8-django` before the
+    correction; #9 is what the flotilla should adopt going forward.
+    Whether a corrective `v0.5.9` is cut or #9 folds into the next
+    release is per-session judgment (a fresh child app onboarding today
+    would consume the wrong strategy from `v0.5.8`, which argues for a
+    quick tag).
