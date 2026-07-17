@@ -278,7 +278,9 @@ user rights — access/rectification/self-service erasure via
 decide per deploy: legal basis, DPO, cross-border, portability, consent),
 **`DECISIONS.md` #8** (tiered Windows/WSL2/Docker dev-environment strategy —
 Windows daily loop, WSL2 for Linux parity on demand, Docker out of the agent
-loop), and a correction that `requirements.lock` and `requirements-dev.lock`
+loop; **superseded same-day by #9**: WSL2 IS the single dev environment,
+Windows-native is fallback only, no double work), and a correction that
+`requirements.lock` and `requirements-dev.lock`
 are **complementary, not superset/subset** (the earlier "superset" claim was
 plausible only because `pytest-django` pulls `django` into both — a full dev
 env needs installing both; verified on WSL2 Ubuntu 24.04: Linux suite runs
