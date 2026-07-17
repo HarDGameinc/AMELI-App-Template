@@ -188,7 +188,7 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.7-django, 2026-07-16)
+## State of the project (v0.5.8-django, 2026-07-17)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -271,7 +271,19 @@ the loose `requirements.txt` ranges instead of the hash-pinned lock (now
 pytest), `VERSION` was not copied (so `/health` read `v0.0.0-dev`), and a
 missing `.gitattributes` let a Windows autocrlf clone break `.sh` in Linux
 containers. +6 regression tests in `test_docker_stack.py` guard the fixes.
-All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
+`v0.5.8` (2026-07-17) is a **docs** release (no app-runtime change) that ships
+three consolidated pieces: **`docs/PRIVACY.md`** (data inventory, retention,
+user rights — access/rectification/self-service erasure via
+`/profile/delete-account/` — with `§10` calling out what the operator must
+decide per deploy: legal basis, DPO, cross-border, portability, consent),
+**`DECISIONS.md` #8** (tiered Windows/WSL2/Docker dev-environment strategy —
+Windows daily loop, WSL2 for Linux parity on demand, Docker out of the agent
+loop), and a correction that `requirements.lock` and `requirements-dev.lock`
+are **complementary, not superset/subset** (the earlier "superset" claim was
+plausible only because `pytest-django` pulls `django` into both — a full dev
+env needs installing both; verified on WSL2 Ubuntu 24.04: Linux suite runs
+**1156 passed / 28 skipped** vs Windows 1126 / 58). All validated on the dev
+server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

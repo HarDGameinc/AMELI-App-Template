@@ -1,13 +1,45 @@
 # Changelog
 
-## Unreleased (dev)
+## v0.5.8-django — 2026-07-17 (mantenimiento: docs — PRIVACY + WSL2 strategy + two-locks)
 
-- `docs/PRIVACY.md` — nuevo. Inventario de PII, ventanas de retencion,
-  controles de confidencialidad, derechos de usuario (acceso, rectificacion,
-  borrado self-service via `/profile/delete-account/`) y los huecos que
-  quedan a cargo del operador de cada deploy (base legal, DPO, portabilidad,
-  transferencias transfronterizas). Consolida lo que ya existe en codigo
-  con referencias `file:line`; cero cambios de runtime.
+Release de mantenimiento — **sin cambios de runtime de la app** (`src/`,
+`Dockerfile` builder, `docker-compose.yml` sin cambios funcionales). Consolida
+tres piezas de documentacion que valian un tag propio para que la flota
+las herede juntas.
+
+### Docs / policy
+
+- **`docs/PRIVACY.md`** — nuevo. Inventario de PII (User, UserSession, MFA*,
+  EmailChange, OutboundEmail, ThrottleCounter, AuditEvent), ventanas de
+  retencion (extraidas de `services/retention.py`), controles de
+  confidencialidad (argon2, Fernet TOTP secret, `salted_hmac` para MFA
+  email, audit HMAC chain, EXIF/GPS strip), derechos de usuario (access,
+  rectification, **erasure self-service** via `/profile/delete-account/`),
+  y **§10 "lo que el operador debe decidir por deploy"** (base legal, DPO,
+  disclosure transfronterizo, portabilidad, consent). Consolida lo que
+  YA existe en codigo con referencias `file:line`; portabilidad marcada
+  como GAP documentado.
+- **`DECISIONS.md` #8 — Windows/WSL2/Docker por capas.** Loop diario en
+  Windows nativo (barato, rapido; CI Linux respalda lo que win32 skipea);
+  WSL2 para paridad Linux on-demand (tests shell/systemd + lock hash-
+  pinneado con `uvloop`); **Docker fuera del loop del agente**. Puntero
+  desde `CONTRIBUTING.md` "Windows notes".
+- **Correccion two-locks** — `requirements.lock` y `requirements-dev.lock`
+  son **complementarios, no superset/subset**: el runtime (`uvicorn[
+  standard]`, `uvloop`, `httptools`) y el tooling (pytest, ruff, mypy,
+  pip-audit) estan en locks distintos; `django` aparece en ambos solo
+  porque `pytest-django` lo arrastra. Un env dev completo instala **los
+  dos**. Corregido el comentario del Dockerfile (el *comportamiento* ya
+  era correcto: el target `dev` hereda de `builder`), `DECISIONS.md` #8 y
+  `CONTRIBUTING.md` con el procedimiento correcto y los numeros medidos
+  (WSL2 Linux: **1156 passed / 28 skipped** vs Windows 1126 / 58).
+
+### Deploy
+
+- **Sin migraciones ni deps nuevas.** No requiere validacion en server ni
+  redeploy. La hija cherry-pickea desde el tag para heredar estos docs.
+
+## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 
 ## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 
