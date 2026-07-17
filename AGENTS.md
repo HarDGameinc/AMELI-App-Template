@@ -337,6 +337,7 @@ All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/FIRST_INSTALL_DJANGO.md` | First install guide |
 | `docs/OPERATIONS.md` | Operational procedures (starts with "Deployed instance — ground truth": derive server paths/units, never guess) |
 | `docs/SECURITY.md` | Security posture |
+| `docs/PRIVACY.md` | Data inventory, retention, user rights (access/rectification/erasure); deploy-specific gaps flagged |
 | `docs/THREAT_MODEL.md` | STRIDE threat model |
 | `docs/COMPLIANCE_ASVS_L2_*.md` | ASVS L2 compliance snapshots |
 | `docs/HANDOFF_TEMPLATE.md` | Session handoff structure |

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (dev)
+
+- `docs/PRIVACY.md` — nuevo. Inventario de PII, ventanas de retencion,
+  controles de confidencialidad, derechos de usuario (acceso, rectificacion,
+  borrado self-service via `/profile/delete-account/`) y los huecos que
+  quedan a cargo del operador de cada deploy (base legal, DPO, portabilidad,
+  transferencias transfronterizas). Consolida lo que ya existe en codigo
+  con referencias `file:line`; cero cambios de runtime.
+
 ## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 
 Release de mantenimiento — **sin cambios de runtime de la app** (`src/` y el

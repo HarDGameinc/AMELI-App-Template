@@ -98,9 +98,13 @@ lightweight ADR per entry (Context / Decision / Consequences); point to
   cyclonedx-json` (no new dep — already a dev dep + CI job); refresh on lock
   change / per release; artifact attached to the GitHub release, not
   committed (`*.cdx.json` gitignored).
-- **`PRIVACY.md`** — real users → PII. Inventory (user email, avatars,
-  audit log, sessions), retention windows (already implemented in the
-  `OPERATIONS.md` retention sweep), avatar EXIF/GPS stripping, audit HMAC.
+- ~~**`PRIVACY.md`**~~ **DONE (2026-07-17)** — [`docs/PRIVACY.md`](PRIVACY.md).
+  Data inventory (User/UserSession/MFA*/OutboundEmail/EmailChange/audit),
+  retention windows (from `services/retention.py`), confidentiality controls
+  (argon2/Fernet/salted_hmac/HMAC-chain/EXIF-strip), user rights (access,
+  rectification, self-service erasure via `/profile/delete-account/`), and
+  the deploy-specific gaps (legal basis, DPO, portability). Trigger: the
+  Starlink child app handling real user + telemetry data.
 
 ## Execution notes for the next session
 

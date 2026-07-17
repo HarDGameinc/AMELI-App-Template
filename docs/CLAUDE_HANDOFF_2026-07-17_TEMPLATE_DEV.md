@@ -29,4 +29,64 @@ Sesion previa: [`CLAUDE_HANDOFF_2026-07-16_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026
 
 ## §2. Objetivo de la sesion
 
-Por definir con el operador — ver §7 del handoff de ayer.
+Cerrar **`docs/PRIVACY.md`** (elegido via AskUserQuestion sobre el backlog).
+Cierra el bucket "productive/critical" del `DOCUMENTATION_PLAN` junto con el
+SBOM ya hecho. Trigger: la hija Starlink va a manejar datos reales.
+
+## §3. Trabajo realizado
+
+### 3.1. `docs/PRIVACY.md` (nuevo)
+
+Documento consolidatorio (**cero cambios de runtime**) que inventaria lo que
+YA existe en codigo, con referencias `file:line` verificadas:
+
+- **Inventario de PII** — User, UserSession, MFARecoveryCode,
+  MFAEmailChallenge, EmailChangeRequest, OutboundEmail, ThrottleCounter,
+  AuditEvent — con proposito, campos y notas de proteccion por store.
+- **Ventanas de retencion** — extraidas de
+  `services/retention.py:29-33` (30d sessions/emails/email-change, 7d MFA
+  email challenges, 1d throttle, AuditEvent indefinido por defecto).
+- **Confidencialidad at rest** — argon2, Fernet TOTP secret,
+  `salted_hmac` para MFA email (v0.5.5), MFA recovery hashed, audit HMAC
+  chain, avatar EXIF/GPS strip pipeline.
+- **In transit** — TLS Caddy con HSTS, cookies `__Host-`/`HttpOnly`/Lax.
+- **Logs discipline** (V8.3.1) — sin bodies de request, wrap de excepciones
+  con PII (`email_queue.py:147`, `av.py:_redact`).
+- **Derechos** — access (`/profile`), rectification (form), **erasure
+  self-service** (`/profile/delete-account/` → `services/user.py:552`),
+  session/MFA management. **Portabilidad marcada como GAP** (no
+  implementada en el template).
+- **Third-party processors** — SMTP (siempre), HIBP (opt-in, k-anonymity
+  → nunca la pw completa), AV, OTel. Todos opt-in salvo SMTP.
+- **Trade-off audit vs erasure** — audit rows por default NO se
+  cascade-borran al hacer `delete_my_account`; se documenta la opcion de
+  `audit_max_age_days` con re-chain.
+- **Backups** — cubren PII; nota GPG y de "un backup restaurado despues de
+  una erasure debe repurgar".
+- **§10 "Lo que el operador debe decidir por deploy"** — base legal, DPO,
+  disclosure de transferencias transfronterizas, retention overrides,
+  disclosure timeline, endpoint de portabilidad (si aplica), consent
+  banner. Deja claro que el template ship los controles **tecnicos**; la
+  parte legal es responsabilidad del operador.
+
+Referencias actualizadas:
+- `DOCUMENTATION_PLAN.md` — bucket "productive/critical" cerrado (SBOM +
+  PRIVACY.md).
+- `AGENTS.md` → indice de docs (entre SECURITY.md y THREAT_MODEL.md).
+- `CHANGELOG.md` — seccion `## Unreleased (dev)`.
+
+## §4. Decisiones tomadas
+
+- **PRIVACY.md documenta lo existente, no agrega runtime.** Nada en `src/`
+  cambia; el documento consolida y expone gaps (portabilidad).
+- **Portabilidad = gap documentado, no implementada.** La operacion queda
+  en `admin export` o un endpoint futuro por-deploy. No la anadi hoy
+  porque el bucket original la marcaba como "operator-per-deploy".
+- **Audit NO cascade-borrado por default.** Trade-off explicito en §8 del
+  documento (integridad de cadena vs erasure completo).
+
+## §5. Metricas al cierre
+
+- Nuevos docs: **+1** (`docs/PRIVACY.md`, ~145 lineas).
+- Runtime code / tests / migraciones: `unchanged`. Deps: `unchanged`.
+- CI: no dispara (docs-only, `paths-ignore`).
