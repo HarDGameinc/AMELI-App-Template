@@ -102,6 +102,47 @@ v0.5.8-django. `dev` queda 1 commit adelante: `e555778` (este handoff §3.2,
 retenido local durante el PR para no romper los required-checks via
 `paths-ignore` — patron ya conocido; empujado post-merge).
 
+### 3.3. Correccion same-day: DECISIONS #9 supersede a #8 + corte v0.5.9
+
+**Trigger**: tras cerrar el S-10, el operador senalo que #8 (recien
+shipeado en v0.5.8) documentaba una estrategia "Windows daily + WSL2 para
+paridad" que fuerza **double work** — dos venvs, dos locks, dos suites,
+dos sets de deps sincronizados a mano — exactamente lo opuesto al objetivo
+("usemos WSL para desarrollo y pruebas, junto con despliegue local; despues
+un paso a produccion en VM linux"). Mi lectura original de #8 fue
+equivocada; correccion necesaria mismo dia.
+
+**Cambios** (`8fe4832` + `34ee2f5` + `28b7438` + `4a6151c` merge + fix cosmetico `932db99`):
+- **`DECISIONS.md` #9** supersede a #8. WSL2 Ubuntu 24.04 **ES** el
+  entorno de dev (un clone, un venv desde ambos locks hash-pinneados =
+  mismos deps que shipea a prod). **Despliegue local corre en WSL2
+  directo** (`python -m ameli_app.api` contra Postgres local) — **sin
+  Docker** (operator preference). Produccion sigue en la VM Linux
+  `ha-report2`. Venv Windows-nativo = fallback (mypy DLL / emergencias);
+  el clone en `C:\...` se trata como archivado. Edicion desde Windows
+  via UNC `\\wsl.localhost\Ubuntu-24.04\...` o VS Code Remote-WSL.
+- **#8 se marca "superseded by #9" in place**, no se borra (regla
+  archive-history del propio `DECISIONS.md`).
+- **`CONTRIBUTING.md`** invertida: WSL2 setup + Postgres local + daily
+  loop al frente; Windows-nativo movido a subseccion "fallback deprecated".
+- **`AGENTS.md`** narrativa actualizada.
+- **Migracion practica**: WSL2 clone en `/home/hardg/ameli-app-template`
+  quedo como canonico operativo; commits del dia hechos desde WSL para
+  probar el flujo desde el minuto uno.
+
+**Corte v0.5.9-django** (`4a6151c` bump + merge `98f32a5`, PR #12,
+tag/release publicados): ritual de 4 archivos, CI **16/16 verde** (matriz
++ E2E + `test-postgres` + CodeQL + pip-audit + Analyze js/py),
+`MERGEABLE`/`CLEAN`, merge autorizado por el operador. `main` avanza a
+**v0.5.9-django**. Follow-up cosmetico post-merge: header duplicado
+`## v0.5.7-django` en CHANGELOG (`932db99`, docs-only).
+
+**Memoria actualizada**: `windows-local-dev-env` **invertida** — WSL2
+primario, Windows fallback (antes decia "keep Windows for the daily loop",
+ahora dice lo contrario). `MEMORY.md` index idem. `promote-to-main-
+milestone` bumpeada a v0.5.9 con nota sobre docs-only releases no
+requiriendo server validation.
+
 ## §4. Decisiones tomadas
 
 - **PRIVACY.md documenta lo existente, no agrega runtime.** Nada en `src/`
@@ -115,6 +156,18 @@ retenido local durante el PR para no romper los required-checks via
   quiere heredar PRIVACY + DECISIONS #8 + two-locks desde un tag limpio;
   esperar al proximo release funcional obligaria a la hija a cherry-pickear
   varios commits sueltos.
+- **WSL2 es EL entorno de dev, no un fallback** (correcion §3.3). La
+  vision del operador es una sola cadena: WSL para dev+tests+despliegue
+  local -> VM Linux para produccion. Windows-nativo baja a fallback.
+- **Sin Docker en el loop local.** WSL2 emula el server directamente
+  (`python -m ameli_app.api` contra Postgres local). Docker queda solo
+  para artefactos que shipean (guard por `test_docker_stack.py` + CI).
+- **Cortar v0.5.9 same-day para superseder v0.5.8**. Un fork nuevo
+  onboardeando hoy consumiria la estrategia mala si el tag mas reciente
+  es v0.5.8. Vale el tag corrector para que v0.5.9 sea la fuente.
+- **Migracion practica al clone WSL** ejecutada durante la misma sesion
+  (commits `8fe4832`+ desde ahi, via UNC `\\wsl.localhost\...`). El
+  clone Windows queda en sync como archivo, no se edita.
 
 ## §5. Metricas al cierre
 
@@ -124,17 +177,22 @@ retenido local durante el PR para no romper los required-checks via
   `test-postgres` + CodeQL + pip-audit. El push del handoff §3.2
   (`e555778`) NO disparo CI: `paths-ignore` lo salto como debia.
 - Suite: `unchanged` (WSL2 1156/28, Windows 1126/58).
-- Release cortado: **v0.5.8-django** (`main` = `c527af9`). Sin server
-  validation ni redeploy (cero runtime prod).
+- Releases cortados: **v0.5.8-django** (`c527af9`) y luego
+  **v0.5.9-django** (`98f32a5`, correccion same-day de #8 → #9). `main`
+  cierra el dia en v0.5.9. Sin server validation ni redeploy (cero
+  runtime prod).
 - ASVS L2: `unchanged` (151 PASS).
 
 ## §6. Hallazgos / findings
 
 - **[OPS]** La hija Starlink todavia no consume el canal template — no
   tiene remote `template` configurado ni cherry-picks aplicados. Ahora
-  v0.5.8 le suma **PRIVACY.md + DECISIONS #8 + two-locks** al bundle que
-  ya venia con v0.5.7 (5 fixes Docker). Prompt para su sesion sigue
-  vigente y ahora apunta a un tag limpio.
+  **v0.5.9** le suma la estrategia WSL2 correcta (#9) + PRIVACY + los 5
+  fixes Docker. Prompt actualizado entregado al operador apuntando a
+  `v0.5.9-django` (NO `v0.5.8`).
+- **[OPS]** **PR #13 abierto** (Dependabot, 2026-07-20 UTC): `chore(ci):
+  Bump actions/setup-python from 6 to 7`. Bump menor de CI action; no
+  urgente. Revisar y mergear cuando corresponda.
 - **[LOW/docs]** `PRIVACY.md` marca **portabilidad** como GAP
   documentado (no implementada en el template). Si la hija Starlink lo
   necesita, agregar un `/profile/export/` (dump JSON) es del orden de S.
@@ -145,8 +203,10 @@ retenido local durante el PR para no romper los required-checks via
 
 | # | Item | Effort | Status |
 |---|---|---|---|
-| — | App hija Starlink: consumir v0.5.7 + v0.5.8 (fixes Docker + PRIVACY + DECISIONS #8) | S | open (prompts entregados, requiere sesion de la hija) |
+| — | App hija Starlink: consumir **v0.5.9** (fixes Docker + PRIVACY + DECISIONS #9) | S | open (prompt actualizado entregado, requiere sesion de la hija) |
+| — | Revisar/mergear **PR #13** (Dependabot: setup-python v6→v7 en CI) | XS | open |
 | — | `/profile/export/` — data portability endpoint | S | open (gap documentado en PRIVACY.md §6) |
+| — | Postgres local en WSL2 para despliegue local (`apt install postgresql` + createuser/createdb, ver CONTRIBUTING) | XS | open (cuando quieras hacer el primer smoke local) |
 | — | jsdom DOM-wiring tests | M | open |
 | — | Visual regression tests | M | open |
 | — | Modelo C (`ameli-core` paquete) | L | deferred (DECISIONS #7) |
@@ -158,9 +218,12 @@ retenido local durante el PR para no romper los required-checks via
 Ni v0.5.7 ni v0.5.8 requieren redeploy (cero runtime prod). `/health`
 sube a v0.5.8 en el proximo `git pull` sin urgencia.
 
-**8a-bis. Entorno WSL2.** Ubuntu 24.04 en `/home/hardg/ameli-app-template`,
-branch `dev`, venv desde ambos locks, `uvloop` + `django 5.2.16`, suite
-1156/28. Entrar con `wsl` (o `wsl -d Ubuntu-24.04`).
+**8a-bis. Entorno WSL2 = CANONICO OPERATIVO** (per DECISIONS #9). Ubuntu
+24.04 en `/home/hardg/ameli-app-template`, branch `dev` en `932db99`,
+venv desde ambos locks (`uvloop` + `django 5.2.16`), suite **1156/28**.
+Entrar con `wsl`. Commits del dia hechos desde WSL para practicar el
+flujo. El clone en `C:\...\AMELI_APP_TEMPLATE` esta sincronizado pero
+tratado como archivado — no editar ahi.
 
 **8b. Orden recomendado.**
 1. **Retomar la hija Starlink** — el prompt entregado apunta a
