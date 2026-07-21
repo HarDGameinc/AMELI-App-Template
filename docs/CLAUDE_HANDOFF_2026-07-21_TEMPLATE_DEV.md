@@ -28,8 +28,46 @@ Sesion previa: [`CLAUDE_HANDOFF_2026-07-17_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026
 
 ## §2. Objetivo de la sesion
 
-Por definir.
+Auditoria de arquitectura para una integracion **outbound** con la API de
+**WebFleet**. Flujo: worker/servicio del app llama la REST de WebFleet
+(posiciones, drivers, rutas, etc.). Ubicacion (template vs hija) por
+decidir; el checklist tecnico es el mismo. **CORS descartado**: la
+integracion es server-to-server, cero superficie browser.
 
 ## §3. Trabajo realizado
 
-(a completar durante la sesion)
+### 3.1. `docs/AUDIT_WEBFLEET_2026-07-21.md` (nuevo)
+
+Auditoria de arquitectura para una integracion outbound Django -> WebFleet
+REST API. **Cero cambio de runtime**; el documento inventaria QUE verificar
+por superficie (credenciales, wire, rate limits, datos at rest, failure
+modes, audit trail, PRIVACY addendum) y QUE piezas del template se
+**reusan** en lugar de reinventar. Referencias `file:line` verificadas
+contra codigo antes de commitear.
+
+**Hallazgos clave para el que implemente:**
+- **CORS descartado** (server-to-server, browser-only). Se documenta
+  explicitamente para que el proximo lector no repita la pregunta.
+- **`accounts/circuit_breaker.py:40`** ya expone `CircuitBreaker` como
+  clase generica; hoy tiene `get_av_breaker` + `get_hibp_breaker` +
+  `get_smtp_breaker`. Agregar `get_webfleet_breaker` es ~10 LOC.
+- `_handle_template_check` en `cli.py` es la referencia canonica de
+  outbound HTTP con stdlib urllib + timeout + sin sorpresas TLS.
+- `ThrottleCounter` (`models.py:211`) se reusa para **client-side rate
+  limit** (scope=`outbound_webfleet`), no solo para gates de login.
+- Retention windows: extender `services/retention.py:29-33` con
+  `webfleet_positions_max_age_days` etc. siguiendo el patron existente.
+- PRIVACY: la app hija **extiende** su propio PRIVACY.md (no el del
+  template) para agregar el processor WebFleet, retention de posiciones,
+  legal basis, cross-border a TomTom.
+
+**Ubicacion recomendada:** app hija (Starlink u otra), no el template.
+Justificacion: WebFleet es un vertical (fleet mgmt); template lean per
+DECISIONS #7. Regla del tres: si una segunda app AMELI tambien lo
+necesita, extraer a un `ameli-fleet` package.
+
+**Preguntas abiertas** (documento §6, el implementer las contesta):
+1. Auth scheme (API key vs OAuth2)? Determina storage.
+2. Volumen (vehiculos, posiciones/hora)? Determina throttle + cache.
+3. Persistencia (snapshot vs historico)? El historico dispara PRIVACY.
+4. Ubicacion (que hija concreta)?
