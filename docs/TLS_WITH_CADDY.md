@@ -209,8 +209,55 @@ acceso. Hacelo con la sesion SSH abierta y backup del `Caddyfile`.
      curl -sSI "https://${h}.example.com/" -o /dev/null -w "${h}: %{http_code}\n"
    done
    ```
-2. **Recien entonces** eliminar los bloques de puerto alto y cerrar las
+2. **Actualizar `CSRF_TRUSTED_ORIGINS` con AMBOS origenes** (viejo y
+   nuevo) y reiniciar. Ver el aviso de abajo: este paso va **antes** de
+   tocar nada destructivo.
+3. **Recien entonces** eliminar los bloques de puerto alto y cerrar las
    reglas de firewall, dejando 443 (+80 si queres redirect HTTP→HTTPS).
+
+> ### ⚠️ El `GET` te miente
+>
+> Si sacas el puerto viejo sin haber actualizado `CSRF_TRUSTED_ORIGINS`,
+> la app sigue respondiendo **200 a todo `GET`** — las paginas cargan, el
+> health check pasa, Caddy no loguea nada raro. Lo unico que se rompe es
+> el `POST`: **403 CSRF, o sea nadie puede loguearse**. Es un modo de
+> falla silencioso para toda la verificacion habitual.
+>
+> Regla: **ningun paso destructivo va antes de la evidencia de que el
+> preparatorio se aplico.** Verificalo explicitamente:
+>
+> ```bash
+> grep -H "^AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS" /etc/<instancia>/app.env
+> ```
+
+### Probar el camino publico SIN tocar el DNS
+
+Antes de mover ningun registro, forza la resolucion solo para el test:
+
+```bash
+curl -sS --resolve app1.example.com:443:<IP_PUBLICA> \
+     https://app1.example.com/ -o /dev/null -w "%{http_code}\n"
+```
+
+Si da 200, el NAT y la policy del perimetro estan bien y lo unico que
+falta es DNS. Si da timeout, el problema esta aguas arriba y no moviste
+nada. **Un VIP sin su policy asociada es el olvido mas comun** — el
+mapeo queda perfecto y no pasa trafico.
+
+### Bajar el TTL antes de mover el DNS
+
+Mientras convivan los dos caminos, el rollback es "usar el puerto viejo".
+**Eso deja de valer en cuanto el DNS apunta a la IP nueva**: si la IP
+vieja no publica el puerto alto, la URL vieja queda inalcanzable por
+nombre. El rollback pasa a ser revertir el registro, y tarda lo que diga
+el TTL.
+
+```bash
+dig +noall +answer app1.example.com
+```
+
+Con TTL de 4 horas, un rollback tarda 4 horas. Bajalo a **300** y espera
+a que expire el viejo **antes** de cambiar la IP.
 
 ### El detalle que muerde: cambia el origen
 

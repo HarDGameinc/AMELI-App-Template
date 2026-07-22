@@ -252,7 +252,40 @@ las apps de un host compartido (los otros dos: `Caddyfile.example` en
   `dev05.ameli.cl:18495`). `caddy adapt` OK, los 4 sites originales
   intactos, `dev01` respondiendo.
 
-### 6.1. Pendiente de revisar: consolidar Caddy en un solo puerto
+### 6.0. Estado de red tras la consolidacion (2026-07-22)
+
+**`dev03` y `dev04` migrados a 443 y verificados end to end.**
+
+| Site | URL | Backend | Bind |
+|---|---|---|---|
+| `dev01` | `https://dev01.ameli.cl:8443` | `18098` | `0.0.0.0` ⚠️ |
+| `dev02` | `https://dev02.ameli.cl:18450` | `18050` | `0.0.0.0` ⚠️ |
+| `dev03` | `https://dev03.ameli.cl` | `18080` | `127.0.0.1` ✅ |
+| `dev04` | `https://dev04.ameli.cl` | `18090` | `127.0.0.1` ✅ |
+
+- **IP publica nueva `181.190.21.36`** con VIP Static NAT 443→443 hacia
+  `10.100.100.16` en el FortiGate. `dev03`/`dev04`/`dev05` en DNS apuntan
+  ahi (TTL 14400). `dev01`/`dev02` siguen en `181.190.21.34`.
+- **Split-horizon DNS**: el resolutor interno devuelve `10.100.100.16`,
+  el publico `181.190.21.36`. Ambos caminos verificados con `curl 200` y
+  certificado valido.
+- Caddy bindea `10.100.100.16:443` (directiva `bind` — **debe ser una IP
+  local**, no la publica). Regla ufw acotada a esa IP.
+- Bloques `:18480`/`:18490` y sus reglas ufw **eliminados**.
+- `AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS` y `AMELI_APP_URL_BASE`
+  actualizados sin puerto en ambas apps.
+- **`dev05.ameli.cl` resuelve a `.36` pero no tiene site block** (se borro
+  con la instancia de prueba). Registro DNS colgado.
+
+> **Leccion operativa.** Se saco el puerto viejo del Caddyfile **antes**
+> de confirmar que el CSRF apuntara al origen nuevo: el paso quedo
+> huerfano entre dos temas y nadie verifico su `grep`. Resultado: la app
+> Starlink de produccion quedo unos minutos aceptando `GET` pero
+> rechazando todo `POST` con 403 — el login caido sin ningun error
+> visible en logs de Caddy. **Ningun paso destructivo va antes de la
+> evidencia de que el preparatorio se aplico.**
+
+### 6.1. Pendiente: consolidar `dev01` y `dev02`
 
 El operador abre **una regla de firewall por app**, con un subdominio y un
 puerto alto cada una. No hace falta: Caddy multiplexa por SNI/`Host` en un
@@ -271,25 +304,35 @@ en `TLS_WITH_CADDY.md` → "Varias apps en un host".
   entra en el snippet** — hay que escribir ese bloque completo.
 - Cert **wildcard ya emitido** en `/etc/ssl/ameli/` — sin ACME por sitio.
 
-> #### 🔴 Hallazgo de seguridad, previo a tocar el firewall
+> #### 🟡 Bypass del `basic_auth` de `dev01` — exposicion lateral
 >
-> Seis backends escuchan en **`0.0.0.0`**, no en loopback: puertos
-> `18050`, `18098`, `18105`, `18106`, `18200`, `18201`. Solo `18080` y
-> `18090` bindean `127.0.0.1` correctamente.
+> **Confirmado**: `curl http://127.0.0.1:18098/` → **200**, mientras
+> `https://dev01.ameli.cl:8443/` → **401**. El backend
+> (`ameli-bandwidth-dashboard-dev`) escucha en `0.0.0.0` y ufw lo permite
+> desde `Anywhere`, asi que se saltea el `basic_auth` **y** la CSP,
+> `Referrer-Policy`, `X-Content-Type-Options` y `Permissions-Policy` que
+> viven en ese `handle` del Caddyfile.
 >
-> Con su puerto abierto en el firewall, esas apps son alcanzables **sin
-> pasar por Caddy**: se saltea todo control que viva en el proxy
-> (`basicauth`, matchers de IP, rate limiting, headers de seguridad) y el
-> trafico va en claro — no hay `SECURE_SSL_REDIRECT`, asi que un POST de
-> login por `http://` manda las credenciales en texto plano. **`dev01`
-> responde 401: si esa auth es de Caddy, el backend esta abierto.**
+> **Alcance real, medido**: NO es internet. Desde una maquina de otro
+> segmento, `181.190.21.34:18098` y `10.100.100.16:18098` dan **timeout**
+> mientras `10.100.100.16:443` da 200 — el FortiGate no publica ese
+> puerto. La exposicion es a **cualquier host que rutee al servidor**
+> (LAN y las varias subredes VPN habilitadas). Es defensa en profundidad,
+> no incendio. Verificacion definitiva: revisar VIP/policy en el
+> FortiGate, no `curl` desde un solo punto.
 >
-> **Correccion de una afirmacion previa de esta sesion:** dije que esto
-> permitia falsificar la IP de origen. **Es falso** — verificado contra
-> `accounts/services/session.py`: `client_ip()` solo honra
-> `X-Forwarded-For` cuando `REMOTE_ADDR` esta en `TRUSTED_PROXIES`, y en
-> un acceso directo `REMOTE_ADDR` es la IP real del atacante. El template
-> hace lo correcto ahi.
+> Mismo caso, menor: `18050` (backend de `dev02`) en `0.0.0.0`, ufw
+> restringido a LAN/VPN.
+>
+> **Dos correcciones de afirmaciones previas de esta sesion**, ambas por
+> deducir desde una capa sin comprobar las de arriba:
+> 1. Dije que un backend expuesto permitia **falsificar la IP de
+>    origen**. **Falso** — `client_ip()`
+>    (`accounts/services/session.py`) solo honra `X-Forwarded-For` cuando
+>    `REMOTE_ADDR` esta en `TRUSTED_PROXIES`; en acceso directo
+>    `REMOTE_ADDR` es la IP real del atacante.
+> 2. Dije que `18098` estaba **abierto a internet**, leyendo la regla de
+>    ufw sin verificar el perimetro. **Falso** — el FortiGate lo contiene.
 >
 > **Bindear a loopback es prerequisito de la consolidacion, no un
 > follow-up.** Falta mapear que puerto corresponde a que app y cual esta
