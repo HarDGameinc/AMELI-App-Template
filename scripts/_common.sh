@@ -506,9 +506,21 @@ install_python_deps() {
 
 repair_permissions() {
   chown -R root:root "${APP_DIR}" || true
-  find "${APP_DIR}" -type d -exec chmod 755 {} \; || true
-  find "${APP_DIR}" -type f -exec chmod 644 {} \; || true
+
+  # Skip .git entirely. The documented install clones straight into
+  # /opt/<instance>, so APP_DIR *is* the git checkout: a blanket chmod
+  # rewrites git's own internals and leaves every file whose recorded
+  # mode differs showing as modified -- which makes the documented
+  # update path (`git pull` + reinstall) abort with "local changes
+  # would be overwritten". The repo mode of scripts/*.sh and of
+  # deploy/git-hooks/* is kept in sync with what this function applies,
+  # so a reinstall leaves the checkout clean.
+  find "${APP_DIR}" -name .git -prune -o -type d -exec chmod 755 {} \; || true
+  find "${APP_DIR}" -name .git -prune -o -type f -exec chmod 644 {} \; || true
   find "${APP_DIR}/scripts" -type f -name "*.sh" -exec chmod 755 {} \; || true
+  if [[ -d "${APP_DIR}/deploy/git-hooks" ]]; then
+    find "${APP_DIR}/deploy/git-hooks" -type f -exec chmod 755 {} \; || true
+  fi
 
   if [[ -d "${VENV_DIR}" ]]; then
     chown -R "${RUN_USER}:${RUN_GROUP}" "${VENV_DIR}" || true

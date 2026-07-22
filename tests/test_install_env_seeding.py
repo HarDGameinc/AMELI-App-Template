@@ -331,3 +331,29 @@ def test_warns_when_an_existing_env_file_disagrees_with_the_units(tmp_path):
 
     assert "AMELI_APP_API_PORT=19999" in stdout
     assert "19999" in stdout
+
+
+# ---------------------------------------------------------------------------
+# B12 -- install.sh must not dirty its own checkout
+# ---------------------------------------------------------------------------
+
+def test_repo_file_modes_match_what_repair_permissions_applies():
+    """The documented install clones straight into /opt/<instance>, so
+    APP_DIR *is* the git checkout and ``repair_permissions`` chmods it.
+    Any file whose recorded mode differs from the applied one shows up as
+    modified forever, and `git pull` then aborts with "local changes
+    would be overwritten" -- breaking the documented update path.
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "-s", "scripts/", "deploy/git-hooks/"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout
+
+    wrong = [
+        line for line in out.splitlines()
+        if line and not line.startswith("100755")
+    ]
+    assert not wrong, (
+        "repair_permissions sets these executable; git must record 100755 "
+        f"or the checkout is dirty after every install: {wrong}"
+    )
