@@ -290,8 +290,20 @@ single dev environment (one clone, one venv, same hash-pinned lock that
 ships to prod), local deployment runs directly under WSL2 (`python -m
 ameli_app.api` against a local Postgres — no Docker), production stays on
 the Linux VM `ha-report2`, and Windows-native is fallback only. `CONTRIBUTING.
-md` inverted accordingly. All validated on the dev server / CI; see the
-latest `docs/CLAUDE_HANDOFF_*`.
+md` inverted accordingly.
+
+> **⚠️ Dev-environment status: #9 was superseded by `DECISIONS.md` #11
+> (2026-07-22).** In practice the WSL2 bridge cost more work than it saved,
+> so the loop moved to **Windows-native dev + extensive testing on a real
+> Linux server**; WSL2 and Docker are documented but out of the loop. A
+> reader following this narrative should NOT adopt the WSL2 strategy. The
+> trade-off #11 accepts explicitly: **~30 win32-skipped tests (shell /
+> systemd / backup) never run locally**, so CI on `ubuntu-latest` — or a
+> server test — is the authoritative gate for any change to `scripts/*.sh`,
+> `deploy/systemd/*` or backup/restore. A green Windows run is necessary,
+> not sufficient.
+
+All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

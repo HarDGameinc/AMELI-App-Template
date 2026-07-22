@@ -160,6 +160,13 @@ entry and note it.
 
 ## 9. Dev environment — WSL2 primary, single loop (supersedes #8)
 
+> **Superseded by #11 (2026-07-22).** In practice the WSL2 loop cost more
+> work than it saved (editor↔Linux-fs sync, `wsl.exe` path/quoting, CRLF
+> and `$`-expansion on env files, Postgres without systemd, no cross-fs
+> preview). The operator moved to **Windows-native dev + extensive testing
+> on a real Linux server**. Kept here for the audit trail; the current
+> strategy is in **#11**.
+
 - **Context**: #8 (same day, earlier) framed the environment as tiered —
   Windows daily loop with WSL2 for parity — which forces **double work**:
   two venvs, two locks, two suites, two divergent dep sets kept in sync
@@ -282,3 +289,61 @@ entry and note it.
     - "Drop `APP_ENV`; ship one permissive mode" — the M1 regression.
     - "Rename `prod` to `deploy` / `strict`" — pure cosmetic churn
       across every unit file, doc, and hija.
+
+## 11. Dev environment — Windows-native + extensive server testing (supersedes #9)
+
+- **Context**: #9 (2026-07-17) made WSL2 Ubuntu 24.04 the single dev
+  environment. In practice the operator measured that the WSL2 loop costs
+  more work than it saves: file-sync friction between the Windows editor
+  and the Linux fs, path/quoting pain crossing the `wsl.exe` boundary,
+  CRLF and `$`-expansion issues when moving env files, Postgres without
+  systemd, and no cross-fs preview browser. The child app (AMELI Report
+  Starlink) independently reported the same and measured a materially
+  higher output working Windows-native against a real server. Docker
+  Desktop was already rejected in #8/#9 for the same class of reason
+  (cost of the Windows↔container bridge).
+- **Decision**: **Windows-native is THE dev environment; the real Linux
+  server is THE test environment.** WSL2 and Docker are **out of the
+  development loop**.
+  1. **Daily loop on Windows** — the clone at
+     `C:\Users\hardg\AMELI APPS\AMELI_APP_TEMPLATE` is canonical again
+     (it stops being "archived"). Native venv, `pytest`, `ruff`. Fast
+     edit/run cycle with no filesystem bridge.
+  2. **Extensive testing happens on a real Linux server** via
+     `git clone` / `git pull` + the install and validation scripts. This
+     is *more* faithful than WSL2 for exactly the surfaces that matter
+     (systemd units, `install.sh`, backup/restore, file ownership, TLS
+     behind Caddy) because it is the same OS and init system as
+     production.
+  3. **WSL2 and Docker stay documented but unused.** The repo keeps the
+     Docker artifacts and `test_docker_stack.py` as anti-drift guards for
+     consumers who do want them; neither is part of this operator's loop.
+  4. **Production remains the Linux VM** (`ha-report2`), deployed via
+     `git pull` + systemd restart. Unchanged.
+
+- **Consequences — the trade-off, stated explicitly**:
+  - **~30 tests do not run locally.** The Windows suite is **1135 passed
+    / 58 skipped** (verified 2026-07-22); the same tree on Linux ran
+    **1156 / 28** at the 2026-07-16 measurement. The **58 vs 28 skip
+    delta** is the stable signal — the ~30 extra skips are the
+    **shell / systemd / backup** suite
+    (`test_common_sh_slug_autodetect`, `test_systemd_profile`,
+    `test_backup_restore`, `test_install_sh_restart`, …) that `win32`
+    skips. Those are precisely the tests covering `scripts/*.sh`.
+  - **Compensating controls — treat these as mandatory, not optional:**
+    1. **CI is the authoritative gate.** `ci.yml` runs the full suite on
+       `ubuntu-latest` (plus Postgres, e2e and CodeQL) on every push/PR,
+       so the win32-skipped tests execute on every change.
+    2. **Server testing covers the install/systemd path** end to end.
+  - **Hard rule that follows**: a change to `scripts/*.sh`,
+    `deploy/systemd/*`, or anything the win32 suite skips is **never
+    "validated" by a green local Windows run**. It needs green CI *or* a
+    server test before it ships. A local pass is necessary, not
+    sufficient.
+  - Lockfile parity is unaffected: both locks stay hash-pinned and CI
+    installs them on Linux, so the shipped dependency set is still the
+    Linux one regardless of the dev OS.
+- **Revisit if**: the win32 skip set grows to cover logic that CI cannot
+  reach, or a second developer joins with a different OS. This supersedes
+  **#9** (which superseded **#8**); the dev-environment question is
+  considered settled for this operator unless that changes.
