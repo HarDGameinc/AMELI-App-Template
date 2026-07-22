@@ -9,7 +9,14 @@
 #    and as the SAN for its Let's Encrypt cert.
 # 2. Copy this block into /etc/caddy/Caddyfile — or into a fragment
 #    file /etc/caddy/sites/__HOSTNAME__.caddy if you split the config.
-# 3. `sudo systemctl reload caddy`.
+#
+#    ⚠️ If the host already serves other apps, do NOT overwrite
+#    /etc/caddy/Caddyfile: you would take every one of them down. Append
+#    a site block, or add a fragment file if the main Caddyfile has an
+#    ``import`` directive. Check first with:
+#        caddy adapt --config /etc/caddy/Caddyfile --pretty >/dev/null
+# 3. `systemctl reload caddy` (root shell — the reference server has no
+#    `sudo` binary; see AGENTS.md → "Operating conventions").
 # 4. Set on the app side (in /etc/<slug>/app.env — install.sh will
 #    have created the file; the wizard `ameli-app configure` writes
 #    the two lines below if you point it at Caddy):
