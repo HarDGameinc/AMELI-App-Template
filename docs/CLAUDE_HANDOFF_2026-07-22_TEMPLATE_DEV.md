@@ -277,12 +277,19 @@ en `TLS_WITH_CADDY.md` → "Varias apps en un host".
 > `18050`, `18098`, `18105`, `18106`, `18200`, `18201`. Solo `18080` y
 > `18090` bindean `127.0.0.1` correctamente.
 >
-> Con su puerto abierto en el firewall, esas apps son alcanzables
-> **sin pasar por Caddy**: sin TLS, sin HSTS, y con `X-Forwarded-For` /
-> `X-Forwarded-Proto` puestos por quien llame. Como la app confia en esos
-> headers al venir de un proxy declarado en `TRUSTED_PROXIES`, cualquiera
-> que le pegue al backend directo puede **falsificar su IP** en el audit
-> log y en el rate limiting.
+> Con su puerto abierto en el firewall, esas apps son alcanzables **sin
+> pasar por Caddy**: se saltea todo control que viva en el proxy
+> (`basicauth`, matchers de IP, rate limiting, headers de seguridad) y el
+> trafico va en claro — no hay `SECURE_SSL_REDIRECT`, asi que un POST de
+> login por `http://` manda las credenciales en texto plano. **`dev01`
+> responde 401: si esa auth es de Caddy, el backend esta abierto.**
+>
+> **Correccion de una afirmacion previa de esta sesion:** dije que esto
+> permitia falsificar la IP de origen. **Es falso** — verificado contra
+> `accounts/services/session.py`: `client_ip()` solo honra
+> `X-Forwarded-For` cuando `REMOTE_ADDR` esta en `TRUSTED_PROXIES`, y en
+> un acceso directo `REMOTE_ADDR` es la IP real del atacante. El template
+> hace lo correcto ahi.
 >
 > **Bindear a loopback es prerequisito de la consolidacion, no un
 > follow-up.** Falta mapear que puerto corresponde a que app y cual esta

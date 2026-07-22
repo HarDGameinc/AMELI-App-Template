@@ -150,13 +150,29 @@ ss -tlnp | grep -v 127.0.0.1 | grep -vE "caddy|:22\s"
 ```
 
 Un backend en `0.0.0.0` con su puerto abierto en el firewall es
-**alcanzable sin pasar por Caddy**: sin TLS, sin HSTS, y con
-`X-Forwarded-For` / `X-Forwarded-Proto` puestos por quien llame. Como la
-app confia en esos headers cuando vienen de un proxy declarado en
-`TRUSTED_PROXIES`, cualquiera que le pegue al backend directo puede
-**falsificar su IP** en el audit log y en el rate limiting. En el
-template esto ya viene bien (`AMELI_APP_HOST=127.0.0.1` por defecto);
-revisa el `--host` de las apps que no lo usen.
+**alcanzable sin pasar por Caddy**. Lo que eso rompe, en concreto:
+
+- **Todo control que viva en el proxy se saltea**: `basicauth`, matchers
+  de IP, rate limiting, headers de seguridad, cualquier restriccion del
+  site block. Si tu autenticacion esta en Caddy, el backend queda
+  **abierto**.
+- **Trafico en claro.** No hay `SECURE_SSL_REDIRECT` en el template, asi
+  que la app responde por HTTP sin redirigir. Las cookies marcadas
+  `Secure` no viajan (el navegador las retiene), pero **un POST de login
+  a `http://` manda las credenciales en texto plano**.
+- **HSTS no cubre este camino**: la politica es por hostname, y aca se
+  entra por `IP:puerto`.
+
+**Lo que NO pasa**, para no sobreestimar el riesgo: no se puede
+falsificar la IP de origen. `client_ip()`
+(`accounts/services/session.py`) solo mira `X-Forwarded-For` cuando
+`REMOTE_ADDR` esta en `TRUSTED_PROXIES`; en un acceso directo
+`REMOTE_ADDR` es la IP real del atacante, que no esta en la lista, asi
+que el header se ignora. `ALLOWED_HOSTS` tampoco se saltea — pero se
+satisface mandando el `Host` correcto, asi que no es una defensa.
+
+En el template esto ya viene bien (`AMELI_APP_HOST=127.0.0.1` por
+defecto); revisa el `--host` de las apps que no lo usen.
 
 ### El Caddyfile, con snippet reutilizable
 
