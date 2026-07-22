@@ -340,3 +340,125 @@ AMELI_APP_CONFIGURE_ADMIN_PASSWORD='TestPass!12?' \
 - `src/ameli_app/cli.py` — `ameli-app configure` wizard.
 - `tests/test_cli_configure.py` — 9 tests del wizard.
 - `.env.example` — limpio del placeholder SECRET_KEY.
+
+## §10. Brief upstream desde la hija Starlink (recibido post-S-10)
+
+Despues del cierre S-10, llego un brief de la sesion 2026-07-20/21 de la
+app hija AMELI Report Starlink con 4 items para consideracion upstream,
+respaldados por evidencia empirica de un primer push-to-server real bajo
+DECISIONS #9. Decision del operador: **documentar todo, implementar nada
+hoy** — las pruebas de manana (§8b) siguen priorizadas; los items del
+brief se re-evaluan despues.
+
+### 10.1 Propuesta DECISIONS #11: Windows-native + push-to-server (superseder #9)
+
+**Evidencia**: peer bajo #9 WSL2-primary vs peer Linux-nativo trabajando en
+paralelo en la hija, ~11h vs ~10h, output ~3x en favor de Linux nativo.
+4 modos de friccion medidos: ~20 cp/heredoc sync (~10-15 min), escape de
+paths con espacios en `wsl.exe -- bash -c`, CRLF+$-expansion en secrets,
+Postgres sin systemd + no preview browser cross-fs. Total ~1h/sesion.
+
+**Analisis (mi push-back medido)**:
+
+- **Las primeras 3 fricciones sugieren #9 mal adoptada**: `cp/heredoc`,
+  `wsl.exe -- bash -c` y CRLF son sintomas de editar en Windows y
+  sincronizar a WSL manualmente — exactamente lo que #9 dice **no** hacer
+  ("editar via UNC `\\wsl.localhost\...` o VS Code Remote-WSL"). Un
+  chequeo con la sesion Starlink sobre que herramienta usaba el peer WSL
+  para editar cerraria esa duda.
+- **La 4ta friccion (Postgres sin systemd, preview cross-fs)** ES
+  intrinseca a WSL vs Debian real. Techo genuino.
+- **El multiplicador 3x** puede tener componentes no atribuibles: distinto
+  scope (SVG chart vs dashboard completo), familiaridad, contexto. La
+  friccion es real; el numero exacto no es concluyente.
+- **#11 tiene sus propios costos**: cada validacion via `git push + SSH +
+  pytest` es lenta comparada con loop local; contencion si hay multiples
+  devs; sin server = sin dev; server como validador se acopla al deploy.
+- **El CI ya es el validador**: full matrix + e2e + `test-postgres` +
+  CodeQL corren en cada PR. #11 duplica ese rol.
+
+**Propuesta upstream**: agregar #11 como **DECISIONS alternativo valido**,
+NO superseder #9 wholesale. Documentar la evidencia empirica de Starlink
+como contexto. Cada operador/maquina elige #9 o #11 segun fit. Si en 2-3
+sesiones mas #11 gana consistentemente en otros contextos, ahi se puede
+proponer supersession formal.
+
+**Diferido a**: evaluacion en la sesion de manana tras probar el trabajo
+de hoy en server. Puede que la experiencia propia de correr `install.sh`
++ `configure` desde WSL2 pese en la decision.
+
+### 10.2 Follow-up: `install.sh --with-dev`
+
+Bajo cualquier flujo tipo "server dev corre pytest post-push", falta
+`requirements-dev.lock`. Hoy es paso manual.
+
+**Diseño propuesto**: flag `--with-dev` opt-in en `install.sh`. Off por
+default (matchea la postura prod actual, dev-deps no son supply-chain
+surface para produccion). ~10 LOC: parsear flag; si presente, despues de
+`install_python_deps` correr `pip install --require-hashes -r requirements-
+dev.lock`. Documentar en `CONTRIBUTING.md` "Deploying to the dev server".
+
+**Estado**: acepto, implementable en ~15 min. **Diferido a manana o
+folded en v0.5.10 tras aprobacion del testing.**
+
+### 10.3 Follow-up: `conftest.py` autodefensivo con `AMELI_APP_ENV_FILE`
+
+**Bug real diagnosticado en Starlink**: `load_settings()` a nivel modulo
+autodetecta `/etc/<slug>-<env>/app.env` por `cwd`; cuando pytest corre
+desde el checkout instalado real (`/opt/<slug>-<env>`), inyecta config
+prod antes que los tests puedan aserar defaults. 4 tests fallaron
+deterministicamente en el primer push-to-server.
+
+**Fix propuesto** (con tweak sobre lo que sugirieron):
+
+```python
+# tests/conftest.py, arriba, antes de cualquier import de Django
+import os
+os.environ.setdefault("AMELI_APP_ENV_FILE", os.devnull)
+```
+
+Con `os.devnull` en vez de `/dev/null` literal, es portable
+(Windows=`nul`) — no rompe si algun dev corre pytest en Windows-nativo
+(fallback per #9 o si se adopta #11). `setdefault` no pisa si el CI o
+un dev ya paso su propio env-file. **1 linea, cero side-effect, protege
+4+ tests en deploy real.**
+
+**Estado**: acepto, es un bug legitimo. **Diferido a manana o folded en
+v0.5.10 tras aprobacion del testing.**
+
+### 10.4 Findings menores (doc-only)
+
+- **Root shell / no sudo**: ya documentado en `CONTRIBUTING.md`
+  "Deploying to the dev server". Si al pasar #11 upstream se agregan
+  snippets nuevos, cuido de omitir `sudo`. **Nada por hacer hoy.**
+- **`.env` con `$` en valores + CRLF**: no aplica al Django boot del
+  template (`config.py:144` usa parser Python-nativo que evita el
+  problema de shell), pero **vale una nota** en `OPERATIONS.md` o
+  `SECURITY.md` sobre "never bash-source an env file with `$` in
+  values — use the Python parser or single-quote". ~10 LOC docs.
+  **Diferido — cabria en v0.5.10 junto con los otros fixes**.
+
+### 10.5 Actualizacion del §7 roadmap con estos items
+
+| # | Item nuevo del brief Starlink | Effort | Prioridad |
+|---|---|---|---|
+| — | **§10.3**: `conftest.py` `os.devnull` — 1 linea, cero riesgo | XS | ALTA — bloquea test-post-install en cualquier server |
+| — | **§10.2**: `install.sh --with-dev` flag | S | media — cierra el ultimo hueco del install.sh |
+| — | **§10.4**: nota `.env` `$`+CRLF en SECURITY.md/OPERATIONS.md | XS | baja — hija-especifico, doc-only |
+| — | **§10.1**: DECISIONS #11 como alternativa a #9 | S | evaluar tras propia experiencia en el test de manana |
+
+**Ruta sugerida para manana**:
+
+1. **Primero**: ejecutar §8b (test del install.sh + configure + Caddy en
+   server dev) como estaba planeado. Ver la propia experiencia del
+   operador con #9 vs lo que dice el brief.
+2. **Despues**: decidir cuales de §10.1-.4 entran a v0.5.10:
+   - **§10.3 y §10.4**: candidatos claros (chicos, safe, doc-only o 1
+     linea).
+   - **§10.2**: candidato si el testing revela el pain de installar
+     dev-deps manual.
+   - **§10.1**: decision arquitectonica; puede ser un DECISIONS #11
+     alternativo (mi propuesta) o folded en un release futuro segun mas
+     evidencia.
+3. **Cortar v0.5.10** con lo que quede en scope.
+4. **Entregar a la hija** con prompt actualizado.
