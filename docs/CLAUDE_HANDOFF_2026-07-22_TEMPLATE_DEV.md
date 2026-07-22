@@ -258,7 +258,7 @@ las apps de un host compartido (los otros dos: `Caddyfile.example` en
 
 | Site | URL | Backend | Bind |
 |---|---|---|---|
-| `dev01` | `https://dev01.ameli.cl:8443` | `18098` | `0.0.0.0` ⚠️ |
+| `dev01` | `https://dev01.ameli.cl:8443` (sin migrar) | `18098` | `127.0.0.1` ✅ |
 | `dev02` | `https://dev02.ameli.cl` | `18050` | `127.0.0.1` ✅ |
 | `dev03` | `https://dev03.ameli.cl` | `18080` | `127.0.0.1` ✅ |
 | `dev04` | `https://dev04.ameli.cl` | `18090` | `127.0.0.1` ✅ |
@@ -338,7 +338,25 @@ en `TLS_WITH_CADDY.md` → "Varias apps en un host".
   entra en el snippet** — hay que escribir ese bloque completo.
 - Cert **wildcard ya emitido** en `/etc/ssl/ameli/` — sin ACME por sitio.
 
-> #### 🟡 Bypass del `basic_auth` de `dev01` — exposicion lateral
+> #### ✅ Bypass del `basic_auth` de `dev01` — CERRADO (fase 1)
+>
+> `DASHBOARD_HOST=0.0.0.0` → `127.0.0.1` en
+> `/etc/ameli-bandwidth-dashboard-dev/dashboard.env` + restart. Verificado:
+> `ss` muestra `127.0.0.1:18098` y Caddy sigue devolviendo 401. **Sin
+> tocar hostname ni puerto**, asi que los iframes de Home Assistant no se
+> ven afectados. La regla ufw del `18098` se deja unos dias: ya es
+> inofensiva y hace el rollback trivial si aparece un consumidor olvidado.
+>
+> **Fase 2 (mudanza a 443) NO hecha, y es cara**: `dev01` esta embebido en
+> Home Assistant con CSP `frame-ancestors https://temuco.ameli.cl:65100
+> https://temuco.ameli.cl:8123 http://10.100.100.10:8123` y **cuatro URLs
+> de iframe** (municipio, salud, educacion, perimetrales), cada una con su
+> `iframe_key` y cookies `SameSite=None; Partitioned`. Cambiar hostname o
+> puerto invalida esas URLs, y **el sintoma solo aparece dentro del
+> embebido**: probar la app directamente no lo detecta. Requiere reemitir
+> las cuatro y editar las tarjetas de HA.
+>
+> Contexto original del hallazgo:
 >
 > **Confirmado**: `curl http://127.0.0.1:18098/` → **200**, mientras
 > `https://dev01.ameli.cl:8443/` → **401**. El backend

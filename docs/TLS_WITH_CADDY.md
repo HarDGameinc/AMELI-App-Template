@@ -140,6 +140,27 @@ aislamiento apoyado en que los nombres no colisionen, no en el navegador.
 Solo para apps que ya confian entre si. **Un subdominio por app es la
 respuesta correcta.**
 
+### Como probar que nadie consume el backend directo
+
+Muestrear con `ss` cada pocos segundos **no sirve**: solo ve conexiones
+abiertas en ese instante, y un poll REST dura milisegundos. Un log vacio
+asi no prueba ausencia de clientes, solo ausencia de conexiones largas.
+
+Capturar **los SYN**, que detecta cada conexion nueva dure lo que dure:
+
+```bash
+nohup timeout 900 tcpdump -ni any \
+  'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack = 0 and dst port <PUERTO> and not src host 127.0.0.1' \
+  > /tmp/syn.log 2>/dev/null &
+```
+
+Tampoco alcanza con leer los logs de la app: si registra el
+`X-Forwarded-For`, un acceso directo y uno proxeado **se ven identicos**.
+
+Aun asi, 15 minutos no descartan un poller horario. Cuando exista un
+consumidor de API con token, la evidencia definitiva es **su** config, no
+la captura: `grep -rn "<PUERTO>"` en el cliente.
+
 ### Requisito previo: los backends van en loopback
 
 Antes de tocar el firewall, verifica que ninguna app servida por Caddy
