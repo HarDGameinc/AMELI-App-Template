@@ -259,9 +259,33 @@ las apps de un host compartido (los otros dos: `Caddyfile.example` en
 | Site | URL | Backend | Bind |
 |---|---|---|---|
 | `dev01` | `https://dev01.ameli.cl:8443` | `18098` | `0.0.0.0` ⚠️ |
-| `dev02` | `https://dev02.ameli.cl:18450` | `18050` | `0.0.0.0` ⚠️ |
+| `dev02` | `https://dev02.ameli.cl` (+ `:18450` aun vivo) | `18050` | `0.0.0.0` ⚠️ |
 | `dev03` | `https://dev03.ameli.cl` | `18080` | `127.0.0.1` ✅ |
 | `dev04` | `https://dev04.ameli.cl` | `18090` | `127.0.0.1` ✅ |
+
+**`dev02` — migracion a medias, a proposito.** No es una app del
+template: es `ameli-metro-status-dev` (`python -m ameli_metro.api`), con
+prefijo de variables `METRO_*` y **sin** `CSRF_TRUSTED_ORIGINS` ni
+`ALLOWED_HOSTS`, asi que el modo de falla de Starlink no aplica.
+`METRO_PUBLIC_URL` ya se actualizo a `https://dev02.ameli.cl` (importa
+mas que en las otras: la app manda **web push VAPID y FCM**, y la URL de
+destino va embebida en la notificacion). Queda pendiente:
+
+- **Zona DNS interna todavia con `dev02` como CNAME a `dev01` → `.34`.**
+  La publica ya es A → `.36`. Resultado: los usuarios **externos** entran
+  por 443 y los **internos** solo por `:18450`. Por eso ese bloque y su
+  regla ufw **no se pueden sacar todavia**.
+- `METRO_API_HOST=0.0.0.0` con ufw abriendo `18050` a cuatro subredes LAN
+  y la VPN, con comentario explicito — parece intencional, asi que antes
+  de bindear a loopback hay que probar que nadie consume el backend
+  directo (muestreo de sockets, no logs: la app loguea el
+  `X-Forwarded-For`, asi que directo y proxeado se ven identicos).
+
+> **Hallazgo:** `METRO_EXPOSE_PUBLIC=0` y aun asi el proceso bindea
+> `0.0.0.0`. El flag **no controla el bind**. Un operador que lo lea cree
+> que el servicio no esta expuesto y no es cierto — misma clase de
+> problema que el `validate_installation.sh` que daba OK sobre un
+> servicio caido: una señal que miente es peor que no tenerla.
 
 - **IP publica nueva `181.190.21.36`** con VIP Static NAT 443→443 hacia
   `10.100.100.16` en el FortiGate. `dev03`/`dev04`/`dev05` en DNS apuntan
