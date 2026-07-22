@@ -71,3 +71,71 @@ necesita, extraer a un `ameli-fleet` package.
 2. Volumen (vehiculos, posiciones/hora)? Determina throttle + cache.
 3. Persistencia (snapshot vs historico)? El historico dispara PRIVACY.
 4. Ubicacion (que hija concreta)?
+
+### 3.2. Overhaul del onboarding — DECISIONS #10 + installer + configurator
+
+**Trigger**: el operador reporto que instalar una hija en el server con
+`APP_ENV=prod` requiere seis env vars manuales (SECRET_KEY, DEBUG,
+ALLOWED_HOSTS, TRUSTED_PROXIES, AUDIT_HMAC_KEY, MFA_ENCRYPTION_KEY) mas
+setup manual de SMTP / TLS / superadmin, y propuso **eliminar `APP_ENV`**
+para dejar "un producto estandar".
+
+**Pushback** (documentado en §4): eliminar `APP_ENV` **reversa M1** (v0.5.1,
+hallazgo HIGH de auditoria independiente que cerro "silent fallback to dev
+disables every guard") y colapsa V2.8 / V7.3.2 / V13.4 / V14.4.5 del ASVS
+L2. Los seis guards son armadura defensiva, no naming quirks. El diagnostico
+real es DX / onboarding, no arquitectura.
+
+**Plan completo ejecutado** (7 piezas):
+
+1. **`DECISIONS.md` #10** (nuevo) — mantener `APP_ENV`; cerrar el gap con
+   installer + configurator. Documenta rechazos explicitos (drop
+   `APP_ENV` en modo strict rompe WSL; drop en modo permissive es la
+   regresion de M1; renombrar es churn cosmetico).
+
+2. **`scripts/install.sh` + `_common.sh`** — auto-genera las 3 keys
+   crypto **idempotente** en `initialize_runtime_env` via nuevo helper
+   `gen_env_if_missing`. `SECRET_KEY` = `secrets.token_urlsafe(60)`,
+   `AUDIT_HMAC_KEY` = `secrets.token_urlsafe(48)`,
+   `MFA_ENCRYPTION_KEY` = `base64.urlsafe_b64encode(os.urandom(32))`
+   (shape identica a `Fernet.generate_key()`, verificado con round-trip
+   contra cryptography). `.env.example` limpiado del placeholder
+   `SECRET_KEY=change-this-django-secret` (dejaba pasar el guard).
+
+3. **`deploy/caddy/Caddyfile.example`** (nuevo) — snippet TLS-auto
+   reverse-proxy listo para copiar, con placeholder `__HOSTNAME__` y
+   los `X-Forwarded-*` headers necesarios. `install.sh` imprime su
+   path con instrucciones al terminar.
+
+4. **`ameli-app configure`** — nuevo subcomando CLI (wizard de ~200
+   LOC). 4 secciones (`hosts`, `proxies`, `smtp`, `admin`), interactivo
+   si stdin es TTY, no-interactivo via `AMELI_APP_CONFIGURE_*` env
+   vars. `--check` (dry-run), `--section` (solo una), `--yes` (CI).
+   Salida `2` con lista exacta si faltan requeridos → nunca deja
+   deploy medio configurado. Passwords via `getpass` (sin echo).
+   Idempotente: re-run con mismos valores no toca el archivo.
+
+5. **`install.sh` smoke post-install** — corre
+   `validate_installation.sh` + `curl /health` con retry (15s, primer
+   boot puede tomar). Falla loud con `journalctl` pointer; sale
+   non-zero para que un install roto no pase por bueno.
+
+6. **9 tests nuevos** (`tests/test_cli_configure.py`) — pure helpers
+   (read/write env file, idempotencia, autodetect hosts) + handler
+   (check no toca archivo, missing-vars → exit 2, SMTP opcional,
+   section filter, sin env file → exit 2 con mensaje). Suite completa
+   pasa **1165 / 28** (+9 nuevos vs 1156 baseline). Ruff limpio.
+
+7. **`docs/FIRST_INSTALL_DJANGO.md`** — nueva seccion "Quickstart —
+   Debian con `install.sh` (RECOMENDADO)" al frente con el flujo de
+   **3 comandos** (`install.sh` → `configure` → Caddy). La antigua
+   "Primera instalacion Debian" manual queda como referencia
+   troubleshooting con nota al principio.
+
+**Impacto DX** — el path prod baja de "20 pasos manuales + descubrir
+cada crash uno por uno" a: `apt install` → `install.sh` → `configure`.
+Los guards de seguridad quedan intactos.
+
+**Referencias file:line verificadas** contra codigo real (el helper
+existe donde lo cito, los env vars son los que el codigo realmente lee,
+el CircuitBreaker es generico como afirmo, etc.).

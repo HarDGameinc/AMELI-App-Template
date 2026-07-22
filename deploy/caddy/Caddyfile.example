@@ -1,0 +1,47 @@
+# AMELI App Template — Caddy reverse-proxy fragment (copy-paste ready)
+#
+# Terminates TLS on 443 (Caddy fetches Let's Encrypt automatically),
+# reverse-proxies to the Django ASGI on 127.0.0.1:18080, and forwards
+# the X-Forwarded-* headers Django needs to know it is behind TLS.
+#
+# 1. Replace ``__HOSTNAME__`` with the real public hostname
+#    (e.g. app.example.com). Caddy uses this both as the site name
+#    and as the SAN for its Let's Encrypt cert.
+# 2. Copy this block into /etc/caddy/Caddyfile — or into a fragment
+#    file /etc/caddy/sites/__HOSTNAME__.caddy if you split the config.
+# 3. `sudo systemctl reload caddy`.
+# 4. Set on the app side (in /etc/<slug>/app.env — install.sh will
+#    have created the file; the wizard `ameli-app configure` writes
+#    the two lines below if you point it at Caddy):
+#        AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https
+#        AMELI_APP_TRUSTED_PROXIES=127.0.0.1
+#    Restart the service:
+#        systemctl restart ameli-app-template-<env>-api.service
+#
+# For the full walk-through (static asset caching, media serving from
+# Caddy, gotchas with the SSL header parsing) see
+# docs/TLS_WITH_CADDY.md.
+
+__HOSTNAME__ {
+    encode gzip zstd
+
+    # Optional: let Caddy serve static + media files directly. Skip
+    # this block if the app should serve them (the current asgi setup
+    # already handles /static and /media in-process, just slower).
+    #
+    # handle_path /static/* {
+    #     root * /var/lib/ameli-app-template-<env>/static
+    #     file_server
+    # }
+    # handle_path /media/* {
+    #     root * /var/lib/ameli-app-template-<env>/media
+    #     file_server
+    #     header Cache-Control "public, max-age=3600"
+    # }
+
+    # Everything else -> Django ASGI on 18080 (loopback-only).
+    reverse_proxy 127.0.0.1:18080 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

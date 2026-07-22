@@ -225,3 +225,60 @@ entry and note it.
     release is per-session judgment (a fresh child app onboarding today
     would consume the wrong strategy from `v0.5.8`, which argues for a
     quick tag).
+
+## 10. Keep `APP_ENV`; close the DX gap with a proper installer + configurator
+
+- **Context**: an operator installing the template on a public-internet
+  server hit a chain of boot-time crashes because `APP_ENV=prod`
+  demands six explicit values (`AMELI_APP_DJANGO_SECRET_KEY`, `_DEBUG`,
+  `_ALLOWED_HOSTS`, `_TRUSTED_PROXIES`, `AMELI_APP_AUDIT_HMAC_KEY`,
+  `AMELI_APP_MFA_ENCRYPTION_KEY`) plus post-install steps (SMTP, TLS,
+  superadmin bootstrap) that today are documented as manual. The
+  operator's diagnosis: "let's just remove `APP_ENV` so there's one
+  standard mode." The pain is real; the proposed fix is not.
+- **Decision**: **preserve `APP_ENV`** (with the `dev` / `prod` split as
+  it stands today) and close the pain **at the DX layer** with an
+  actual installer + configurator. The three ingredients:
+  1. **`scripts/install.sh` auto-generates the three crypto keys**
+     (`SECRET_KEY` via `secrets.token_urlsafe(60)`, `AUDIT_HMAC_KEY`
+     via `secrets.token_urlsafe(48)`, `MFA_ENCRYPTION_KEY` via
+     `Fernet.generate_key()`) **idempotently** — write to the env file
+     only if not already present, never overwrite. Removes 3 of the 4
+     boot-crash classes.
+  2. **New CLI subcommand `ameli-app configure`** — an interactive
+     wizard for the values that cannot be generated (`ALLOWED_HOSTS`
+     with hostname auto-detect, `TRUSTED_PROXIES` with default
+     `127.0.0.1` when the proxy is same-host, SMTP with a test-send,
+     superadmin bootstrap). Non-TTY invocation exits with the list of
+     missing vars — no half-configured deploys.
+  3. **`deploy/caddy/Caddyfile.example`** ships a copy-paste TLS-auto
+     reverse-proxy fragment; `install.sh` prints its path with copy
+     instructions.
+  4. **Post-install smoke** — `install.sh` runs
+     `validate_installation.sh` + `curl /health` and reports actionable
+     OK/FAIL, exiting non-zero on failure so a broken install cannot
+     silently proceed.
+- **Consequences**:
+  - **Security posture preserved.** M1 (v0.5.1, HIGH finding of the
+    independent security review — "app silently falls back to dev,
+    disabling every guard") stays closed. ASVS V2.8 (TOTP at rest),
+    V7.3.2 (audit chain integrity), V13.4 (session cookies), V14.4.5
+    (CSRF trusted origins), and PRIVACY.md §4 all remain intact.
+  - **A public-internet deploy STAYS strict.** Some future AMELI app
+    may be LAN-only; that app can carry a lighter posture without
+    forcing the strict apps to weaken.
+  - **The child app operator gets a clean 3-command install path**:
+    `sudo scripts/install.sh` → `ameli-app configure` → apply
+    Caddyfile. `FIRST_INSTALL_DJANGO.md` is rewritten around this.
+  - **The `dev` vs `prod` split remains a load-bearing boundary**,
+    not a naming quirk. The naming stays as-is because renaming
+    (e.g. `local` / `deploy`) would churn the whole flotilla for a
+    cosmetic win.
+  - **Alternatives rejected**:
+    - "Drop `APP_ENV`; ship one strict mode" — makes `wsl` /
+      `python manage.py runserver` on the workstation fail on boot
+      unless the operator sets six env vars locally. Kills the daily
+      loop that #9 just standardized on WSL2.
+    - "Drop `APP_ENV`; ship one permissive mode" — the M1 regression.
+    - "Rename `prod` to `deploy` / `strict`" — pure cosmetic churn
+      across every unit file, doc, and hija.

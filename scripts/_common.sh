@@ -220,6 +220,25 @@ default_env() {
   grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null || printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
 }
 
+# Generate a value with the given python3 one-liner and append to the env
+# file — but ONLY if the key is missing. Never overwrites; safe to re-run
+# across upgrades. Used to auto-provision the three crypto keys the prod
+# fail-closed guards require (SECRET_KEY, AUDIT_HMAC_KEY,
+# MFA_ENCRYPTION_KEY). See DECISIONS #10.
+gen_env_if_missing() {
+  local key="$1" generator="$2"
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  touch "${ENV_FILE}"
+  chmod 640 "${ENV_FILE}" || true
+  chown root:"${RUN_GROUP}" "${ENV_FILE}" || true
+  if ! grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
+    local value
+    value="$(python3 -c "${generator}")"
+    printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
+    log "  generated ${key}"
+  fi
+}
+
 install_system_packages() {
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y
@@ -269,6 +288,19 @@ initialize_runtime_env() {
   default_env AMELI_APP_REQUIRE_TOKEN "false"
   default_env AMELI_APP_API_TOKEN "change-me"
   default_env DATABASE_URL ""
+
+  # Auto-provision the three crypto keys the prod fail-closed guards
+  # require (base.py: SECRET_KEY; auth.py: AUDIT_HMAC_KEY,
+  # MFA_ENCRYPTION_KEY). Idempotent — never overwrites an existing value
+  # so an in-place upgrade keeps working session/audit/MFA state.
+  # MFA_ENCRYPTION_KEY uses the same shape ``Fernet.generate_key()``
+  # emits: base64.urlsafe_b64encode(os.urandom(32)).
+  gen_env_if_missing AMELI_APP_DJANGO_SECRET_KEY \
+    'import secrets; print(secrets.token_urlsafe(60))'
+  gen_env_if_missing AMELI_APP_AUDIT_HMAC_KEY \
+    'import secrets; print(secrets.token_urlsafe(48))'
+  gen_env_if_missing AMELI_APP_MFA_ENCRYPTION_KEY \
+    'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
 }
 
 install_python_deps() {
