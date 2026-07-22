@@ -88,67 +88,170 @@ bloqueante real. Ninguno lo detecta CI ni la suite local porque ese camino
 | **B4** | `ameli-app configure` **bootea Django** para crear el superadmin | `cli.py:813` llama `_bootstrap_django(args)`. Circular: el wizard que debe *escribir* la config necesita que la config ya sea valida. Con B1–B3 sin resolver, el wizard recoge todo el input y **crashea con traceback crudo**. Mitigante: `_write_env_updates` corre **antes** (`cli.py:810`), asi que el input no se pierde. |
 | **B5** | La doc / Quickstart clonan `main`, donde la feature no existe | `gen_env_if_missing`: **0 ocurrencias en `origin/main`, 4 en `origin/dev`**. `3145c65` esta sin promover. Mi primer intento de prueba fallo justamente por esto. |
 
+#### Bloqueantes destapados al corregir los anteriores
+
+Arreglar B3 hizo que `app.yaml` dijera `environment: "prod"` de verdad.
+Hasta ese momento **los guards estaban desactivados y tapaban todo lo que
+sigue**. Cada fix destapo el siguiente error real.
+
+| # | Bloqueante | Evidencia |
+|---|---|---|
+| **B6** | `.env.example` siembra `AMELI_APP_DJANGO_DEBUG=true` en prod | Se copia verbatim a `/etc/<instancia>/app.env`. `settings/base.py:36` se niega a bootear. Ruidoso. |
+| **B7** | `.env.example` siembra `AMELI_APP_SESSION_COOKIE_NAME` | `settings/cookies.py:37` lee *cualquier* nombre explicito como override deliberado del operador y **se saltea la politica `__Host-`** (ASVS V3.4.4). **Silencioso.** Nadie eligio ese override: lo sembro el installer. |
+| **B8** | `.env.example` siembra `SESSION_COOKIE_SECURE=false` | Cookie de sesion sin flag `Secure` detras de TLS. **Silencioso.** |
+| **B9** | `app.yaml.example` trae `email.backend: "console"` | `settings/email.py:36` se niega a bootear fuera de dev: el backend console deja el mail en memoria y password reset / MFA por email fallan en silencio. |
+| **B10** | **El puerto explicito del operador se descarta en silencio** | `.env.example` trae `AMELI_APP_API_PORT=18080` (el de dev); `default_env` por diseno solo escribe una clave que FALTA, asi que el valor del ejemplo le gana al default por entorno **y a `AMELI_APP_API_PORT=18190 bash scripts/install.sh`**. Las units systemd se renderizan desde el valor del shell mientras el proceso lee el env file: dos fuentes de verdad divergentes. En `ha-report2` el servicio quedo intentando bindear **18080, puerto de otra app en produccion**. Solo no paso a mayores porque estaba ocupado y el bind fallo. |
+| **B11** | `validate_installation.sh` da un veredicto que depende del timing | Reportaba `OK=25 WARN=0 FAIL=0` sobre una API que no respondia nada. Con `Type=simple` systemd marca la unit `active` apenas hace exec, antes del bind, asi que un crash-loop samplea como sano ~la mitad de las veces. La misma instalacion dio `[WARN] ACTIVE` en una corrida y `[OK] ACTIVE` en la siguiente sin cambiar nada. |
+| **B12** | `install.sh` ensucia su propio checkout y **rompe el `git pull`** | El Quickstart clona directo en `/opt/<instancia>`, asi que `APP_DIR` *es* el checkout y `repair_permissions` le pasa el chmod encima. El esquema aplicado no coincidia con los modos de git en las dos direcciones (6 scripts 644→755, `deploy/git-hooks/pre-push` 755→644). 7 archivos quedaban permanentemente `modified` y el update documentado abortaba. **Visto en vivo**: un `git pull` fallo, la corrida siguiente uso codigo viejo, y se diagnosticaron sintomas de un fix que nunca habia llegado. |
+
+#### Las dos causas raiz
+
+No es una lista de bugs sueltos:
+
+1. **Los archivos de ejemplo son configuracion de DESARROLLO, y el
+   installer los usaba como configuracion de PRODUCCION** — B3, B6, B7,
+   B8, B9, B10. Los graves no son los que revientan: son B7/B8
+   (degradacion de seguridad sin un solo mensaje) y B10 (la intencion
+   explicita del operador descartada en silencio).
+2. **El installer asume un arbol de deploy, pero el Quickstart lo hace
+   correr sobre un checkout de git** — B12.
+
 #### Confirmado funcionando
 
-- **Auto-generacion de claves cripto** ✅ — 3 × `generated ...` en el primer
-  run. Esta era la feature central de `3145c65`.
-- **Idempotencia** ✅ — segundo run: `Preservado: app.env` / `Preservado:
-  app.yaml`, sin regenerar claves, deps ya satisfechas.
-- **`validate_installation.sh`** ✅ — 25 checks, 0 fail, en una instancia
-  recien creada con slug y puertos no-default.
+- **Auto-generacion de claves cripto** ✅ — 3 × `generated ...`.
+- **Idempotencia** ✅ — `Preservado: app.env` / `app.yaml`, sin regenerar.
+- **`ameli-app configure`** ✅ — crea el superadmin (`"status": "created"`)
+  y en la segunda corrida es idempotente y explicito
+  (`"status": "skipped", "reason": "superadmin-already-exists"`).
+- **Instalacion completa a produccion con Caddy** ✅ — ver §3.2.
+
+### 3.2. Instalacion completa a produccion con TLS (Caddy)
+
+Ground truth del host, leido antes de tocar nada (`AGENTS.md` → nunca
+adivinar): `Caddyfile` **monolitico, sin `import`**, 4 site blocks vivos
+(`dev01`–`dev04`), **certificado wildcard ya emitido** en
+`/etc/ssl/ameli/wildcard-*` — sin ACME, sin rate limits, sin necesidad de
+80/443. Copiar `Caddyfile.example` encima —lo que la guia decia hasta hoy—
+**habria tirado las 4 apps**.
+
+Se agrego un site block siguiendo la convencion de `dev04`, validado con
+`caddy adapt` **antes** del reload y con backup previo:
+
+```
+dev05.ameli.cl:18495 -> reverse_proxy 127.0.0.1:18190
+```
+
+`dev05.ameli.cl` no resuelve en DNS; se verifico con `curl --resolve`
+para no mutar `/etc/hosts`.
+
+**Resultado end-to-end:**
+
+- `GET /health` sobre TLS → `"ok": true`, `"status": "OPERATIVO"`
+- `GET /login/` → `200`, cookie **`__Host-ameli_csrf`** con
+  `Secure; HttpOnly; SameSite=Lax` → B7/B8 validados **en comportamiento
+  real**, no solo como valor en un archivo
+- `validate_installation.sh` → `OK=26 WARN=0 FAIL=0`
+- checkout **limpio antes y despues** de instalar → B12 validado
+- las 4 apps vivas del host, intactas en todo momento
+
+**Los 21 tests de `test_install_env_seeding.py` corren y pasan en el
+servidor.** En Windows estan skipped por diseno (`win32`), y con CI
+apagado hasta el 01-08 el servidor es el unico lugar donde se ejecutan.
+
+#### Falso hallazgo, aclarado
+
+`audit_chain: ok:false` / `DEGRADADO` en una corrida **no era un bug del
+template**: se borro `/etc/tmpl-smoke-prod` tres veces —regenerando
+`AMELI_APP_AUDIT_HMAC_KEY`— conservando la misma base. La fila de
+auditoria quedo firmada con una clave que ya no existia. Con base nueva:
+`"no signed rows yet"`, `ok: true`, `OPERATIVO`. Deja igual un item de
+doc (§5.1).
 
 #### Diagnostico
 
 `3145c65` arreglo **solo las 3 claves cripto**. El resto de la cascada de
-crashes sigue intacta, y el flujo prometido de 3 comandos
-(`install.sh` → `configure` → Caddy) **es circular**: ambos bootean Django
-antes de que exista una config valida.
+crashes seguia intacta, y el flujo prometido de 3 comandos
+(`install.sh` → `configure` → Caddy) **era circular**: ambos booteaban
+Django antes de que existiera una config valida. El template llevaba desde
+el 21/07 con ese flujo documentado como funcional.
 
 ## §4. Decisiones tomadas
 
 - **DECISIONS #11** — Windows-native + testing extensivo en servidor
   (supersede #9). WSL2/Docker quedan documentados, no usados.
 - Regla `no-sudo` promovida a convencion de primer nivel en `AGENTS.md`.
-- **Parar el testing manual** tras el verde y consolidar: seguir tirando del
-  hilo a mano ya no aportaba hallazgos nuevos.
+- **CI apagado hasta el 2026-08-01** por decision del operador. Mientras
+  tanto **el servidor es el unico gate** para la superficie shell/systemd:
+  los tests marcados `win32`-skip no se ejecutan en ningun otro lado.
+- Los archivos `.example` se tratan de ahora en mas como **artefactos de
+  desarrollo**: el installer los renderiza, nunca los copia tal cual.
 
-## §5. Fix set propuesto (pendiente de aprobacion)
+## §5. Fix set entregado
 
-1. **`_common.sh` / `initialize_runtime_env`** — sembrar
-   `AMELI_APP_DJANGO_ALLOWED_HOSTS` (hostname autodetectado) y
-   `AMELI_APP_TRUSTED_PROXIES=127.0.0.1`. Cierra B1+B2.
-2. **`install.sh`** — **templatizar `app.yaml`** en vez del `cp` verbatim:
-   `environment` → `$APP_ENV`, `data_dir` y `profile_uploads_dir` →
-   `/var/lib/<instance>`. Reutilizar el patron `sed` que ya existe en
-   `render_systemd_units`. Cierra B3.
-3. **`cli.py` / `configure`** — no emitir traceback crudo cuando Django aun
-   no puede bootear; reportar "env escrito, superadmin pendiente" y salir
-   con codigo distinto de 0 pero legible. Mitiga B4.
-4. **Docs** (`FIRST_INSTALL_DJANGO.md`, Quickstart) — clonar un **tag
-   promovido**, no `main` pelado. Cierra B5.
+Seis commits, todos con test de regresion. **11 de 12 bloqueantes
+corregidos y verificados en servidor real**; B5 es doc-only y ya esta
+escrito.
 
-Toca: `scripts/_common.sh`, `scripts/install.sh`, `config/app.yaml.example`,
-`src/ameli_app/cli.py`, `docs/FIRST_INSTALL_DJANGO.md`.
+| Commit | Cierra |
+|---|---|
+| `489c8ab` | B1, B2, B3, B4, B5 — siembra de guards, `render_config_file`, `configure` sin traceback crudo, doc con tag promovido |
+| `36f82a0` | Aviso de no sobrescribir un `Caddyfile` compartido |
+| `eb92eef` | B6, B7, B8 — `render_env_file` + `warn_insecure_prod_env` |
+| `8876480` | B9 — backend de email entregable fuera de dev |
+| `818e678` | B10 — `.env.example` deja de pisar host/puertos resueltos |
+| `65b81d9` | B12 — `repair_permissions` no ensucia el checkout |
+| `8582749` | B11 — `/health` como chequeo autoritativo de liveness |
 
-Estos cambios son **exactamente** la superficie que Windows no puede
-validar (§3.0), asi que van con prueba en servidor + CI verde antes de
-cortar **v0.5.10**.
+Superficie tocada: `scripts/_common.sh`, `scripts/install.sh`,
+`scripts/validate_installation.sh`, `src/ameli_app/cli.py`,
+`deploy/caddy/Caddyfile.example`, `docs/FIRST_INSTALL_DJANGO.md`, y los
+modos de git de 6 scripts.
+
+Criterio de diseno aplicado en todos: **renderizar solo al crear el
+archivo**, nunca reescribir uno que el operador toco. Para las instancias
+ya provisionadas con la degradacion, `warn_insecure_prod_env` y
+`warn_port_drift` corren en cada install y la reportan **sin tocar nada**.
+
+### 5.1. Items de documentacion pendientes
+
+1. **Recuperacion de la cadena de auditoria.** Perder `/etc/` y conservar
+   la base deja la cadena huerfana para siempre (claves regeneradas vs
+   filas ya firmadas). Es un escenario de DR plausible, existe
+   `ameli-app rotate-audit-key`, y no esta en ningun runbook.
+2. **HSTS duplicado.** Caddy lo setea en el site block y Django via
+   `SECURE_HSTS_SECONDS`: la respuesta trae el header dos veces. No es
+   peligroso, pero la doc no dice quien es el dueño. Con `TRUSTED_PROXIES`
+   bien configurado, sobra el de Caddy.
+3. **`CONTRIBUTING.md`** — dejar escrito el procedimiento provisorio
+   "servidor como gate" mientras el CI este apagado.
 
 ## §6. Notas de operacion
 
 - `ha-report2` hospeda **varias apps AMELI vivas**. Antes de instalar nada:
   `ss -tlnp`, y forzar `APP_SLUG` unico. Los defaults del template
   (`ameli-app`, 8080/8081) **colisionan** con lo que ya corre ahi.
+- **`Caddyfile` monolitico sin `import`**, con `dev01`–`dev04` vivos y
+  cert wildcard en `/etc/ssl/ameli/`. **Nunca sobrescribirlo**: agregar
+  bloque, `caddy adapt` para validar, backup, y recien ahi reload.
 - Instancia de prueba a limpiar: `tmpl-smoke-prod`
   (`/opt/tmpl-smoke-prod`, `/etc/tmpl-smoke-prod`, units
-  `tmpl-smoke-prod-*`, rol y DB `tmpl_smoke`).
+  `tmpl-smoke-prod-*`, rol y DB `tmpl_smoke`, y el site block
+  `dev05.ameli.cl:18495` del `Caddyfile`).
 
 ## §7. Continuidad
 
-1. Implementar el fix set §5 (pendiente de OK del operador).
-2. Reinstalar `tmpl-smoke-prod` desde cero **sin parches manuales** — ese
-   es el criterio de aceptacion.
-3. Limpiar la instancia de prueba (§6).
+1. Los tres items de doc de §5.1.
+2. ~~Reinstalar `tmpl-smoke-prod` desde cero sin parches manuales~~ ✅
+   **hecho** — criterio de aceptacion cumplido (§3.2).
+3. Limpiar la instancia de prueba (§6), site block de Caddy incluido.
 4. Cortar **v0.5.10** y entregar a la hija Starlink (prompt ya redactado en
-   el handoff 2026-07-21 §8c).
+   el handoff 2026-07-21 §8c). **No es un bump de rutina**: es la primera
+   version en la que el flujo de instalacion a produccion existe de verdad.
+   `main` sigue en `v0.5.9-django` y nada de esto esta promovido.
 5. Revisar **PR #13**.
+
+> **Nota para el proximo agente.** Con el CI apagado hasta el 2026-08-01,
+> antes de tocar `scripts/*.sh`, `deploy/systemd/*` o el camino de
+> instalacion: la suite Windows **no cubre nada de eso** (21 tests solo de
+> `test_install_env_seeding.py` estan `win32`-skip). Correrlos en el
+> servidor es obligatorio, no opcional. El procedimiento esta en §3.2.
