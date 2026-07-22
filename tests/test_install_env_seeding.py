@@ -39,7 +39,12 @@ COMMON_SH = ROOT / "scripts" / "_common.sh"
 
 
 def _seed(
-    tmp_path: Path, *, env: str = "prod", slug: str = "tmpl-test"
+    tmp_path: Path,
+    *,
+    env: str = "prod",
+    slug: str = "tmpl-test",
+    api_port: str | None = None,
+    web_port: str | None = None,
 ) -> dict[str, Path | str]:
     """Run ``initialize_runtime_env`` against a sandboxed instance layout.
 
@@ -74,6 +79,10 @@ def _seed(
         "RUN_GROUP": "nonexistent-test-group",
         "RUN_USER": "nonexistent-test-user",
     }
+    if api_port is not None:
+        shell_env["AMELI_APP_API_PORT"] = api_port
+    if web_port is not None:
+        shell_env["AMELI_APP_WEB_PORT"] = web_port
 
     script = r'''
 set -euo pipefail
@@ -278,3 +287,47 @@ def test_prod_config_seeds_a_deliverable_email_backend(tmp_path):
 def test_dev_config_keeps_the_console_email_backend(tmp_path):
     yaml_text = _seed(tmp_path, env="dev")["yaml"].read_text()
     assert '  backend: "console"' in yaml_text
+
+
+# ---------------------------------------------------------------------------
+# B10 -- explicit operator input must not be shadowed by .env.example
+# ---------------------------------------------------------------------------
+
+def test_explicit_ports_reach_the_env_file(tmp_path):
+    """``AMELI_APP_API_PORT=18190 bash scripts/install.sh`` used to be
+    discarded: .env.example already carried AMELI_APP_API_PORT=18080, and
+    ``default_env`` only writes a key that is missing. The units were
+    rendered from 18190 while the app read 18080 -- on a host running
+    several instances that means listening on someone else's port.
+    """
+    values = _env_values(
+        _seed(tmp_path, env="prod", api_port="18190", web_port="18191")["env"]
+    )
+    assert values["AMELI_APP_API_PORT"] == "18190"
+    assert values["AMELI_APP_WEB_PORT"] == "18191"
+
+
+def test_prod_defaults_are_not_the_dev_ports(tmp_path):
+    """Without an explicit port, a prod install must land on the prod
+    defaults (8080/8081), not on the dev ones .env.example ships."""
+    values = _env_values(_seed(tmp_path, env="prod")["env"])
+    assert values["AMELI_APP_API_PORT"] == "8080"
+    assert values["AMELI_APP_WEB_PORT"] == "8081"
+
+
+def test_warns_when_an_existing_env_file_disagrees_with_the_units(tmp_path):
+    """Instances provisioned before render_env_file carry the drift; the
+    install must say so instead of silently listening elsewhere."""
+    paths = _seed(tmp_path, env="prod", api_port="18190")
+    env_file = paths["env"]
+    env_file.write_text(
+        env_file.read_text().replace(
+            "AMELI_APP_API_PORT=18190", "AMELI_APP_API_PORT=19999"
+        ),
+        encoding="utf-8",
+    )
+
+    stdout = _seed(tmp_path, env="prod", api_port="18190")["stdout"]
+
+    assert "AMELI_APP_API_PORT=19999" in stdout
+    assert "19999" in stdout

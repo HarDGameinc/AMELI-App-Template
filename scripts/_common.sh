@@ -234,14 +234,56 @@ copy_if_missing() {
 # rewrite them to the safe values. Only ever called on a file we just
 # created -- an operator who deliberately set these keeps them.
 render_env_file() {
-  [[ "${APP_ENV}" == "dev" ]] && return 0
   [[ -f "${ENV_FILE}" ]] || return 0
+
+  # Runtime values first, for EVERY environment. ``.env.example`` ships
+  # the dev host/ports, and ``default_env`` only writes a key that is
+  # MISSING -- so the seeded dev values silently outranked both the
+  # per-environment defaults and an explicit
+  # ``AMELI_APP_API_PORT=... bash scripts/install.sh``. The operator got
+  # no error: systemd units were rendered from the resolved value while
+  # the app read the stale one from this file, so the deploy listened on
+  # a port nobody asked for -- on a host with several apps, potentially
+  # one that belongs to a different instance.
+  #
+  # These are the values _common.sh already resolved (explicit export >
+  # existing app.env via load_env_file > per-env default), so writing
+  # them here keeps the env file and the units in agreement.
+  sed -i \
+    -e "s|^AMELI_APP_HOST=.*|AMELI_APP_HOST=${AMELI_APP_HOST}|" \
+    -e "s|^AMELI_APP_API_PORT=.*|AMELI_APP_API_PORT=${AMELI_APP_API_PORT}|" \
+    -e "s|^AMELI_APP_WEB_PORT=.*|AMELI_APP_WEB_PORT=${AMELI_APP_WEB_PORT}|" \
+    -e "s|^AMELI_APP_NOTIFIER_INTERVAL=.*|AMELI_APP_NOTIFIER_INTERVAL=${AMELI_APP_NOTIFIER_INTERVAL}|" \
+    -e "s|^APP_LOG_LEVEL=.*|APP_LOG_LEVEL=${APP_LOG_LEVEL}|" \
+    -e "s|^APP_SYSTEMD_PROFILE=.*|APP_SYSTEMD_PROFILE=${APP_SYSTEMD_PROFILE}|" \
+    "${ENV_FILE}"
+  log "Env renderizada: host=${AMELI_APP_HOST} api=${AMELI_APP_API_PORT} web=${AMELI_APP_WEB_PORT}"
+
+  [[ "${APP_ENV}" == "dev" ]] && return 0
   sed -i \
     -e "s|^AMELI_APP_DJANGO_DEBUG=.*|AMELI_APP_DJANGO_DEBUG=false|" \
     -e "s|^AMELI_APP_SESSION_COOKIE_SECURE=.*|AMELI_APP_SESSION_COOKIE_SECURE=true|" \
     -e "/^AMELI_APP_SESSION_COOKIE_NAME=/d" \
     "${ENV_FILE}"
   log "Env renderizada para ${APP_ENV}: DEBUG=false, cookie Secure, prefijo __Host- activo"
+}
+
+# The systemd units are rendered from the shell values while the running
+# process reads the env file, so any drift between the two means the
+# deploy listens somewhere nobody declared. Instances provisioned before
+# render_env_file existed carry exactly that drift.
+warn_port_drift() {
+  [[ -f "${ENV_FILE}" ]] || return 0
+  local key resolved current
+  for key in AMELI_APP_API_PORT AMELI_APP_WEB_PORT AMELI_APP_HOST; do
+    resolved="${!key}"
+    current="$(sed -n "s|^${key}=||p" "${ENV_FILE}" | tail -n1)"
+    if [[ -n "${current}" && "${current}" != "${resolved}" ]]; then
+      log "WARN: ${ENV_FILE} tiene ${key}=${current} pero las units se" \
+          "renderizan con ${resolved}. El servicio va a escuchar en" \
+          "${current}: corregi el archivo o reinstala con ${key}=${current}."
+    fi
+  done
 }
 
 # Runs on every install, including upgrades of an instance provisioned by
@@ -440,6 +482,7 @@ initialize_runtime_env() {
   gen_env_if_missing AMELI_APP_MFA_ENCRYPTION_KEY \
     'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
 
+  warn_port_drift
   warn_insecure_prod_env
 }
 
