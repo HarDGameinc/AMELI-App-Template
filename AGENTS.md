@@ -10,6 +10,41 @@
 6. **`docs/BUILDING_NEW_APP.md`** — onboarding for forks: what you inherit, what to rename, what NOT to touch.
 7. **`CLAUDE.md`** — per-project instruction overrides for LLM agents.
 
+## Operating conventions — read before emitting ANY server command
+
+> ### 🔴 The server shell is **root** and has **no `sudo` binary**
+>
+> Every command handed to the operator for `ha-report2` (or any AMELI box)
+> must be written **without `sudo`**. A `sudo`-prefixed command does not
+> just look wrong — it **fails with `sudo: command not found`**, so the
+> operator has to hand-edit every snippet you give them.
+>
+> This applies to install/deploy/systemd/postgres snippets alike:
+> ```bash
+> systemctl restart <unit>            # ✅
+> sudo systemctl restart <unit>       # ❌ command not found
+> su - postgres -c "createdb foo"     # ✅  (or: psql -U postgres)
+> sudo -u postgres createdb foo       # ❌
+> ```
+>
+> Public-facing install docs (`FIRST_INSTALL_DJANGO.md`,
+> `SERVER_HARDENING.md`) may keep `sudo` for third-party readers who run as
+> a non-root user — but **anything you hand THIS operator omits it**.
+
+> ### 🔴 A green local (Windows) run is necessary, not sufficient
+>
+> ~30 tests are `win32`-skipped (shell / systemd / backup — exactly what
+> covers `scripts/*.sh` and `deploy/systemd/*`). Changes to those surfaces
+> are validated by **CI on `ubuntu-latest`** or a **server test**, never by
+> a local pass alone. See `DECISIONS.md` #11.
+
+> ### 🔴 Never guess server paths, unit names or ports
+>
+> Derive them on the box with `scripts/validate_installation.sh` — see
+> `OPERATIONS.md` → "Live deployment ground truth". `ha-report2` hosts
+> **multiple live AMELI apps**; assuming a port or slug risks colliding
+> with production. Check `ss -tlnp` before choosing a port.
+
 ## Purpose
 
 Official **Django-first template** for AMELI applications exposed to real users (internet or internal operational networks). Provides auth, MFA, profile, admin panel, audit log, and deployment tooling out of the box.

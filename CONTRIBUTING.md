@@ -108,16 +108,23 @@ suite cannot reach: `install.sh`, systemd units, file ownership,
 backup/restore and TLS behind Caddy. It is *more* faithful than any local
 emulation because it is the same OS and init system as production.
 
+> **The server shell is root and has no `sudo` binary** — write every
+> snippet without it (a `sudo`-prefixed command fails with `command not
+> found`). Same rule as "Deploying to the dev server" below; see
+> `AGENTS.md` → "Operating conventions".
+
 ```bash
-# on the server
+# on the server (root shell — no sudo)
 git clone https://github.com/HarDGameinc/AMELI-App-Template.git <dir> && cd <dir>
-sudo APP_ENV=<env> scripts/install.sh          # auto-generates the crypto keys
-sudo <install_dir>/.venv/bin/ameli-app --env-file <etc>/app.env configure
+APP_ENV=<env> bash scripts/install.sh          # auto-generates the crypto keys
+<install_dir>/.venv/bin/ameli-app --env-file <etc>/app.env configure
 APP_ENV=<env> bash scripts/validate_installation.sh
 ```
 Do **not** hardcode paths, unit names or ports from memory — derive them on
 the box with `validate_installation.sh` (see `OPERATIONS.md` → "Live
-deployment ground truth").
+deployment ground truth"). The box hosts **several live AMELI apps**, so
+check `ss -tlnp` before picking a port and force a unique `APP_SLUG` when
+installing a test instance.
 
 ### WSL2 / Docker — documented, not used
 
