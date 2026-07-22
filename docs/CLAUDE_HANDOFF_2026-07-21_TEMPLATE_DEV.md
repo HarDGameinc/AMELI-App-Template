@@ -139,3 +139,204 @@ Los guards de seguridad quedan intactos.
 **Referencias file:line verificadas** contra codigo real (el helper
 existe donde lo cito, los env vars son los que el codigo realmente lee,
 el CircuitBreaker es generico como afirmo, etc.).
+
+## §4. Decisiones tomadas
+
+- **CORS descartado** para el caso WebFleet (server-to-server; browser-only).
+  Documentado explicito en el audit para que no vuelva a preguntarse.
+- **WebFleet vive en la hija, no en el template** (per DECISIONS #7). Rule
+  of Three: extraer a `ameli-fleet` package solo si una segunda AMELI app
+  tambien lo integra.
+- **`APP_ENV` se mantiene**, contra la propuesta del operador de eliminarlo.
+  Reversarlo revierte M1 (v0.5.1, HIGH), colapsa V2.8/V7.3.2/V13.4/V14.4.5
+  ASVS L2, y contradice PRIVACY.md §4. La pain real era DX, no arquitectura.
+  Documentado como DECISIONS **#10**.
+- **`install.sh` genera las 3 keys crypto idempotente**, en vez de dejarlas
+  como responsabilidad manual del operador. Elimina el 60% del dolor de
+  first-install prod.
+- **`ameli-app configure` wizard** en vez de scripts sueltos o docs. Un
+  solo comando para las 4 decisiones que quedan al operador (hosts,
+  proxies, SMTP, superadmin).
+- **`docker compose` NO se remueve** del template — solo del loop de dev
+  local del operador (per DECISIONS #9). El wizard cubre el flujo "correr
+  directo bajo WSL2" que el operador eligio.
+- **NO se corta v0.5.10 hoy** — el operador decidio probar la mejora
+  primero manana; tag y entrega a la hija despues de la aprobacion.
+
+## §5. Metricas al cierre
+
+- Nuevos docs: **+2** (`docs/AUDIT_WEBFLEET_2026-07-21.md` ~200 LOC;
+  `docs/DECISIONS.md` #10).
+- Nuevo codigo: **+1** subcomando CLI (`ameli-app configure` ~200 LOC),
+  **+1** helper de shell (`gen_env_if_missing`), **+1** Caddyfile snippet.
+- Docs re-estructurada: `FIRST_INSTALL_DJANGO.md` gana Quickstart al frente.
+- Tests: `1156 → 1165` (+9). 28 skipped (win32-only).
+- Ruff: `0 errors`. Bash syntax: `install.sh` + `_common.sh` OK.
+- Migraciones: `+0`. Deps: `unchanged`. Cambio runtime prod: `ninguno`.
+- ASVS L2: `unchanged` (151 PASS) — los 6 guards de prod intactos.
+- `dev` cierra en `3145c65`, **4 commits adelante** de `main`
+  (v0.5.9-django).
+
+## §6. Hallazgos / findings
+
+- **[OPS/child]** La hija Starlink instalada con `APP_ENV=prod` sufrio la
+  cascada de crashes que motivo esta sesion. Cuando se apruebe manana,
+  puede consumir la mejora via `git pull` template + reinstall (idempotente).
+- **[OPS]** **PR #13** (Dependabot: setup-python v6→v7) sigue abierto,
+  `MERGEABLE`/`CLEAN`. Bump trivial de CI action; revisar/mergear cuando
+  cuadre. Sin dependencia del trabajo de hoy.
+- **[LOW/docs]** `FIRST_INSTALL_DJANGO.md` crecio a 439 lineas (era 343).
+  Aceptable — la nueva Quickstart al frente evita que el operator lea el
+  resto. Si en el futuro sobra la seccion manual, se puede podar.
+- **[CLOSED]** Bug del `.env.example` que shipeaba
+  `SECRET_KEY=change-this-django-secret` como placeholder — se colaba por
+  el guard de `base.py` (que solo detectaba el `_INSECURE_DEFAULT_SECRET`
+  distinto). Fixed inline con el trabajo de instalador.
+
+## §7. Roadmap actualizado
+
+| # | Item | Effort | Status |
+|---|---|---|---|
+| — | **Manana: probar `install.sh` + `configure` en server** (nueva hija limpia o snapshot) | S | open — PRIORIDAD |
+| — | Una vez aprobado: cortar **v0.5.10-django** (docs + DX; sin runtime change) | S | open — bloquea entrega a hija |
+| — | Entregar cambios a la hija Starlink (git pull template + cherry-pick v0.5.10 o reinstall) | S | blocked by testing + tag |
+| — | WebFleet: implementar `services/webfleet.py` en la hija (per audit) | M | open (cuando arranque el desarrollo real) |
+| — | PR #13 Dependabot review | XS | open |
+| — | `/profile/export/` — data portability (gap documentado en PRIVACY) | S | open |
+| — | `ameli-app configure`: agregar test-send SMTP | S | open (nice-to-have) |
+| — | jsdom DOM-wiring / visual regression | M | open |
+| — | Modelo C (`ameli-core` package) | L | deferred (DECISIONS #7) |
+| — | Django LTS 6.2 (~dic-2026) | M | premature |
+
+## §8. Continuidad — para el proximo agente (o el operador manana)
+
+**8a. Estado del server `ha-report2`.** En **v0.5.6-django**, `active`.
+NO se ha probado nada de v0.5.9 ni del trabajo de hoy en el server aun.
+Los releases docs-only no requieren redeploy per RELEASE.md, pero
+manana el objetivo es exactamente **probar el trabajo de hoy en un
+server** (idealmente uno de dev / snapshot, no `ha-report2` prod).
+
+**8a-bis. Entorno WSL2.** `/home/hardg/ameli-app-template` en `3145c65`,
+todo commiteado. Clone Windows en sync.
+
+**8b. Plan de pruebas para manana** (lo que el operador dijo que iba a
+hacer):
+
+1. **Snapshot del test target**. Si va a un server dedicado de prueba,
+   asegurarse que se puede resetear. Si es una VM efimera, mejor.
+2. **Test del install prod desde cero**:
+   ```bash
+   sudo apt install -y postgresql caddy git
+   sudo git clone https://github.com/HarDGameinc/AMELI-App-Template.git \
+       /opt/ameli-app-template-prod
+   cd /opt/ameli-app-template-prod
+   sudo -u postgres createuser --pwprompt ameli_app_prod
+   sudo -u postgres createdb -O ameli_app_prod ameli_app_prod
+   echo "DATABASE_URL=postgresql+psycopg://ameli_app_prod:PASS@127.0.0.1:5432/ameli_app_prod" \
+       | sudo tee -a /etc/ameli-app-template-prod/app.env
+   sudo APP_ENV=prod scripts/install.sh
+   ```
+   **Esperado**: install completa sin errores; las 3 keys se auto-generan;
+   `/health` responde OK en el smoke.
+3. **Test del wizard interactivo**:
+   ```bash
+   sudo /opt/ameli-app-template-prod/.venv/bin/ameli-app \
+       --env-file /etc/ameli-app-template-prod/app.env configure
+   ```
+   Debe promptar por hosts, proxies, SMTP (opcional), superadmin.
+4. **Test del wizard non-interactive (CI-like)**:
+   ```bash
+   AMELI_APP_CONFIGURE_ALLOWED_HOSTS=... \
+   AMELI_APP_CONFIGURE_TRUSTED_PROXIES=127.0.0.1 \
+   AMELI_APP_CONFIGURE_ADMIN_USER=admin \
+   AMELI_APP_CONFIGURE_ADMIN_PASSWORD=... \
+   sudo ameli-app --env-file /etc/.../app.env configure --yes
+   ```
+5. **Test del Caddyfile snippet + TLS end-to-end**:
+   ```bash
+   sudo cp deploy/caddy/Caddyfile.example /etc/caddy/Caddyfile
+   sudo $EDITOR /etc/caddy/Caddyfile   # reemplaza __HOSTNAME__
+   sudo systemctl reload caddy
+   echo "AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https" \
+       | sudo tee -a /etc/.../app.env
+   sudo systemctl restart ameli-app-template-prod-api.service
+   curl -sf https://HOSTNAME/health | jq .
+   ```
+6. **Idempotencia**: re-correr `install.sh` una segunda vez. Debe ser
+   no-op para las keys ya generadas (no regenera, no rompe estado).
+
+**8c. Ruta de aprobacion y entrega**:
+
+Si el testing sale bien:
+1. **Cortar v0.5.10-django** (ritual: bump 4 archivos + PR contra main +
+   CI verde + merge + tag). Este release cubre: v0.5.10 = WebFleet audit
+   + DECISIONS #10 + installer + configurator. No requiere server
+   validation (ya se validara en el test de manana).
+2. **Entregar a la hija Starlink**. Prompt sugerido (para pegar en la
+   sesion de la hija):
+
+```
+Contexto: el template AMELI publico v0.5.10-django con un overhaul del
+onboarding (DECISIONS #10 + installer/configurator). Esto resuelve
+los crashes de cascada que vimos al instalar con APP_ENV=prod (falta
+de SECRET_KEY, AUDIT_HMAC_KEY, MFA_ENCRYPTION_KEY, y setup manual de
+ALLOWED_HOSTS, TRUSTED_PROXIES, SMTP, superadmin, Caddy).
+
+Cambios que hereda esta app:
+- scripts/install.sh + scripts/_common.sh: auto-genera las 3 keys
+  crypto idempotente + smoke post-install (/health).
+- src/ameli_app/cli.py: nuevo subcomando `ameli-app configure`
+  (wizard 4-secciones, --yes para CI).
+- deploy/caddy/Caddyfile.example: snippet listo para copiar.
+- .env.example: limpio del placeholder de SECRET_KEY.
+- docs/DECISIONS.md #10: justificacion arquitectonica.
+- docs/FIRST_INSTALL_DJANGO.md: Quickstart al frente con flujo de
+  3 comandos.
+
+Tarea:
+1. Configurar remote template si no lo tienes:
+   git remote add template https://github.com/HarDGameinc/AMELI-App-Template.git
+   git fetch template --tags
+2. Merge template/main hasta v0.5.10-django, o cherry-pick el commit
+   `3145c65` + los que le siguen. Resolver conflictos si tu Dockerfile
+   o compose divergieron.
+3. Actualizar TEMPLATE_LINEAGE a v0.5.10-django.
+4. RE-INSTALAR en el server con el nuevo install.sh (idempotente; no
+   regenera keys ya existentes ni pisa configuracion actual). Debe
+   completar sin los crashes de antes.
+5. Si aun no lo hicieron, correr `ameli-app configure` para revisar/
+   completar hosts, proxies, SMTP, superadmin.
+
+Confirmar antes de commit y reportar si algo no aplica limpio.
+```
+
+**8d. Comandos utiles**:
+```bash
+# S-09 inicio de dia
+git fetch origin --prune && git merge --ff-only origin/dev
+
+# WSL diario
+wsl && cd ~/ameli-app-template && git pull
+APP_ENV=dev .venv/bin/pytest -q
+
+# ¿que hay en dev sin promover? (para decidir si cortar release)
+git log --oneline origin/main..origin/dev
+
+# Test rapido local del wizard (sin tocar env real)
+AMELI_APP_CONFIGURE_ALLOWED_HOSTS=test.local \
+AMELI_APP_CONFIGURE_TRUSTED_PROXIES=127.0.0.1 \
+AMELI_APP_CONFIGURE_ADMIN_USER=admin \
+AMELI_APP_CONFIGURE_ADMIN_PASSWORD='TestPass!12?' \
+.venv/bin/python -m ameli_app.cli --env-file /tmp/test.env configure --yes --check
+```
+
+## §9. Archivos clave de la sesion
+
+- `docs/AUDIT_WEBFLEET_2026-07-21.md` — audit outbound integration.
+- `docs/DECISIONS.md` (nuevo #10) — mantener `APP_ENV`, closer DX gap.
+- `docs/FIRST_INSTALL_DJANGO.md` — Quickstart al frente (3 comandos).
+- `scripts/install.sh` + `scripts/_common.sh` — auto-gen keys + smoke.
+- `deploy/caddy/Caddyfile.example` — TLS reverse proxy ready-to-copy.
+- `src/ameli_app/cli.py` — `ameli-app configure` wizard.
+- `tests/test_cli_configure.py` — 9 tests del wizard.
+- `.env.example` — limpio del placeholder SECRET_KEY.
