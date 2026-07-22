@@ -319,24 +319,35 @@ intacto.
 > visible en logs de Caddy. **Ningun paso destructivo va antes de la
 > evidencia de que el preparatorio se aplico.**
 
-### 6.1. Pendiente: consolidar `dev01` y `dev02`
+### 6.1. Consolidacion Caddy — patron y estado
 
-El operador abre **una regla de firewall por app**, con un subdominio y un
+El operador abria **una regla de firewall por app**, con un subdominio y un
 puerto alto cada una. No hace falta: Caddy multiplexa por SNI/`Host` en un
 unico listener, asi que **un subdominio por app sobre el 443 estandar deja
 el firewall con una sola regla**. El procedimiento generico quedo escrito
 en `TLS_WITH_CADDY.md` → "Varias apps en un host".
 
-**Terreno ya verificado en `ha-report2` (2026-07-22):**
+**Aplicado y verificado (2026-07-22):** `dev02`, `dev03`, `dev04` en 443,
+backends en loopback, **9 reglas ufw eliminadas** (18480, 18490, 18450 y
+seis de 18050). Entrada unica publica `181.190.21.36:443`.
 
-- Caddy **ya es dueño del `:80`**; el **`:443` esta LIBRE**. La
-  consolidacion no compite con nada.
-- Admin API de Caddy en `127.0.0.1:2019` (loopback, correcto).
-- Sites actuales: `dev01:8443`, `dev02:18450`, `dev03:18480`,
-  `dev04:18490`. **`dev01` tiene logica propia de iframes**
-  (`@iframeMunicipio`, `@iframeSalud`, cookies `Partitioned`) que **no
-  entra en el snippet** — hay que escribir ese bloque completo.
-- Cert **wildcard ya emitido** en `/etc/ssl/ameli/` — sin ACME por sitio.
+**`dev01` — fase 1 hecha (bind a loopback), fase 2 pendiente.** Ver el
+recuadro de abajo. La fase 2 necesita, para no cortar los iframes de HA,
+que `.36` forwardee **temporalmente** el `8443` mientras conviven las URLs
+vieja y nueva — sin ese solapamiento, mover el DNS rompe las tarjetas
+embebidas en el instante.
+
+**WebFleet — front de Caddy YA existe, apagado por firewall.** Bloque en
+`Caddyfile:171` (`{$WEBFLEET_PUBLIC_SITE:dev05.ameli.cl:18500}`): sirve el
+`dist` estatico y proxya `/api/*`, `/health`, `/docs*`, `/openapi.json` a
+`127.0.0.1:18200` **bajo un mismo origen** (sin CORS). No esta en uso
+porque no hay regla ufw para el 18500; el acceso real ocurre por `18200`/
+`18201` directo en texto plano. **`dev05.ameli.cl` NO era un registro
+colgado — es de WebFleet** (se corrigio una afirmacion previa que lo daba
+por huerfano). Prompt de trabajo entregado al operador.
+
+**No tocar por ahora (decision del operador):** OMEGA Receiver
+(`18105/18106`, `8105/8106`) y Notifier (`8099/8109`).
 
 > #### ✅ Bypass del `basic_auth` de `dev01` — CERRADO (fase 1)
 >
@@ -411,7 +422,8 @@ fallar por CSRF.
    bloquear la entrega sin romper la regla. **No es un bump de rutina**:
    es la primera version en la que el flujo de instalacion a produccion
    existe de verdad.
-5. **Entregar a la hija Starlink** (prompt en el handoff 2026-07-21 §8c).
+5. **Entregar a la hija Starlink** (prompt en el handoff 2026-07-21 §8c;
+   prompt de upgrade a v0.5.10 + cambio de URL redactado en esta sesion).
    Tres cosas que le cambian el deploy: (a) los defaults de puerto en prod
    pasan a 8080/8081 —antes heredaba 18080/18081 del `.env.example`—;
    (b) su instancia **no se re-renderiza sola** por diseno, asi que al
@@ -419,8 +431,19 @@ fallar por CSRF.
    `SESSION_COOKIE_NAME` su deploy corre **hoy** sin prefijo `__Host-`;
    (c) si su Caddyfile setea HSTS, ver la seccion nueva de
    `TLS_WITH_CADDY.md`.
-6. **Consolidacion de Caddy + firewall** — §6.1, con el hallazgo de los
-   backends en `0.0.0.0` como prerequisito.
+6. **Red — pendiente (§6.1):**
+   - `dev01` **fase 2**: mudanza a `dev01.ameli.cl` en 443. Requiere VIP
+     temporal de `8443` en `.36` para no cortar los iframes de HA, y
+     reemitir las 4 URLs de iframe + editar las tarjetas. Es el unico
+     paso caro que queda.
+   - **WebFleet**: activar el front que ya existe (§6.1), mover a `dev05`
+     en 443, bindear `18200`/`18201` a loopback. Prompt entregado.
+   - **~20 reglas ufw huerfanas** (puertos sin proceso: `8097`, `18097`,
+     `18060`, `18109`, `8098`, `5445`, `8080`) — limpiar. Ojo: `8080` es
+     el nuevo default de prod del template, abierto a `Anywhere`.
+   - `ameli-app-prod` **caida** por falta de `ALLOWED_HOSTS` (guard B1).
+     Reinstalar con `v0.5.10` deberia levantarla sola — es la prueba mas
+     directa de que el fix sirve.
 7. Revisar **PR #13**.
 8. **Al volver el CI (2026-08-01):** PR `dev`→`main` con verde, promover
    `v0.5.10-django`, y **borrar el bloque marcado** en `CONTRIBUTING.md`
