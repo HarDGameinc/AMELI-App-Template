@@ -809,23 +809,44 @@ def _handle_configure(args: argparse.Namespace) -> int:
 
     _write_env_updates(env_file, updates)
     admin_result = None
+    admin_error = None
     if bootstrap_admin_params:
-        _bootstrap_django(args)
-        from ameli_web.accounts.services import bootstrap_superadmin
+        # Creating the superadmin needs a bootable Django, which needs a
+        # valid config -- the very thing this wizard exists to write. When
+        # the deploy is not there yet (unreachable database, a guard still
+        # unsatisfied), a raw traceback reads as "configure failed" and
+        # hides the fact that the env file was already written above. Fail
+        # legibly instead, and tell the operator exactly how to finish.
+        try:
+            _bootstrap_django(args)
+            from ameli_web.accounts.services import bootstrap_superadmin
 
-        admin_result = bootstrap_superadmin(
-            bootstrap_admin_params["username"],
-            bootstrap_admin_params["password"],
-            must_change_password=True,
+            admin_result = bootstrap_superadmin(
+                bootstrap_admin_params["username"],
+                bootstrap_admin_params["password"],
+                must_change_password=True,
+            )
+        except Exception as exc:  # noqa: BLE001 -- reported, not swallowed
+            admin_error = f"{type(exc).__name__}: {exc}"
+
+    payload: dict[str, object] = {
+        "env_file": env_file,
+        "written": sorted(updates.keys()),
+        "bootstrap_admin": admin_result,
+    }
+    if admin_error is not None:
+        payload["bootstrap_admin_error"] = admin_error
+        payload["hint"] = (
+            "The env file was written. Django could not boot yet, so the "
+            "superadmin is still pending. Fix the reported error (usually "
+            "the database is unreachable or a required setting is still "
+            "unset), then run: ameli-app --env-file "
+            f"{env_file} bootstrap-admin --username ... --password ..."
         )
+        _json(payload)
+        return 1
 
-    _json(
-        {
-            "env_file": env_file,
-            "written": sorted(updates.keys()),
-            "bootstrap_admin": admin_result,
-        }
-    )
+    _json(payload)
     return 0
 
 

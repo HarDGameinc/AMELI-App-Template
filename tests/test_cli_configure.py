@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -198,3 +200,71 @@ def test_configure_missing_env_file_exits_2(
     assert exit_code == 2
     err = capsys.readouterr().err
     assert "cannot locate the runtime env file" in err
+
+
+# ---------------------------------------------------------------------------
+# Superadmin bootstrap failure (2026-07-22 server test, handoff §3.1 B4)
+# ---------------------------------------------------------------------------
+
+
+def test_configure_reports_env_written_when_django_cannot_boot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """Creating the superadmin needs a bootable Django, which needs the
+    very config this wizard writes. When the deploy is not there yet, a
+    raw traceback reads as "configure failed" and hides the fact that the
+    env file *was* written. Fail legibly instead.
+    """
+    env = tmp_path / "app.env"
+    env.write_text("APP_ENV=prod\n", encoding="utf-8")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ALLOWED_HOSTS", "app.example.com")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_TRUSTED_PROXIES", "127.0.0.1")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_USER", "admin")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_PASSWORD", "SecurePass!12?")
+
+    def _boom(_args):
+        raise RuntimeError("AMELI_APP_TRUSTED_PROXIES is empty outside dev")
+
+    monkeypatch.setattr(cli, "_bootstrap_django", _boom)
+
+    exit_code = cli._handle_configure(_args(str(env), check=False))
+
+    assert exit_code == 1  # non-zero, but not a crash
+    body = json.loads(capsys.readouterr().out)
+    # The env writes survived and are reported.
+    assert "AMELI_APP_DJANGO_ALLOWED_HOSTS" in body["written"]
+    assert "AMELI_APP_TRUSTED_PROXIES" in body["written"]
+    content = env.read_text(encoding="utf-8")
+    assert "AMELI_APP_DJANGO_ALLOWED_HOSTS=app.example.com" in content
+    # The failure is named, and the operator is told how to finish.
+    assert "RuntimeError" in body["bootstrap_admin_error"]
+    assert body["bootstrap_admin"] is None
+    assert "bootstrap-admin" in body["hint"]
+
+
+def test_configure_bootstrap_success_reports_no_error_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """The happy path must stay clean: exit 0, no error/hint noise."""
+    env = tmp_path / "app.env"
+    env.write_text("APP_ENV=prod\n", encoding="utf-8")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ALLOWED_HOSTS", "app.example.com")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_TRUSTED_PROXIES", "127.0.0.1")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_USER", "admin")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_PASSWORD", "SecurePass!12?")
+
+    monkeypatch.setattr(cli, "_bootstrap_django", lambda _args: None)
+    fake = types.ModuleType("ameli_web.accounts.services")
+    fake.bootstrap_superadmin = lambda u, p, must_change_password: {  # noqa: ARG005
+        "username": u,
+        "created": True,
+    }
+    monkeypatch.setitem(sys.modules, "ameli_web.accounts.services", fake)
+
+    exit_code = cli._handle_configure(_args(str(env), check=False))
+
+    assert exit_code == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body["bootstrap_admin"] == {"username": "admin", "created": True}
+    assert "bootstrap_admin_error" not in body
+    assert "hint" not in body

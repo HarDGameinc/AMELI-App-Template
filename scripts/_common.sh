@@ -186,16 +186,51 @@ make_dirs() {
   chmod 750 "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}" || true
 }
 
+# Sets COPY_IF_MISSING_CREATED to 1 when it actually wrote the file, 0 when
+# it preserved an existing one. Callers that need to post-process a freshly
+# seeded file (render_config_file) read that flag instead of a return code,
+# which under ``set -e`` would abort the install on the "preserved" path.
+COPY_IF_MISSING_CREATED=0
 copy_if_missing() {
   local src="$1" dst="$2" mode="${3:-640}"
+  COPY_IF_MISSING_CREATED=0
   if [[ ! -f "${dst}" ]]; then
     cp "${src}" "${dst}"
     chmod "${mode}" "${dst}" || true
     chown root:"${RUN_GROUP}" "${dst}" || true
+    COPY_IF_MISSING_CREATED=1
     log "Creado: ${dst}"
   else
     log "Preservado: ${dst}"
   fi
+}
+
+# ``config/app.yaml.example`` doubles as the local-dev config, so it ships
+# with working *relative* paths and a hardcoded "dev" environment. Copying
+# it verbatim into an install is wrong on both counts:
+#
+#   * ``environment: "dev"`` disables every fail-closed prod guard.
+#   * ``profile_uploads_dir`` / ``paths.*`` stay relative, so they resolve
+#     inside ${APP_DIR} — and settings/i18n_static.py refuses to boot with
+#     MEDIA_ROOT or data_dir inside the checkout (a redeploy would wipe
+#     user uploads). Note MEDIA_ROOT derives from ``profile_uploads_dir``,
+#     not from ``paths.data_dir`` (see ameli_app/config.py).
+#
+# So rewrite those keys to the instance's real values right after seeding.
+# Anchored on the exact indentation each key has in the example file; only
+# ever called on a file we just created, never on an operator-edited one.
+render_config_file() {
+  local target="$1"
+  [[ -f "${target}" ]] || return 0
+  sed -i \
+    -e "s|^  slug: .*|  slug: \"${APP_SLUG}\"|" \
+    -e "s|^  environment: .*|  environment: \"${APP_ENV}\"|" \
+    -e "s|^  profile_uploads_dir: .*|  profile_uploads_dir: \"${DATA_DIR}/uploads\"|" \
+    -e "s|^  data_dir: .*|  data_dir: \"${DATA_DIR}\"|" \
+    -e "s|^  log_dir: .*|  log_dir: \"${LOG_DIR}\"|" \
+    -e "s|^  backup_dir: .*|  backup_dir: \"${BACKUP_DIR}\"|" \
+    "${target}"
+  log "Config renderizada para ${APP_INSTANCE}: ${target}"
 }
 
 set_env() {
@@ -239,6 +274,33 @@ gen_env_if_missing() {
   fi
 }
 
+# Comma-separated ALLOWED_HOSTS for this box: loopback first, then whatever
+# names the host answers to. Deduplicated, order preserved. Falls back to
+# loopback alone when `hostname` is unavailable -- enough for the install to
+# boot and for the smoke check to pass.
+detect_allowed_hosts() {
+  # No "::1" here: ALLOWED_HOSTS is matched against the Host header, where
+  # a literal IPv6 address arrives bracketed ("[::1]"), so a bare "::1"
+  # entry never matches. TRUSTED_PROXIES is a different comparison
+  # (REMOTE_ADDR) and does take the bare form.
+  local candidates=("127.0.0.1" "localhost")
+  local name
+  for name in "$(hostname 2>/dev/null || true)" "$(hostname -f 2>/dev/null || true)"; do
+    [[ -n "${name}" ]] && candidates+=("${name}")
+  done
+
+  local out="" item
+  for item in "${candidates[@]}"; do
+    [[ -n "${item}" ]] || continue
+    [[ "${item}" == "*" ]] && continue
+    case ",${out}," in
+      *",${item},"*) continue ;;
+    esac
+    out="${out:+${out},}${item}"
+  done
+  printf '%s' "${out}"
+}
+
 install_system_packages() {
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y
@@ -276,6 +338,9 @@ copy_project_tree() {
 initialize_runtime_env() {
   copy_if_missing "${APP_DIR}/.env.example" "${ENV_FILE}" 640
   copy_if_missing "${APP_DIR}/config/app.yaml.example" "${CONFIG_FILE}" 640
+  if [[ "${COPY_IF_MISSING_CREATED}" == "1" ]]; then
+    render_config_file "${CONFIG_FILE}"
+  fi
 
   set_env APP_ENV "${APP_ENV}"
   set_env APP_CONFIG "${CONFIG_FILE}"
@@ -288,6 +353,21 @@ initialize_runtime_env() {
   default_env AMELI_APP_REQUIRE_TOKEN "false"
   default_env AMELI_APP_API_TOKEN "change-me"
   default_env DATABASE_URL ""
+
+  # Seed the two fail-closed guards in settings/base.py that have no safe
+  # default outside dev. Without these a fresh prod install cannot boot at
+  # all -- not `migrate`, not `check`, not the configure wizard that is
+  # supposed to set them. Seeding a conservative, correct-by-construction
+  # value breaks that circularity; the operator narrows it later via
+  # `ameli-app configure`.
+  #
+  # ALLOWED_HOSTS: loopback (the post-install smoke check hits
+  # 127.0.0.1:<api_port>/health) plus this host's own names. Never "*" --
+  # base.py rejects wildcards outside dev, and rightly so.
+  default_env AMELI_APP_DJANGO_ALLOWED_HOSTS "$(detect_allowed_hosts)"
+  # TRUSTED_PROXIES: loopback only, which is the correct answer for the
+  # documented topology (Caddy terminating TLS on the same host).
+  default_env AMELI_APP_TRUSTED_PROXIES "127.0.0.1,::1"
 
   # Auto-provision the three crypto keys the prod fail-closed guards
   # require (base.py: SECRET_KEY; auth.py: AUDIT_HMAC_KEY,

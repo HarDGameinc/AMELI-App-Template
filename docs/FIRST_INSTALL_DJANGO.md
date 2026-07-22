@@ -63,44 +63,65 @@ resto de la guía (secciones "Quick start local", "Primera instalación
 Debian" manual, "Fallback con SQLite") queda como referencia y
 troubleshooting; el flujo canónico para un despliegue nuevo es este:
 
+> **Todo esto corre como `root`, sin `sudo`.** El servidor de referencia no
+> tiene el binario instalado: un comando con `sudo` falla con
+> `sudo: orden no encontrada`. Ver `AGENTS.md` → "Operating conventions".
+
 ```bash
-# 1. Provisionar el host (usuario root)
-sudo apt update
-sudo apt install -y postgresql caddy git
+# 1. Provisionar el host
+apt update
+apt install -y postgresql caddy git
 
-# 2. Clonar el repo y crear la base
-sudo git clone <repo> /opt/ameli-app-template-prod
+# 2. Clonar el repo en el ULTIMO TAG PROMOVIDO -- no en `main` pelado.
+#    Una feature recien mergeada a `dev` puede no estar en `main` todavia,
+#    y un clone de `main` te deja con un installer viejo sin aviso.
+git clone https://github.com/HarDGameinc/AMELI-App-Template.git \
+    /opt/ameli-app-template-prod
 cd /opt/ameli-app-template-prod
-sudo -u postgres createuser --pwprompt ameli_app_prod
-sudo -u postgres createdb -O ameli_app_prod ameli_app_prod
-# apunta al .env la DATABASE_URL correspondiente
-echo "DATABASE_URL=postgresql+psycopg://ameli_app_prod:PASSWORD@127.0.0.1:5432/ameli_app_prod" \
-    | sudo tee -a /etc/ameli-app-template-prod/app.env >/dev/null || true
+git checkout "$(git tag --sort=-v:refname | head -1)"
+git describe --tags   # confirma que instalas lo que crees
 
-# 3. Instalar (auto-genera las 3 keys crypto, monta systemd, corre migrate,
-#    valida el layout y hace smoke a /health)
-sudo APP_ENV=prod scripts/install.sh
+# 3. Crear la base
+su - postgres -c "createuser --pwprompt ameli_app_prod"
+su - postgres -c "createdb -O ameli_app_prod ameli_app_prod"
 
-# 4. Configurar los valores que no se pueden generar (hosts, proxies,
-#    SMTP, superadmin). Wizard interactivo:
-sudo /opt/ameli-app-template-prod/.venv/bin/ameli-app \
+# 4. Instalar. Auto-genera las 3 keys crypto y siembra ALLOWED_HOSTS /
+#    TRUSTED_PROXIES con valores conservadores, renderiza app.yaml para
+#    esta instancia, monta systemd, corre migrate, valida el layout y
+#    hace smoke a /health.
+APP_ENV=prod bash scripts/install.sh
+
+# 5. Apuntar la DATABASE_URL (el install la dejo vacia)
+sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+psycopg://ameli_app_prod:PASSWORD@127.0.0.1:5432/ameli_app_prod|" \
+    /etc/ameli-app-template-prod/app.env
+APP_ENV=prod bash scripts/install.sh   # idempotente: re-corre migrate
+
+# 6. Afinar lo que no se puede generar: acotar hosts/proxies al dominio
+#    real, SMTP y superadmin. Wizard interactivo:
+/opt/ameli-app-template-prod/.venv/bin/ameli-app \
     --env-file /etc/ameli-app-template-prod/app.env \
     configure
 
-# 5. TLS: copiar el snippet de Caddy y reemplazar el hostname
-sudo cp /opt/ameli-app-template-prod/deploy/caddy/Caddyfile.example \
+# 7. TLS: copiar el snippet de Caddy y reemplazar el hostname
+cp /opt/ameli-app-template-prod/deploy/caddy/Caddyfile.example \
     /etc/caddy/Caddyfile
-sudo $EDITOR /etc/caddy/Caddyfile   # reemplaza __HOSTNAME__ por el real
-sudo systemctl reload caddy
+$EDITOR /etc/caddy/Caddyfile   # reemplaza __HOSTNAME__ por el real
+systemctl reload caddy
 
-# 6. Cerrar el circuito TLS del lado app (indica a Django que hay proxy TLS)
+# 8. Cerrar el circuito TLS del lado app (indica a Django que hay proxy TLS)
 echo "AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https" \
-    | sudo tee -a /etc/ameli-app-template-prod/app.env >/dev/null
-sudo systemctl restart ameli-app-template-prod-api.service
+    >> /etc/ameli-app-template-prod/app.env
+systemctl restart ameli-app-template-prod-api.service
 
-# 7. Verificar
+# 9. Verificar
 curl -sf https://APP_HOSTNAME/health | jq .
+APP_ENV=prod bash scripts/validate_installation.sh
 ```
+
+> **Instalando junto a otras apps AMELI en el mismo host?** Los defaults
+> (`APP_SLUG=ameli-app`, puertos 8080/8081) colisionan. Revisá `ss -tlnp`
+> y forzá `APP_SLUG=` y `AMELI_APP_API_PORT=` / `AMELI_APP_WEB_PORT=`
+> antes de correr `install.sh`.
 
 ### Qué hace `install.sh` por vos (no manual)
 
@@ -148,8 +169,15 @@ AMELI_APP_CONFIGURE_ALLOWED_HOSTS=app.example.com \
 AMELI_APP_CONFIGURE_TRUSTED_PROXIES=127.0.0.1 \
 AMELI_APP_CONFIGURE_ADMIN_USER=admin \
 AMELI_APP_CONFIGURE_ADMIN_PASSWORD='ChangeThisNow!1?' \
-sudo ameli-app --env-file /etc/ameli-app-template-prod/app.env configure --yes
+/opt/ameli-app-template-prod/.venv/bin/ameli-app \
+    --env-file /etc/ameli-app-template-prod/app.env configure --yes
 ```
+
+Exit codes: `0` todo aplicado; `2` faltan variables requeridas (nada se
+escribe); `1` el env file **sí** se escribió pero Django todavía no puede
+bootear, así que el superadmin quedó pendiente — el JSON de salida trae
+`bootstrap_admin_error` con la causa y `hint` con el comando exacto para
+terminar. Ese caso es casi siempre la base de datos inalcanzable.
 
 ## Variables importantes
 
