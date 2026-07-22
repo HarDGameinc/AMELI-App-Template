@@ -212,18 +212,31 @@ archivo**, nunca reescribir uno que el operador toco. Para las instancias
 ya provisionadas con la degradacion, `warn_insecure_prod_env` y
 `warn_port_drift` corren en cada install y la reportan **sin tocar nada**.
 
-### 5.1. Items de documentacion pendientes
+### 5.1. Items de documentacion — cerrados (`f29a475`)
 
-1. **Recuperacion de la cadena de auditoria.** Perder `/etc/` y conservar
-   la base deja la cadena huerfana para siempre (claves regeneradas vs
-   filas ya firmadas). Es un escenario de DR plausible, existe
-   `ameli-app rotate-audit-key`, y no esta en ningun runbook.
-2. **HSTS duplicado.** Caddy lo setea en el site block y Django via
-   `SECURE_HSTS_SECONDS`: la respuesta trae el header dos veces. No es
-   peligroso, pero la doc no dice quien es el dueño. Con `TRUSTED_PROXIES`
-   bien configurado, sobra el de Caddy.
-3. **`CONTRIBUTING.md`** — dejar escrito el procedimiento provisorio
-   "servidor como gate" mientras el CI este apagado.
+1. **Recuperacion de la cadena de auditoria** → `OPERATIONS.md`, seccion
+   nueva "Disaster recovery: the key is GONE". La receta de rotacion que
+   ya existia **necesita `OLD_KEY`** para re-estampar; si se fue `/etc`,
+   esa clave se fue con el y las filas existentes **no vuelven a ser
+   verificables por ningun procedimiento**. Se documenta como se llega
+   ahi, la prevencion (`backup.sh` dumpea la base pero **no** `app.env`:
+   las 3 claves generadas van al secret manager; perder la de MFA vuelve
+   indescifrable cada secreto TOTP) y las dos salidas posibles.
+2. **HSTS duplicado** → `TLS_WITH_CADDY.md`, seccion nueva. El dueño es
+   **Django**. Lo importante no es el header repetido sino que
+   `AMELI_APP_HSTS_SECONDS=0` **deja de tener efecto** si Caddy tambien
+   lo emite: la perilla que existe para salir de un HSTS mal puesto queda
+   inutilizada.
+3. **Procedimiento provisorio "servidor como gate"** → `CONTRIBUTING.md`
+   + `DECISIONS.md` #11. Mientras el CI este apagado, el **control 1 de
+   #11 no existe**: el servidor no es una segunda opinion, es el unico
+   gate. El bloque de CONTRIBUTING dice explicitamente que se borra
+   cuando el CI vuelva.
+
+**Bonus:** `TLS_WITH_CADDY.md` tambien decia *"reemplaza el contenido de
+`/etc/caddy/Caddyfile`"* — el tercer lugar con el mismo consejo que tira
+las apps de un host compartido (los otros dos: `Caddyfile.example` en
+`36f82a0` y el mensaje post-install en `8582749`). Corregido.
 
 ## §6. Notas de operacion
 
@@ -240,7 +253,7 @@ ya provisionadas con la degradacion, `warn_insecure_prod_env` y
 
 ## §7. Continuidad
 
-1. Los tres items de doc de §5.1.
+1. ~~Los tres items de doc~~ ✅ **hecho** (§5.1, `f29a475`).
 2. ~~Reinstalar `tmpl-smoke-prod` desde cero sin parches manuales~~ ✅
    **hecho** — criterio de aceptacion cumplido (§3.2).
 3. Limpiar la instancia de prueba (§6), site block de Caddy incluido.
