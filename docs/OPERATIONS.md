@@ -1574,3 +1574,47 @@ AuditEvent.objects.update(hmac='', prev_hmac='')
 "
 # then update AMELI_APP_AUDIT_HMAC_KEY and restart
 ```
+
+### Disaster recovery: the key is GONE (`/etc` lost, database kept)
+
+The rotation recipe above needs `OLD_KEY` to re-stamp the rows. When the
+env file is gone, that key is gone with it, and **no procedure can make
+the existing rows verifiable again** — that is the whole point of an HMAC
+chain. Plan for it before it happens.
+
+**How you get here.** Restoring a database backup onto a rebuilt host,
+re-running `install.sh` after wiping `/etc/<instance>/`, or migrating an
+instance without carrying the env file. `install.sh` generates a *new*
+`AMELI_APP_AUDIT_HMAC_KEY` whenever the key is missing (it is idempotent
+only while the file survives), so the deploy comes back up looking
+healthy while `/health` reports:
+
+```json
+"audit_chain": { "ok": false, "detail": { "tail_id": 1, "match": false } }
+```
+
+and the overall status is `DEGRADADO`. Nothing is corrupt — the rows are
+simply signed with a key nobody has.
+
+**Prevention (do this now, not after).** The audit key belongs in your
+backup set alongside the database. `scripts/backup.sh` dumps the DB, *not*
+`/etc/<instance>/app.env`. Keep an offline copy of the three generated
+keys — `AMELI_APP_DJANGO_SECRET_KEY`, `AMELI_APP_AUDIT_HMAC_KEY`,
+`AMELI_APP_MFA_ENCRYPTION_KEY` — in your secret manager. Losing the MFA
+key has the same shape: every enrolled TOTP secret becomes undecryptable.
+
+**If it already happened**, decide explicitly and record the decision:
+
+1. **The historical rows stay unverifiable, and you say so.** Keep them
+   as-is. `verify-audit` will keep failing from row 1, so the timer alert
+   is useless until you cut the chain. Note the incident, the date and
+   the id range in your compliance log — silently clearing the flag is
+   the one thing you must not do.
+2. **Cut the chain at the recovery point.** Clear the hmac columns with
+   the wipe recipe above so verification starts fresh from the next
+   event. You lose tamper-evidence for everything before the cut; the
+   rows themselves are untouched and still readable in `/admin/audit`.
+
+Either way, `verify-audit` after the decision must return `ok: true`, or
+the hourly timer's alert becomes background noise that trains operators
+to ignore a real tampering signal.

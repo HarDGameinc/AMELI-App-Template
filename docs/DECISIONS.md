@@ -322,18 +322,27 @@ entry and note it.
      `git pull` + systemd restart. Unchanged.
 
 - **Consequences — the trade-off, stated explicitly**:
-  - **~30 tests do not run locally.** The Windows suite is **1135 passed
-    / 58 skipped** (verified 2026-07-22); the same tree on Linux ran
-    **1156 / 28** at the 2026-07-16 measurement. The **58 vs 28 skip
-    delta** is the stable signal — the ~30 extra skips are the
-    **shell / systemd / backup** suite
-    (`test_common_sh_slug_autodetect`, `test_systemd_profile`,
+  - **~50 tests do not run locally.** The Windows suite is **1137 passed
+    / 77 skipped** (verified 2026-07-22, after the install fixes added
+    21 tests in `test_install_env_seeding.py`); the same tree on Linux
+    ran **1156 / 28** at the 2026-07-16 measurement. The **skip delta**
+    is the stable signal — the extra skips are the **shell / systemd /
+    backup / install** suite (`test_install_env_seeding`,
+    `test_common_sh_slug_autodetect`, `test_systemd_profile`,
     `test_backup_restore`, `test_install_sh_restart`, …) that `win32`
     skips. Those are precisely the tests covering `scripts/*.sh`.
+  - **This is not theoretical.** On 2026-07-22 a from-scratch production
+    install on a real server surfaced **12 blockers** in that exact
+    surface — several of them silent security downgrades — none of which
+    the local suite could have caught. See the handoff for that date.
   - **Compensating controls — treat these as mandatory, not optional:**
     1. **CI is the authoritative gate.** `ci.yml` runs the full suite on
        `ubuntu-latest` (plus Postgres, e2e and CodeQL) on every push/PR,
        so the win32-skipped tests execute on every change.
+       > ⚠️ **CI is paused until 2026-08-01** by operator decision. While
+       > that holds, control 1 does not exist and control 2 is the *only*
+       > gate — running the skipped suite on the server is mandatory, not
+       > a second opinion. See `CONTRIBUTING.md`.
     2. **Server testing covers the install/systemd path** end to end.
   - **Hard rule that follows**: a change to `scripts/*.sh`,
     `deploy/systemd/*`, or anything the win32 suite skips is **never

@@ -34,8 +34,23 @@ apt install caddy
 
 ## Caddyfile minimo
 
-Reemplaza el contenido de `/etc/caddy/Caddyfile` con esto (un sitio por
-deploy):
+> ### ⚠️ Si el host ya sirve otras apps, NO reemplaces el archivo
+>
+> Un `/etc/caddy/Caddyfile` monolitico con varios site blocks es lo
+> normal en un host compartido, y sobrescribirlo **tira todas las apps
+> que viven ahi**. Agregá tu bloque al final (o un fragment aparte si el
+> archivo tiene `import`), y validá **antes** de recargar:
+>
+> ```bash
+> cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak.$(date +%Y%m%d-%H%M%S)
+> # ...agregar el bloque...
+> caddy adapt --config /etc/caddy/Caddyfile >/dev/null && systemctl reload caddy
+> ```
+>
+> `caddy adapt` parsea sin aplicar: si falla, no recargues.
+
+En un host dedicado, el contenido de `/etc/caddy/Caddyfile` es
+directamente esto (un sitio por deploy):
 
 ```caddy
 # AMELI App Template dev
@@ -58,6 +73,41 @@ metro-dev.lan {
 #     reverse_proxy 127.0.0.1:18081
 # }
 ```
+
+## Quien es el dueño del header HSTS: Django
+
+**No pongas `Strict-Transport-Security` en el site block de Caddy.** El
+template ya lo emite desde Django (`settings/security_headers.py`), con
+un default de **un año fuera de dev** y control fino por env var:
+
+| Variable | Efecto |
+|---|---|
+| `AMELI_APP_HSTS_SECONDS` | `max-age`. `0` desactiva — util mientras estas cableando TLS |
+| `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` | agrega `includeSubDomains` (opt-in) |
+
+Si ademas lo declaras en Caddy, la respuesta sale con **el header dos
+veces**. No es explotable —los navegadores toman el primero— pero:
+
+- las dos fuentes divergen apenas alguien cambia una sola, y la que gana
+  no es la que el operador cree;
+- `AMELI_APP_HSTS_SECONDS=0` deja de tener efecto, porque el header de
+  Caddy sigue ahi. Justo la perilla que existe para poder salir de un
+  HSTS mal puesto queda inutilizada.
+
+Verificalo con:
+
+```bash
+curl -sSI https://TU_HOSTNAME/ | grep -ci "^strict-transport-security"
+```
+
+Tiene que devolver **1**. Si devuelve 2, sacá la linea del `Caddyfile`.
+
+> Django solo emite HSTS cuando ve la request como segura, o sea con
+> `AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` seteado y
+> `AMELI_APP_TRUSTED_PROXIES` incluyendo al proxy. Si sacaste el header
+> de Caddy y ahora no aparece ninguno, eso es lo que falta — revisá la
+> seccion de `SECURE_PROXY_SSL_HEADER` mas abajo antes de volver a
+> ponerlo en Caddy.
 
 ## Compresion + cache de estaticos y media (optimizacion)
 

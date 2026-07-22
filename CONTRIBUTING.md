@@ -47,6 +47,36 @@ the same set across Python 3.11–3.14 plus `pip-audit`, Playwright e2e and
 the `js-unit` job; see [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the
 CI/branch-protection detail.
 
+> ### 🔴 CI is PAUSED until 2026-08-01 — the server is the only gate
+>
+> By operator decision, GitHub Actions does not run. That removes the
+> **only** environment that executes the `win32`-skipped suite: the local
+> Windows loop skips it by design, so a change to `scripts/*.sh`,
+> `deploy/systemd/*` or the install path is currently validated by
+> **nothing** unless you run it on the server yourself.
+>
+> While this is in effect, before considering such a change done:
+>
+> ```bash
+> # on ha-report2 (root shell — no sudo)
+> cd /opt/<test-instance> && git pull
+> python3 -m venv /tmp/tvenv
+> /tmp/tvenv/bin/pip -q install -r requirements.txt -r requirements-dev.txt
+> /tmp/tvenv/bin/pip -q install -e . --no-deps
+> APP_ENV=dev /tmp/tvenv/bin/pytest -q tests/test_install_env_seeding.py \
+>     tests/test_common_sh_slug_autodetect.py tests/test_install_sh_restart.py \
+>     tests/test_backup_restore.py
+> ```
+>
+> …plus a real install. The 2026-07-22 session found **12 blockers** in
+> the production install path this way, several of them silent, none of
+> which CI would have caught even if it were running — no job installs
+> from scratch on a host with other apps, with explicit ports, and then
+> runs `git pull`. See
+> [`docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md`](docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md).
+>
+> **Delete this block once CI is back on.**
+
 Coverage floor is 85% (`pyproject.toml`); mypy and ruff floors are zero.
 
 ## Local dev environment — Windows-native, tested on a real server
@@ -68,15 +98,16 @@ py -3.12 -m venv .venv
 
 **Daily loop:**
 ```powershell
-$env:APP_ENV="dev"; .\.venv\Scripts\pytest -q      # 1135 passed / 58 skipped
+$env:APP_ENV="dev"; .\.venv\Scripts\pytest -q      # 1137 passed / 77 skipped
 .\.venv\Scripts\ruff check .
 .\.venv\Scripts\mypy src
 ```
 
 > ### ⚠️ A green Windows run is necessary, not sufficient
 >
-> **~30 tests are skipped on `win32`** — the shell / systemd / backup suite
-> (`test_common_sh_slug_autodetect`, `test_systemd_profile`,
+> **~50 tests are skipped on `win32`** — the shell / systemd / backup /
+> install suite (`test_install_env_seeding` alone is 21 of them, plus
+> `test_common_sh_slug_autodetect`, `test_systemd_profile`,
 > `test_backup_restore`, `test_install_sh_restart`, …), which is exactly
 > what covers `scripts/*.sh` and `deploy/systemd/*`.
 >
