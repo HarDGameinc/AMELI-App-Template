@@ -223,7 +223,37 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.9-django, 2026-07-17)
+## State of the project (v0.5.10-django, 2026-07-22)
+
+> **Read this first if you are touching the install path.** `v0.5.10`
+> (2026-07-22) is the release where the production install path became
+> real. A from-scratch install on a live server found **12 blockers**;
+> until then the documented 3-command flow (`install.sh` → `configure` →
+> Caddy) **could not boot at all**. Two root causes, both worth
+> remembering because they generalise:
+>
+> 1. **The `.example` files are DEVELOPMENT config, and the installer
+>    used them as PRODUCTION config.** The loud failures were the easy
+>    ones. The dangerous ones were silent: the `__Host-` cookie policy
+>    was disabled, the session cookie shipped without `Secure`, and an
+>    explicit `AMELI_APP_API_PORT=` was discarded — pointing the service
+>    at another production app's port.
+> 2. **The installer assumes a deploy tree, but the Quickstart runs it
+>    over a git checkout**, so `repair_permissions` dirtied the checkout
+>    and broke the documented `git pull` update path.
+>
+> Rule that came out of it: the installer **renders** the example files,
+> it never copies them verbatim — and it renders **only on creation**,
+> never over a file the operator has touched. Instances provisioned
+> earlier are reported via `warn_insecure_prod_env` /`warn_port_drift`,
+> not silently rewritten.
+>
+> **`main` is still on `v0.5.9-django`**: CI is paused until 2026-08-01
+> and the project rule is that `main` only advances via PR with green
+> CI, so `v0.5.10-django` was tagged on `dev`. See
+> `docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md`.
+
+### Previous state (v0.5.9-django, 2026-07-17)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
