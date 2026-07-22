@@ -266,7 +266,18 @@ warn_insecure_prod_env() {
 render_config_file() {
   local target="$1"
   [[ -f "${target}" ]] || return 0
+
+  # settings/email.py refuses to boot outside dev on the console backend:
+  # it keeps mail in memory, so password reset and MFA-by-email fail
+  # silently and the operator only finds out when a user is locked out.
+  # "file" is the safe seed -- it writes .eml to <data_dir>/outbox, so
+  # nothing is lost and the deploy boots. The operator switches to "smtp"
+  # via `ameli-app configure` once there are real credentials.
+  local email_backend="console"
+  [[ "${APP_ENV}" != "dev" ]] && email_backend="file"
+
   sed -i \
+    -e "s|^  backend: .*|  backend: \"${email_backend}\"|" \
     -e "s|^  slug: .*|  slug: \"${APP_SLUG}\"|" \
     -e "s|^  environment: .*|  environment: \"${APP_ENV}\"|" \
     -e "s|^  profile_uploads_dir: .*|  profile_uploads_dir: \"${DATA_DIR}/uploads\"|" \

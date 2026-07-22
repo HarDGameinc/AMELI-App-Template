@@ -258,3 +258,23 @@ def test_warns_when_an_existing_prod_env_carries_the_dev_values(tmp_path):
     assert "__Host-" in stdout
     # ...and the operator's file is left exactly as it was.
     assert "AMELI_APP_SESSION_COOKIE_NAME=ameli_app_session" in env_file.read_text()
+
+
+# ---------------------------------------------------------------------------
+# B9 -- the console email backend is dev-only
+# ---------------------------------------------------------------------------
+
+def test_prod_config_seeds_a_deliverable_email_backend(tmp_path):
+    """settings/email.py refuses to boot outside dev on "console": mail
+    stays in memory, so password reset and MFA-by-email fail silently.
+    "file" writes .eml to <data_dir>/outbox -- nothing is lost and the
+    deploy boots; the operator moves to smtp when it has credentials.
+    """
+    yaml_text = _seed(tmp_path, env="prod")["yaml"].read_text()
+    assert '  backend: "file"' in yaml_text
+    assert '  backend: "console"' not in yaml_text
+
+
+def test_dev_config_keeps_the_console_email_backend(tmp_path):
+    yaml_text = _seed(tmp_path, env="dev")["yaml"].read_text()
+    assert '  backend: "console"' in yaml_text
