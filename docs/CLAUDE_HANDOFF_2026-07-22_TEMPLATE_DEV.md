@@ -246,22 +246,84 @@ las apps de un host compartido (los otros dos: `Caddyfile.example` en
 - **`Caddyfile` monolitico sin `import`**, con `dev01`–`dev04` vivos y
   cert wildcard en `/etc/ssl/ameli/`. **Nunca sobrescribirlo**: agregar
   bloque, `caddy adapt` para validar, backup, y recien ahi reload.
-- Instancia de prueba a limpiar: `tmpl-smoke-prod`
-  (`/opt/tmpl-smoke-prod`, `/etc/tmpl-smoke-prod`, units
-  `tmpl-smoke-prod-*`, rol y DB `tmpl_smoke`, y el site block
-  `dev05.ameli.cl:18495` del `Caddyfile`).
+- ~~Instancia de prueba a limpiar: `tmpl-smoke-prod`~~ ✅ **limpiada**
+  (units, `/opt`, `/etc`, `/var/lib`, `/var/log`, `/var/backups`, rol y DB
+  `tmpl_smoke`, usuario de sistema, y el site block
+  `dev05.ameli.cl:18495`). `caddy adapt` OK, los 4 sites originales
+  intactos, `dev01` respondiendo.
+
+### 6.1. Pendiente de revisar: consolidar Caddy en un solo puerto
+
+El operador abre **una regla de firewall por app**, con un subdominio y un
+puerto alto cada una. No hace falta: Caddy multiplexa por SNI/`Host` en un
+unico listener, asi que **un subdominio por app sobre el 443 estandar deja
+el firewall con una sola regla**. El procedimiento generico quedo escrito
+en `TLS_WITH_CADDY.md` → "Varias apps en un host".
+
+**Terreno ya verificado en `ha-report2` (2026-07-22):**
+
+- Caddy **ya es dueño del `:80`**; el **`:443` esta LIBRE**. La
+  consolidacion no compite con nada.
+- Admin API de Caddy en `127.0.0.1:2019` (loopback, correcto).
+- Sites actuales: `dev01:8443`, `dev02:18450`, `dev03:18480`,
+  `dev04:18490`. **`dev01` tiene logica propia de iframes**
+  (`@iframeMunicipio`, `@iframeSalud`, cookies `Partitioned`) que **no
+  entra en el snippet** — hay que escribir ese bloque completo.
+- Cert **wildcard ya emitido** en `/etc/ssl/ameli/` — sin ACME por sitio.
+
+> #### 🔴 Hallazgo de seguridad, previo a tocar el firewall
+>
+> Seis backends escuchan en **`0.0.0.0`**, no en loopback: puertos
+> `18050`, `18098`, `18105`, `18106`, `18200`, `18201`. Solo `18080` y
+> `18090` bindean `127.0.0.1` correctamente.
+>
+> Con su puerto abierto en el firewall, esas apps son alcanzables
+> **sin pasar por Caddy**: sin TLS, sin HSTS, y con `X-Forwarded-For` /
+> `X-Forwarded-Proto` puestos por quien llame. Como la app confia en esos
+> headers al venir de un proxy declarado en `TRUSTED_PROXIES`, cualquiera
+> que le pegue al backend directo puede **falsificar su IP** en el audit
+> log y en el rate limiting.
+>
+> **Bindear a loopback es prerequisito de la consolidacion, no un
+> follow-up.** Falta mapear que puerto corresponde a que app y cual esta
+> realmente expuesta al exterior (el listado salio de un `ss` filtrado,
+> no exhaustivo, y no se reviso el ruleset del firewall).
+
+**Orden obligatorio** (cerrar el firewall antes de mover Caddy deja al
+operador sin acceso): backends a loopback → subdominios en 443 **con los
+puertos viejos vivos** → verificar cada app por el nombre nuevo → recien
+ahi cerrar. Y revisar `CSRF_TRUSTED_ORIGINS` / `URL_BASE` en cada app,
+porque al irse el puerto **cambia el origen** y los POST empiezan a
+fallar por CSRF.
 
 ## §7. Continuidad
 
 1. ~~Los tres items de doc~~ ✅ **hecho** (§5.1, `f29a475`).
 2. ~~Reinstalar `tmpl-smoke-prod` desde cero sin parches manuales~~ ✅
    **hecho** — criterio de aceptacion cumplido (§3.2).
-3. Limpiar la instancia de prueba (§6), site block de Caddy incluido.
-4. Cortar **v0.5.10** y entregar a la hija Starlink (prompt ya redactado en
-   el handoff 2026-07-21 §8c). **No es un bump de rutina**: es la primera
-   version en la que el flujo de instalacion a produccion existe de verdad.
-   `main` sigue en `v0.5.9-django` y nada de esto esta promovido.
-5. Revisar **PR #13**.
+3. ~~Limpiar la instancia de prueba~~ ✅ **hecho** (§6).
+4. ~~Cortar **v0.5.10**~~ ✅ **hecho** — `c7ffbc8`, tag `v0.5.10-django`
+   **sobre `dev`**. `main` sigue en `v0.5.9-django` por decision explicita
+   del operador: el CI esta apagado hasta el 2026-08-01 y la regla es que
+   `main` solo avanza por PR con CI verde, asi que se corta el tag para no
+   bloquear la entrega sin romper la regla. **No es un bump de rutina**:
+   es la primera version en la que el flujo de instalacion a produccion
+   existe de verdad.
+5. **Entregar a la hija Starlink** (prompt en el handoff 2026-07-21 §8c).
+   Tres cosas que le cambian el deploy: (a) los defaults de puerto en prod
+   pasan a 8080/8081 —antes heredaba 18080/18081 del `.env.example`—;
+   (b) su instancia **no se re-renderiza sola** por diseno, asi que al
+   reinstalar tiene que atender los `WARN:` nuevos: si sale el de
+   `SESSION_COOKIE_NAME` su deploy corre **hoy** sin prefijo `__Host-`;
+   (c) si su Caddyfile setea HSTS, ver la seccion nueva de
+   `TLS_WITH_CADDY.md`.
+6. **Consolidacion de Caddy + firewall** — §6.1, con el hallazgo de los
+   backends en `0.0.0.0` como prerequisito.
+7. Revisar **PR #13**.
+8. **Al volver el CI (2026-08-01):** PR `dev`→`main` con verde, promover
+   `v0.5.10-django`, y **borrar el bloque marcado** en `CONTRIBUTING.md`
+   (lleva un `delete this block once CI is back on` para que no se
+   fosilice) mas el aviso en `DECISIONS.md` #11.
 
 > **Nota para el proximo agente.** Con el CI apagado hasta el 2026-08-01,
 > antes de tocar `scripts/*.sh`, `deploy/systemd/*` o el camino de

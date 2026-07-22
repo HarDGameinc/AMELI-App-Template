@@ -109,6 +109,106 @@ Tiene que devolver **1**. Si devuelve 2, sacá la linea del `Caddyfile`.
 > seccion de `SECURE_PROXY_SSL_HEADER` mas abajo antes de volver a
 > ponerlo en Caddy.
 
+## Varias apps en un host: un subdominio por app, un solo puerto
+
+El patron que se adopta solo suele ser **un puerto por app** (`app1` en
+8443, `app2` en 18450, …), y termina con una regla de firewall por app.
+No hace falta: Caddy multiplexa por SNI/`Host` en **un unico listener**.
+Un subdominio por app sobre el 443 estandar deja el firewall con **una
+sola regla**, y las URLs sin puertos que recordar.
+
+### Por que NO consolidar en un solo subdominio
+
+La tentacion opuesta —un solo nombre para todo, separando por path o por
+puerto— rompe el aislamiento entre apps:
+
+- **El puerto no separa cookies.** `apps.example.com:8443` y
+  `apps.example.com:18450` comparten el mismo tarro (RFC 6265: el puerto
+  no es parte de la identidad de la cookie). Consolidar el nombre y dejar
+  los puertos distintos **no aisla nada**.
+- **`__Host-` exige `Path=/`.** El template emite
+  `__Host-ameli_app_session`, el mismo nombre en cada instancia. Con un
+  hostname compartido, la app B pisa la sesion de A **y recibe la cookie
+  de sesion de A en cada request**.
+- **El template no corre bajo un subpath.** `LOGIN_URL`, `STATIC_URL` y
+  `MEDIA_URL` estan fijos en la raiz y no hay `FORCE_SCRIPT_NAME`, asi que
+  `handle_path /app1/*` se rompe en el primer redirect.
+
+Se puede forzar dandole a cada app un `AMELI_APP_SESSION_COOKIE_NAME`
+distinto, pero eso **desactiva la politica `__Host-`** y deja el
+aislamiento apoyado en que los nombres no colisionen, no en el navegador.
+Solo para apps que ya confian entre si. **Un subdominio por app es la
+respuesta correcta.**
+
+### Requisito previo: los backends van en loopback
+
+Antes de tocar el firewall, verifica que ninguna app servida por Caddy
+bindee `0.0.0.0`:
+
+```bash
+ss -tlnp | grep -v 127.0.0.1 | grep -vE "caddy|:22\s"
+```
+
+Un backend en `0.0.0.0` con su puerto abierto en el firewall es
+**alcanzable sin pasar por Caddy**: sin TLS, sin HSTS, y con
+`X-Forwarded-For` / `X-Forwarded-Proto` puestos por quien llame. Como la
+app confia en esos headers cuando vienen de un proxy declarado en
+`TRUSTED_PROXIES`, cualquiera que le pegue al backend directo puede
+**falsificar su IP** en el audit log y en el rate limiting. En el
+template esto ya viene bien (`AMELI_APP_HOST=127.0.0.1` por defecto);
+revisa el `--host` de las apps que no lo usen.
+
+### El Caddyfile, con snippet reutilizable
+
+```caddy
+(ameli_app) {
+    header Strict-Transport-Security "max-age=31536000"
+    encode gzip zstd
+    tls /etc/ssl/example/wildcard-fullchain.crt /etc/ssl/example/wildcard.key
+    reverse_proxy 127.0.0.1:{args[0]} {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+    }
+}
+
+app1.example.com { import ameli_app 18080 }
+app2.example.com { import ameli_app 18090 }
+app3.example.com { import ameli_app 18105 }
+```
+
+Un cert wildcard cubre todos los subdominios sin ACME por sitio. Los
+bloques con logica propia (matchers de iframe, rutas especiales) no
+entran en el snippet: se escriben completos.
+
+### Migracion en dos etapas, sin ventana de caida
+
+**El orden importa**: cerrar el firewall antes de mover Caddy te deja sin
+acceso. Hacelo con la sesion SSH abierta y backup del `Caddyfile`.
+
+1. **Levantar los subdominios en 443 dejando los puertos viejos vivos.**
+   Ambos caminos responden. Verificar cada app por el nombre nuevo:
+   ```bash
+   caddy adapt --config /etc/caddy/Caddyfile >/dev/null && systemctl reload caddy
+   for h in app1 app2 app3; do
+     curl -sSI "https://${h}.example.com/" -o /dev/null -w "${h}: %{http_code}\n"
+   done
+   ```
+2. **Recien entonces** eliminar los bloques de puerto alto y cerrar las
+   reglas de firewall, dejando 443 (+80 si queres redirect HTTP→HTTPS).
+
+### El detalle que muerde: cambia el origen
+
+Al desaparecer el `:8443` de la URL publica **cambia el origen**. En cada
+app hay que revisar:
+
+- `AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS` — si tiene el puerto viejo
+  hardcodeado, **todos los POST empiezan a fallar por CSRF**.
+- `AMELI_APP_URL_BASE` — los links de reset de password y de
+  verificacion por email seguirian apuntando al puerto viejo.
+
+`AMELI_APP_DJANGO_ALLOWED_HOSTS` no cambia: se compara contra el
+hostname, sin puerto.
+
 ## Compresion + cache de estaticos y media (optimizacion)
 
 Por defecto la app sirve `/static/` y `/media/` ella misma (via
