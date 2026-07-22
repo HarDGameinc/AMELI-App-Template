@@ -504,6 +504,30 @@ install_python_deps() {
   "${VENV_DIR}/bin/python" -m pip install -e "${APP_DIR}" --no-deps
 }
 
+# Probe the API's own /health. This is the only trustworthy liveness
+# signal: with Type=simple, systemd marks a unit "active" the moment it
+# execs, before the process has bound its port -- so `systemctl is-active`
+# returns success for a service that is crash-looping on a bind error.
+# That is not a rare race: the same install reported [WARN] ACTIVE on one
+# run and [OK] ACTIVE on the next with nothing changed but the sampling
+# instant. Shared by install.sh and validate_installation.sh so both
+# agree on what "up" means.
+smoke_health() {
+  local url="http://127.0.0.1:${AMELI_APP_API_PORT:-18080}/health"
+  local attempt
+  # Up to ~15s: a first boot right after migrate can be slow on cold caches.
+  for attempt in $(seq 1 15); do
+    if curl -fsS --max-time 2 "${url}" >/dev/null 2>&1; then
+      log "  /health ${url} -> 200 (attempt ${attempt})"
+      return 0
+    fi
+    sleep 1
+  done
+  log "  /health ${url} did not answer in 15s"
+  log "  check: journalctl -u $(service_unit_name api) --since '2 minutes ago'"
+  return 1
+}
+
 repair_permissions() {
   chown -R root:root "${APP_DIR}" || true
 

@@ -59,10 +59,22 @@ if command -v systemctl >/dev/null 2>&1; then
       warn "ENABLED ${local_unit}"
     fi
 
-    if systemctl is-active --quiet "${local_unit}"; then
+    # ActiveState alone is not enough: with Type=simple systemd reports
+    # "active" from the instant it execs, so a process crash-looping on a
+    # bind error samples as healthy about half the time. Require the
+    # running substate, and surface the restart counter that gives a loop
+    # away.
+    unit_state="$(systemctl show -p ActiveState --value "${local_unit}" 2>/dev/null || echo unknown)"
+    unit_sub="$(systemctl show -p SubState --value "${local_unit}" 2>/dev/null || echo unknown)"
+    if [[ "${unit_state}" == "active" && "${unit_sub}" == "running" ]]; then
       pass "ACTIVE ${local_unit}"
     else
-      warn "ACTIVE ${local_unit}"
+      warn "ACTIVE ${local_unit} (${unit_state}/${unit_sub})"
+    fi
+
+    unit_restarts="$(systemctl show -p NRestarts --value "${local_unit}" 2>/dev/null || echo 0)"
+    if [[ "${unit_restarts:-0}" -gt 0 ]]; then
+      warn "RESTART_LOOP ${local_unit} (NRestarts=${unit_restarts})"
     fi
   done
 
@@ -81,6 +93,19 @@ if command -v systemctl >/dev/null 2>&1; then
   done
 else
   warn "SYSTEMCTL_NOT_AVAILABLE"
+fi
+
+# The authoritative liveness check. Everything above inspects files and
+# systemd bookkeeping; only this one proves the deploy actually serves.
+# It is a FAIL, not a WARN: a RESUMEN with zero failures is what an
+# operator reads as "this deploy is healthy", and until now that summary
+# could come back clean while the API answered nothing at all.
+if [[ " ${ENABLED_SERVICE_UNITS[*]} " == *" $(service_unit_name api) "* ]]; then
+  if smoke_health; then
+    pass "HEALTH_ENDPOINT"
+  else
+    fail_check "HEALTH_ENDPOINT"
+  fi
 fi
 
 echo "RESUMEN: OK=${OK} WARN=${WARN} FAIL=${FAIL}"
