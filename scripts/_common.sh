@@ -219,6 +219,50 @@ copy_if_missing() {
 # So rewrite those keys to the instance's real values right after seeding.
 # Anchored on the exact indentation each key has in the example file; only
 # ever called on a file we just created, never on an operator-edited one.
+# ``.env.example`` is the local-dev env file, and dev wants things prod
+# must never have. Copying it verbatim into /etc/<instance>/app.env seeds:
+#
+#   * AMELI_APP_DJANGO_DEBUG=true       -> base.py refuses to boot (loud)
+#   * AMELI_APP_SESSION_COOKIE_NAME=... -> cookies.py reads any explicit
+#     name as a deliberate operator override and skips the ASVS V3.4.4
+#     ``__Host-`` prefix policy (silent downgrade)
+#   * AMELI_APP_SESSION_COOKIE_SECURE=false -> session cookie without the
+#     Secure flag behind TLS (silent downgrade)
+#
+# The last two are the dangerous ones: they do not fail, they just make
+# the deploy quietly weaker than the template promises. Outside dev,
+# rewrite them to the safe values. Only ever called on a file we just
+# created -- an operator who deliberately set these keeps them.
+render_env_file() {
+  [[ "${APP_ENV}" == "dev" ]] && return 0
+  [[ -f "${ENV_FILE}" ]] || return 0
+  sed -i \
+    -e "s|^AMELI_APP_DJANGO_DEBUG=.*|AMELI_APP_DJANGO_DEBUG=false|" \
+    -e "s|^AMELI_APP_SESSION_COOKIE_SECURE=.*|AMELI_APP_SESSION_COOKIE_SECURE=true|" \
+    -e "/^AMELI_APP_SESSION_COOKIE_NAME=/d" \
+    "${ENV_FILE}"
+  log "Env renderizada para ${APP_ENV}: DEBUG=false, cookie Secure, prefijo __Host- activo"
+}
+
+# Runs on every install, including upgrades of an instance provisioned by
+# an older version that seeded the dev values above. Never rewrites an
+# existing file -- just refuses to let the downgrade pass unnoticed.
+warn_insecure_prod_env() {
+  [[ "${APP_ENV}" == "dev" ]] && return 0
+  [[ -f "${ENV_FILE}" ]] || return 0
+  if grep -qiE '^AMELI_APP_DJANGO_DEBUG=(true|1|yes|on)' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} tiene AMELI_APP_DJANGO_DEBUG activo en ${APP_ENV}."
+  fi
+  if grep -qiE '^AMELI_APP_SESSION_COOKIE_SECURE=(false|0|no|off)' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} tiene SESSION_COOKIE_SECURE=false en ${APP_ENV};" \
+        "la cookie de sesion viaja sin flag Secure."
+  fi
+  if grep -q '^AMELI_APP_SESSION_COOKIE_NAME=.' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} fija SESSION_COOKIE_NAME; eso desactiva el" \
+        "prefijo __Host- (ASVS V3.4.4). Borra la linea salvo que sea intencional."
+  fi
+}
+
 render_config_file() {
   local target="$1"
   [[ -f "${target}" ]] || return 0
@@ -337,6 +381,9 @@ copy_project_tree() {
 
 initialize_runtime_env() {
   copy_if_missing "${APP_DIR}/.env.example" "${ENV_FILE}" 640
+  if [[ "${COPY_IF_MISSING_CREATED}" == "1" ]]; then
+    render_env_file
+  fi
   copy_if_missing "${APP_DIR}/config/app.yaml.example" "${CONFIG_FILE}" 640
   if [[ "${COPY_IF_MISSING_CREATED}" == "1" ]]; then
     render_config_file "${CONFIG_FILE}"
@@ -381,6 +428,8 @@ initialize_runtime_env() {
     'import secrets; print(secrets.token_urlsafe(48))'
   gen_env_if_missing AMELI_APP_MFA_ENCRYPTION_KEY \
     'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+
+  warn_insecure_prod_env
 }
 
 install_python_deps() {

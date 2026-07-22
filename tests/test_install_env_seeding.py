@@ -1,8 +1,8 @@
 """Regression coverage for what ``install.sh`` seeds on a fresh install.
 
-Closes the 2026-07-22 server test findings (handoff §3.1 B1/B2/B3). A
-from-scratch **prod** install could not boot at all, and every blocker was
-invisible to CI because this path had never been executed end-to-end:
+Closes the 2026-07-22 server test findings (handoff §3.1). A from-scratch
+**prod** install could not boot at all, and every blocker was invisible to
+CI because this path had never been executed end-to-end:
 
 * ``initialize_runtime_env`` seeded the three crypto keys but not
   ``AMELI_APP_DJANGO_ALLOWED_HOSTS`` nor ``AMELI_APP_TRUSTED_PROXIES``,
@@ -13,6 +13,9 @@ invisible to CI because this path had never been executed end-to-end:
   ``environment: "dev"`` (which silently disables the prod guards) and
   relative paths that resolve inside the checkout, which
   ``settings/i18n_static.py`` refuses.
+* ``.env.example`` -- the *dev* env file -- was likewise copied verbatim,
+  seeding ``DEBUG=true`` (loud) plus a pinned session cookie name and
+  ``SESSION_COOKIE_SECURE=false`` (both silent security downgrades).
 
 These tests source ``_common.sh`` with every directory redirected into a
 tmpdir and assert on the files it produces.
@@ -35,7 +38,9 @@ ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = ROOT / "scripts" / "_common.sh"
 
 
-def _seed(tmp_path: Path, *, env: str = "prod", slug: str = "tmpl-test") -> dict[str, Path]:
+def _seed(
+    tmp_path: Path, *, env: str = "prod", slug: str = "tmpl-test"
+) -> dict[str, Path | str]:
     """Run ``initialize_runtime_env`` against a sandboxed instance layout.
 
     Returns the paths of the produced ``app.env`` / ``app.yaml``.
@@ -75,11 +80,16 @@ set -euo pipefail
 source <(tail -n +6 "${COMMON_SH_PATH}")
 initialize_runtime_env
 '''
-    subprocess.run(
+    proc = subprocess.run(
         ["bash", "-c", script],
         env=shell_env, check=True, capture_output=True, text=True,
     )
-    return {"env": etc_dir / "app.env", "yaml": etc_dir / "app.yaml", "app_dir": app_dir}
+    return {
+        "env": etc_dir / "app.env",
+        "yaml": etc_dir / "app.yaml",
+        "app_dir": app_dir,
+        "stdout": proc.stdout,
+    }
 
 
 def _env_values(path: Path) -> dict[str, str]:
@@ -192,3 +202,59 @@ def test_operator_edited_config_is_never_re_rendered(tmp_path):
     _seed(tmp_path)
 
     assert paths["yaml"].read_text() == 'app:\n  environment: "custom-by-operator"\n'
+
+
+# ---------------------------------------------------------------------------
+# B6/B7/B8 -- .env.example is the DEV env file; prod must not inherit it
+# ---------------------------------------------------------------------------
+
+def test_prod_env_never_inherits_debug_true(tmp_path):
+    """B6: base.py refuses to boot with DEBUG outside dev. Loud, but it
+    made a from-scratch prod install impossible."""
+    values = _env_values(_seed(tmp_path, env="prod")["env"])
+    assert values["AMELI_APP_DJANGO_DEBUG"] == "false"
+
+
+def test_prod_env_does_not_pin_the_session_cookie_name(tmp_path):
+    """B7 (silent): cookies.py treats *any* explicit name as a deliberate
+    operator override and skips the ASVS V3.4.4 ``__Host-`` prefix. An
+    installer-seeded value is nobody's deliberate choice."""
+    values = _env_values(_seed(tmp_path, env="prod")["env"])
+    assert "AMELI_APP_SESSION_COOKIE_NAME" not in values
+
+
+def test_prod_env_forces_secure_session_cookie(tmp_path):
+    """B8 (silent): without Secure the session cookie leaks over any
+    plaintext hop, and ``__Host-`` cannot apply."""
+    values = _env_values(_seed(tmp_path, env="prod")["env"])
+    assert values["AMELI_APP_SESSION_COOKIE_SECURE"] == "true"
+
+
+def test_dev_env_keeps_the_developer_friendly_values(tmp_path):
+    """The rewrite is prod-only -- a dev install still gets DEBUG."""
+    values = _env_values(_seed(tmp_path, env="dev")["env"])
+    assert values["AMELI_APP_DJANGO_DEBUG"] == "true"
+    assert values["AMELI_APP_SESSION_COOKIE_SECURE"] == "false"
+
+
+def test_warns_when_an_existing_prod_env_carries_the_dev_values(tmp_path):
+    """Instances provisioned by an older installer already carry the
+    downgrade. Re-running install must not rewrite their env file, but it
+    must not let the problem pass unnoticed either.
+    """
+    paths = _seed(tmp_path, env="prod")
+    env_file = paths["env"]
+    env_file.write_text(
+        "AMELI_APP_DJANGO_DEBUG=true\n"
+        "AMELI_APP_SESSION_COOKIE_SECURE=false\n"
+        "AMELI_APP_SESSION_COOKIE_NAME=ameli_app_session\n",
+        encoding="utf-8",
+    )
+
+    stdout = _seed(tmp_path, env="prod")["stdout"]
+
+    assert "AMELI_APP_DJANGO_DEBUG activo" in stdout
+    assert "SESSION_COOKIE_SECURE=false" in stdout
+    assert "__Host-" in stdout
+    # ...and the operator's file is left exactly as it was.
+    assert "AMELI_APP_SESSION_COOKIE_NAME=ameli_app_session" in env_file.read_text()
