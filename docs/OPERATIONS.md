@@ -511,6 +511,39 @@ dir, validates every `sha256sum` from the manifest, then exits 0.
 Schedule it weekly so a silently-corrupt backup gets caught before
 you need to restore in anger.
 
+### Update — the pre-update backup is mandatory
+
+`scripts/update.sh` takes a backup, **verifies it** (`restore.sh verify`),
+and only then runs `migrate`. A migration can be irreversible, so the
+verified backup is the sole recovery path — a failed or unverifiable
+backup **halts the update**. Operators who back up out of band opt out
+explicitly:
+
+```bash
+AMELI_APP_UPDATE_SKIP_BACKUP=1 APP_ENV=prod bash scripts/update.sh
+```
+
+(A GPG-encrypted archive whose private key is not on this host can't be
+verified here; that is a warning, not a halt — the archive still exists.)
+
+### Uninstall — safe by default, `--purge` behind a guard
+
+```bash
+# SAFE: stop + remove units, PRESERVE config/data/logs/backups
+APP_ENV=prod bash scripts/uninstall.sh
+
+# DESTRUCTIVE: also delete every dir + the system user/group.
+# Takes a FINAL backup into /var/backups first (survives the purge).
+APP_ENV=prod bash scripts/uninstall.sh --purge --yes
+```
+
+`--purge` refuses without `--yes`. The **database is never dropped** —
+the installer does not create it, so its ownership is yours; `--purge`
+prints the exact `dropdb`/`dropuser` commands (parsed from
+`DATABASE_URL`) instead of guessing. Opt out of the final backup with
+`AMELI_APP_UNINSTALL_SKIP_BACKUP=1` (and its destination with
+`AMELI_APP_UNINSTALL_BACKUP_DIR`).
+
 ### Automated nightly backup via systemd (roadmap #18)
 
 The template ships `deploy/systemd/ameli-app-backup.{service,timer}`.

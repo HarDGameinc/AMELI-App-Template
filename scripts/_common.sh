@@ -636,6 +636,42 @@ disable_known_units() {
   systemctl reset-failed 2>/dev/null || true
 }
 
+# Remove an instance's entire on-disk footprint: code, config, data,
+# logs, backups, and the dedicated system user/group. IRREVERSIBLE --
+# callers must gate it behind an explicit confirmation.
+#
+# The database is deliberately NOT dropped. The installer never creates
+# it (the operator provisions Postgres by hand, see
+# FIRST_INSTALL_DJANGO.md), so its ownership -- and the risk of it being
+# shared -- is the operator's. Running `dropdb` on a DB we do not own is
+# exactly the kind of destructive guess this template refuses to make;
+# we print the exact commands instead, derived from DATABASE_URL.
+purge_instance() {
+  log "Purgando ${APP_INSTANCE} (IRREVERSIBLE): codigo, config, datos, logs, backups."
+  rm -rf "${APP_DIR}" "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
+
+  if id "${RUN_USER}" >/dev/null 2>&1; then
+    userdel "${RUN_USER}" 2>/dev/null \
+      || log "WARN: no se pudo borrar el usuario ${RUN_USER} (¿procesos vivos, o no root?)."
+  fi
+  if getent group "${RUN_GROUP}" >/dev/null 2>&1; then
+    groupdel "${RUN_GROUP}" 2>/dev/null || true
+  fi
+
+  # Best-effort parse of DATABASE_URL (scheme//user:pass@host:port/db?args).
+  local _db _dbuser
+  _db="$(printf '%s' "${DATABASE_URL:-}" | sed -nE 's@^[^/]+//[^/]+/([^?]+).*@\1@p')"
+  _dbuser="$(printf '%s' "${DATABASE_URL:-}" | sed -nE 's@^[^/]+//([^:@/]+).*@\1@p')"
+  if [[ -n "${_db}" ]]; then
+    log "La base de datos NO se toca (el instalador no la crea). Para eliminarla:"
+    log "  su - postgres -c \"dropdb --if-exists ${_db}\""
+    [[ -n "${_dbuser}" ]] && log "  su - postgres -c \"dropuser --if-exists ${_dbuser}\""
+  elif [[ -n "${AMELI_APP_SQLITE_PATH:-}" ]]; then
+    log "Base SQLite en ${AMELI_APP_SQLITE_PATH} -- borrala a mano si corresponde."
+  fi
+  log "Purga completa: ${APP_INSTANCE}."
+}
+
 resolve_systemd_profile() {
   ENABLED_SERVICE_UNITS=()
   ENABLED_TIMER_UNITS=()
