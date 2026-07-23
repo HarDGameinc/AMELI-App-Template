@@ -45,6 +45,60 @@ Deploy + restart commands live in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server". The
 bump ritual is in [`RELEASE.md`](RELEASE.md).
 
+## Architecture and ports
+
+The template is a **Django monolith**. One ASGI process
+(`ameli_web.asgi:application`) serves **both** the server-rendered HTML
+dashboard **and** the JSON API — there is no separate frontend tier.
+
+```
+internet ──► Caddy :443 ──► Django ASGI (uvicorn, api_port, 127.0.0.1)
+                             ├── dashboard HTML (server-rendered templates)
+                             └── JSON API           (same app)
+                                       │
+                                       ▼
+                                  PostgreSQL
+                                       ▲
+        workers (capture / maintenance / notifier) ──┘
+        separate processes, same DB, OUT of the request path
+```
+
+### Which port faces the proxy
+
+**`api_port`** — the only one bound under the default profile
+(`api-worker-maintenance`). Caddy reverse-proxies to
+`127.0.0.1:<api_port>`; that single process answers everything. Internet
+only ever sees Caddy's 443.
+
+### Port convention
+
+| Env | `api_port` default | `web_port` default |
+|---|---|---|
+| **prod** | `8080` | `8081` |
+| **dev** | `18080` | `18081` |
+
+Both are overridable via `AMELI_APP_API_PORT` / `AMELI_APP_WEB_PORT`. On a
+host that already runs other apps, override to free high ports to avoid
+collisions — the port number is just where it listens; **`APP_ENV`, not
+the port, decides prod behavior** (guards, Secure cookies, HSTS,
+health allowlist). A prod deploy on a `18XXX` port is fine and common on
+shared hosts.
+
+### `web_port` / `ameli-app-web.service` — a reserved seam, not dead config
+
+`web.service` runs `ameli_app.web`, **today an alias of the same ASGI
+app** on `web_port`. It is bound **only** when `APP_SYSTEMD_PROFILE`
+includes `web` (`api-web`, `web-worker`, …); under the default api-only
+profile it is rendered but never enabled, so nothing listens on
+`web_port`. That is intentional: it is the plug point a child app — or a
+**planned evolution that splits a dedicated frontend tier from the API** —
+swaps its implementation behind without renaming the unit or changing the
+port contract. See [`src/ameli_app/web.py`](../src/ameli_app/web.py).
+
+> **Roadmap note.** The frontend/API split is a future tech evolution;
+> until then the monolith is the intended shape and `web_port` stays a
+> reserved slot. Do not treat it as removable dead config.
+
 ## Local validation
 
 ```bash

@@ -39,6 +39,12 @@ case "${APP_ENV}" in
     ;;
 esac
 
+# Port convention: prod = 80XX, dev = 18XX. API_PORT is the one that
+# actually binds and that Caddy proxies -- one Django ASGI process serves
+# the dashboard AND the API (monolith; no separate frontend). WEB_PORT is
+# a reserved seam, bound only under a "web"-including APP_SYSTEMD_PROFILE
+# (see ameli_app/web.py). Both are overridable via AMELI_APP_*_PORT -- use
+# high ports on a host already running other apps to avoid collisions.
 DEFAULT_API_PORT="8080"
 DEFAULT_WEB_PORT="8081"
 if [[ "${APP_ENV}" == "dev" ]]; then

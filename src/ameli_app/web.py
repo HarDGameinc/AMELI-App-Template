@@ -7,6 +7,13 @@ apps that override the deployment scaffolding can keep the
 behind it without renaming the unit file. The two launchers are
 intentionally identical today; if they diverge, document the split
 here and in the systemd unit comments.
+
+Today both serve the same monolith ASGI app; ``web.service`` /
+``web_port`` are only bound under a ``web``-including
+``APP_SYSTEMD_PROFILE``. This is the reserved seam for a planned
+evolution — splitting a dedicated frontend tier from the API — which
+would land its implementation here without touching the unit or the
+port contract.
 """
 from __future__ import annotations
 
