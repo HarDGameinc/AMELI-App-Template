@@ -443,7 +443,6 @@ All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 | `docs/TECH_EVOLUTION.md` | Stack/tooling assessment: keep vs evolve, ranked opportunities |
 | `docs/SKILLS_REVIEW.md` | Multi-skill code review |
 | `docs/PHASE_A_PREPROD_AUDIT_*.md` | Pre-production audit report |
-| `docs/AUDIT_WEBFLEET_2026-07-21.md` | Outbound WebFleet integration audit — checklist by surface, reusable template pieces, location recommendation |
 | `docs/PHASE_B_SECURITY_REVIEW_*.md` | Security review report |
 | `docs/TLS_WITH_CADDY.md` | TLS/Caddy configuration |
 | `docs/SERVER_HARDENING.md` | Host/deployment hardening checklist (systemd sandbox, network, Postgres, SSH, secrets, backups) |

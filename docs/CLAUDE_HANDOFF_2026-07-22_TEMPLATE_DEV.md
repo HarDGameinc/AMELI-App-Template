@@ -6,6 +6,18 @@ Rama de trabajo: `dev` (version `v0.5.9-django`, HEAD `562d4f4` al abrir)
 Rama estable: `main` (en `v0.5.9-django`, `98f32a5`)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-21_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-21_TEMPLATE_DEV.md)
 
+> **Registro historico — no reescribir.** Este handoff conserva la
+> narrativa completa de la sesion, incluida la consolidacion de red del
+> servidor que toco **otras apps** (dev01/Bandwidth, dev02/Metro, WebFleet,
+> OMEGA, Notifier, topologia FortiGate/firewall). Por la regla "la doc del
+> template solo trata del template" (2026-07-23), ese contenido operativo
+> **se extrajo a un doc de infraestructura** y ya **no forma parte de la
+> doc mantenida del template**: mover
+> `NETWORK_OPS_ha-report2_2026-07-22.md` (generado en scratchpad) al repo de
+> infra del servidor. Lo que sigue vigente aca es lo del template:
+> instalacion (§3.1, B1–B12), fix set (§5), release `v0.5.10`, y `dev03`
+> (instancia dev del template) / `dev04` (hija Starlink).
+
 > **Sesion en curso** — este handoff se completa durante el dia.
 
 ## §1. Snapshot al inicio
