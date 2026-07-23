@@ -126,16 +126,57 @@ purga). Doc en `OPERATIONS.md`.
 
 Instancia de prueba eliminada al cierre (con el propio `--purge`).
 
+## §5c. Prompt de entrega a Starlink + normalizacion de puertos (`57e1bb5`)
+
+**Prompt de entrega reescrito** (scratchpad
+`to-move/STARLINK_DELIVERY_PROMPT_v0.5.10.md`). El draft del 2026-07-21
+§8c quedo obsoleto: asumia "solo overhaul de onboarding, sin validacion de
+servidor". El nuevo refleja el alcance real (B1-B12 + B13 + day-2), el
+modelo git (fork + merge/cherry-pick, DECISIONS #7), las DOS capas (deploy
+de `dev04` ya al dia vs codigo del fork pendiente), el wrinkle dev/main, y
+la tabla de WARN literales que el reinstall puede tirar.
+
+**Arquitectura aclarada + convencion de puertos normalizada.** Al revisar
+puertos con el operador se confirmo que el template es un **monolito
+Django**: un proceso ASGI (`ameli_web.asgi`) sirve dashboard HTML **y** API
+JSON; **no hay frontend separado** (ese recuerdo era de WebFleet, app hija
+con node dist + api python). Cambios (solo docs/comentarios, sin runtime):
+
+- `OPERATIONS.md` nueva seccion "Architecture and ports": diagrama del
+  flujo real (internet → Caddy → ASGI → PG; workers fuera del path),
+  **el `api_port` es el unico que bindea y el que ve el proxy**, convencion
+  **prod 80XX / dev 18XX** (overridable), y que **`APP_ENV` -no el puerto-
+  decide el comportamiento prod** (un prod en 18XXX es normal en host
+  compartido — es el caso de Starlink).
+- **`web_port` / `web.service` NO es config muerta**: es un **seam
+  reservado** (ya documentado en `web.py`) — el gancho para que una hija
+  swapee la implementacion, y para la **evolucion futura a frontend
+  separado**. Documentado en `.env.example`, `_common.sh` y una nota de
+  roadmap. **No se removio** (habria sacado justo ese gancho).
+- Naming api/web aclarado en `api.py` / `web.py`.
+
+**Decision registrada:** el monolito es la forma intencional **por ahora**;
+el split frontend/API queda como **evolucion de tech futura**.
+
+Relevante para Starlink: corre `api-worker-maintenance` → **1 solo puerto
+activo** (api 18090, loopback); `web_port=8081` reservado sin bindear.
+Config mixta (api en rango dev, `APP_ENV=prod`) — correcta, override por la
+colision del 8080 en el host.
+
 ## §6. Estado y pendientes
 
-- `dev` en `e745c2a`; `v0.5.10-django` tagueado en `dev`. **B13 y el
-  endurecimiento del ciclo day-2 (M1/M4/M3) estan sin release**: entran en
-  el proximo corte (o re-tag) cuando vuelva el CI.
+- `dev` en `57e1bb5`; `v0.5.10-django` tagueado en `dev`. **B13, el
+  endurecimiento del ciclo day-2 (M1/M4/M3) y la normalizacion de puertos
+  estan sin release**: entran en el proximo corte (o re-tag) cuando vuelva
+  el CI.
 - Red del template: `dev03`/`dev04` cumplen el criterio N1–N9 + B13.
 - Ciclo day-2 completo y validado en servidor: install / update(+backup
   gate) / uninstall(+purge) / backup / restore / maintenance /
   purge-users / verify-audit / rotate-audit-key.
-- Pendientes del template: entrega de `v0.5.10` a Starlink (con B13),
+- Arquitectura + convencion de puertos documentada; monolito por ahora,
+  frontend split como evolucion futura (§5c).
+- Pendientes del template: **entrega de `v0.5.10`+B13+day-2 a Starlink**
+  (prompt listo en scratchpad; sumar la seccion de convencion de puertos),
   PR #13, y al volver el CI (2026-08-01) promover `main` + borrar el bloque
   provisorio de `CONTRIBUTING.md`.
 - Red multi-app (dev01 fase 2, WebFleet, firewall) y sus docs: **fuera del
