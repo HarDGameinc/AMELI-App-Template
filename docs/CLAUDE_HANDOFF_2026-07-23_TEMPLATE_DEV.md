@@ -90,11 +90,51 @@ toque manual:**
 
 Instancia de prueba **eliminada** al cierre.
 
+## §5b. Revision + endurecimiento del ciclo day-2 (`e745c2a`)
+
+Revision de los scripts de mantenimiento contra el estandar del
+instalador. `backup.sh`, `restore.sh`, `maintenance` y
+`purge-inactive-users` ya estaban solidos (pg_dump custom, manifest
+sha256, GPG, retencion acotada, verify/restore con guard, retention sweep,
+dry-run). Dos huecos, cerrados:
+
+- **M1** — `update.sh` corria `backup.sh || true` antes de `migrate`. El
+  backup previo es la unica via de recuperacion de una migracion
+  irreversible; el `|| true` tragaba un pg_dump fallido o un disco lleno.
+  Ahora **detiene** el update, con opt-out `AMELI_APP_UPDATE_SKIP_BACKUP=1`.
+- **M4** — `update.sh` **verifica** el backup recien hecho
+  (`restore.sh verify`) antes de tocar la DB. GPG sin clave local: WARN,
+  no halt.
+- **M3** — `uninstall.sh` suma `--purge --yes`: toma un backup **final**
+  (a `/var/backups`, sobrevive a la purga), borra dirs + usuario/grupo via
+  el nuevo `purge_instance()` en `_common.sh`, e **imprime** los
+  `dropdb`/`dropuser` (parseados de `DATABASE_URL`) en vez de tocar una DB
+  que el instalador no crea.
+
+Tests: `test_lifecycle_scripts.py` (6 estaticos + 1 de comportamiento de
+purga). Doc en `OPERATIONS.md`.
+
+**Aceptacion en servidor (`ha-report2`, `tmpl-smoke`):**
+
+| | |
+|---|---|
+| `update.sh` happy path: backup→verify→migrate→validate | ✅ `RESUMEN OK=26 FAIL=0` |
+| M1: backup roto → update se detiene (exit 1, 0 "Actualizacion lista") | ✅ |
+| opt-out `AMELI_APP_UPDATE_SKIP_BACKUP=1` salta y procede | ✅ |
+| `--purge` sin `--yes` → rechaza, instancia intacta | ✅ |
+| `--purge --yes` → backup final sobrevive, 0 dirs, usuario ausente, DB commands impresos | ✅ |
+
+Instancia de prueba eliminada al cierre (con el propio `--purge`).
+
 ## §6. Estado y pendientes
 
-- `dev` en `82ed04e`; `v0.5.10-django` tagueado en `dev`. **B13 esta sin
-  release**: entra en el proximo corte (o re-tag) cuando vuelva el CI.
+- `dev` en `e745c2a`; `v0.5.10-django` tagueado en `dev`. **B13 y el
+  endurecimiento del ciclo day-2 (M1/M4/M3) estan sin release**: entran en
+  el proximo corte (o re-tag) cuando vuelva el CI.
 - Red del template: `dev03`/`dev04` cumplen el criterio N1–N9 + B13.
+- Ciclo day-2 completo y validado en servidor: install / update(+backup
+  gate) / uninstall(+purge) / backup / restore / maintenance /
+  purge-users / verify-audit / rotate-audit-key.
 - Pendientes del template: entrega de `v0.5.10` a Starlink (con B13),
   PR #13, y al volver el CI (2026-08-01) promover `main` + borrar el bloque
   provisorio de `CONTRIBUTING.md`.
