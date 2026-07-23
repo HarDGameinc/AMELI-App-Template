@@ -460,6 +460,19 @@ curl --silent --fail http://127.0.0.1:18080/health/deep > /dev/null
 Both honor `HEALTH_METRICS_ALLOWLIST` so they can be locked to
 loopback / known prober IPs.
 
+> **Default is world-readable — but a prod install locks it down.** With
+> the list empty the views answer any client, so behind a reverse proxy
+> `/health` leaks version, uptime and disk, and `/metrics` exposes the
+> full scrape to anyone who reaches the public port (a known version is a
+> CVE shortlist). `scripts/install.sh` therefore seeds
+> `AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1` on a **fresh prod**
+> install (dev stays open for local probes). The post-install smoke and
+> `validate_installation.sh` hit `127.0.0.1:<port>/health` directly, so
+> the lockdown does not break them. Add your external monitor's IP to the
+> list explicitly. An instance provisioned before this seeding is **not**
+> rewritten on upgrade — `install.sh` warns instead, so an external
+> scraper that relies on the open default is not silently cut off.
+
 ## First install reference
 
 Use the full first-install walkthrough in:

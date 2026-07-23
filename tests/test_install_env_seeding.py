@@ -357,3 +357,45 @@ def test_repo_file_modes_match_what_repair_permissions_applies():
         "repair_permissions sets these executable; git must record 100755 "
         f"or the checkout is dirty after every install: {wrong}"
     )
+
+
+# ---------------------------------------------------------------------------
+# B13 -- /health and /metrics must not be world-readable on a fresh prod
+# install (2026-07-23 network verification)
+# ---------------------------------------------------------------------------
+
+def test_prod_seeds_health_metrics_allowlist(tmp_path):
+    """settings/integrations.py leaves /health + /metrics open by default
+    ("public for probes"). Through a proxy that leaks version/uptime/disk
+    and the full Prometheus scrape. A fresh prod install must lock them to
+    loopback; the install smoke hits 127.0.0.1 directly so it still passes.
+    """
+    values = _env_values(_seed(tmp_path, env="prod")["env"])
+    assert values.get("AMELI_APP_HEALTH_METRICS_ALLOWLIST") == "127.0.0.1,::1"
+
+
+def test_dev_leaves_health_metrics_open(tmp_path):
+    """Dev keeps them open so local probes / scrapers work without fuss."""
+    values = _env_values(_seed(tmp_path, env="dev")["env"])
+    assert "AMELI_APP_HEALTH_METRICS_ALLOWLIST" not in values
+
+
+def test_existing_prod_env_without_allowlist_is_warned_not_rewritten(tmp_path):
+    """Fail-OPEN, so an existing instance that deliberately exposes
+    /metrics to an external scraper must NOT be silently locked down on an
+    in-place upgrade -- it gets a warning and keeps its config.
+    """
+    paths = _seed(tmp_path, env="prod")
+    env_file = paths["env"]
+    # Simulate an instance provisioned before B13: remove the key entirely.
+    kept = [
+        line for line in env_file.read_text().splitlines()
+        if not line.startswith("AMELI_APP_HEALTH_METRICS_ALLOWLIST=")
+    ]
+    env_file.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+    stdout = _seed(tmp_path, env="prod")["stdout"]
+
+    # The second run must NOT re-seed it (fresh-only), and must warn instead.
+    assert "AMELI_APP_HEALTH_METRICS_ALLOWLIST" not in env_file.read_text()
+    assert "/health ni /metrics" in stdout

@@ -303,6 +303,14 @@ warn_insecure_prod_env() {
     log "WARN: ${ENV_FILE} fija SESSION_COOKIE_NAME; eso desactiva el" \
         "prefijo __Host- (ASVS V3.4.4). Borra la linea salvo que sea intencional."
   fi
+  local _hma
+  _hma="$(sed -n 's/^AMELI_APP_HEALTH_METRICS_ALLOWLIST=//p' "${ENV_FILE}" | tail -n1)"
+  if [[ -z "${_hma}" ]]; then
+    log "WARN: ${ENV_FILE} no restringe /health ni /metrics (allowlist vacia)" \
+        "en ${APP_ENV}: filtran version, uptime, disco y metricas a cualquiera" \
+        "que alcance el proxy. Setea AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1" \
+        "(mas las IP de tus monitores externos, si los hay)."
+  fi
 }
 
 render_config_file() {
@@ -434,7 +442,8 @@ copy_project_tree() {
 
 initialize_runtime_env() {
   copy_if_missing "${APP_DIR}/.env.example" "${ENV_FILE}" 640
-  if [[ "${COPY_IF_MISSING_CREATED}" == "1" ]]; then
+  local env_file_created="${COPY_IF_MISSING_CREATED}"
+  if [[ "${env_file_created}" == "1" ]]; then
     render_env_file
   fi
   copy_if_missing "${APP_DIR}/config/app.yaml.example" "${CONFIG_FILE}" 640
@@ -481,6 +490,25 @@ initialize_runtime_env() {
     'import secrets; print(secrets.token_urlsafe(48))'
   gen_env_if_missing AMELI_APP_MFA_ENCRYPTION_KEY \
     'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+
+  # /health and /metrics are world-readable by default (settings/
+  # integrations.py: "public for probes"). Through a reverse proxy that
+  # means version, uptime, disk and the full Prometheus scrape leak to
+  # anyone who can reach the public port -- version alone hands an
+  # attacker a CVE shortlist. Outside dev, lock them to loopback: the
+  # post-install smoke and validate_installation hit 127.0.0.1:<port>/
+  # health directly (client_ip = 127.0.0.1, allowed), while anything
+  # arriving through the proxy is refused. The operator adds external
+  # monitor IPs explicitly. Dev stays open so local probes work.
+  #
+  # Fail-OPEN (empty = exposed), unlike ALLOWED_HOSTS above, so it is
+  # only seeded on a FRESH env file: an existing prod instance that
+  # deliberately serves /metrics to an external scraper is not silently
+  # locked down on an in-place upgrade -- warn_insecure_prod_env flags it
+  # instead, and the operator decides.
+  if [[ "${APP_ENV}" != "dev" && "${env_file_created}" == "1" ]]; then
+    default_env AMELI_APP_HEALTH_METRICS_ALLOWLIST "127.0.0.1,::1"
+  fi
 
   warn_port_drift
   warn_insecure_prod_env
