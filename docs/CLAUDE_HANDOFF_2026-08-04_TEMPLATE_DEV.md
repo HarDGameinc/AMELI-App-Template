@@ -22,14 +22,25 @@ propio doc resultaron correctas. Estado:
 
 | # | Hallazgo | Estado |
 |---|---|---|
-| T-1 | `admin_views/users.py`: 4× `_json_body` fuera de `try` → 500 no 400 | pendiente |
-| T-2 | `email_queue.py`: el exito inline no audita (solo el fallo/cola) | pendiente |
+| **T-1** | `admin_views/users.py`: 4× `_json_body` fuera de `try` → 500 no 400 | ✅ `bd781cd` |
+| **T-2** | `email_queue.py`: el exito inline no audita (solo el fallo/cola) | ❌ **falso positivo** `22a963b` |
 | **T-3** | guard de `MFA_ENCRYPTION_KEY` verifica presencia, no validez | ✅ `d4b6601` |
 | T-4 | `capture@` `CAPTURE_MODE` que nadie lee → doble ejecucion | pendiente |
 | T-5 | `throttle.py` sliding window inseguro con `max<3`, sin advertir | pendiente |
 | **T-6** | `DATABASE_URL` vacio pasa `[OK]` → SQLite en silencio | ✅ `3e31090` |
 | T-7 | `decrypt_secret` nunca lanza = contrato, sin documentar | pendiente |
 | **T-8** | guarda de scheme/redirect/SSRF → helper compartido | ✅ `7db01c1` |
+
+> **T-2 resulto un falso positivo** — verificado contra los tres llamadores
+> (mfa/auth_alerts/password_reset): **todos auditan el exito inline ellos
+> mismos** inspeccionando `result["status"]`. El `audit_action` que se pasa
+> a `send_with_retry` es solo para la entrega diferida (worker). El finding
+> leyo `send_with_retry` aislado. Se dejo un comentario en el codigo para
+> que nadie re-introduzca el doble-audit (lo detecto un test existente de
+> MFA). La verificacion inicial confirmo el mecanismo (`send_with_retry` no
+> audita inline) pero no reviso los llamadores; recien al implementarlo se
+> vio que ellos si auditan. Refuerza la regla: verificar cada finding
+> **entero** (incluidos los call-sites), no aceptarlo del reporte.
 
 ## §3. Fixes de esta sesion
 
@@ -94,8 +105,9 @@ day-2 + puertos + T-3 + T-6). Bump de los 4 archivos.
 - **Hijas**: pueden `git fetch template && merge v0.5.11-django` para
   heredar B13 + day-2 + T-3 + T-6 + cryptography. T-8 (`http_safe`) esta en
   `dev`, entra en el proximo release.
-- **Upstream restantes** (5): T-1, T-2, T-4, T-5, T-7 — orden sugerido en
-  el doc de findings de Checklist. T-1 trivial (4 try/except); T-2 barato
-  (un `record_audit`); T-4/T-5/T-7 son documentar-contrato + candado.
+- **Upstream restantes** (3): T-4, T-5, T-7 — todos "documentar-contrato +
+  candado de test" (T-4 `CAPTURE_MODE`, T-5 sliding-window `max<3`, T-7
+  `decrypt_secret` no-lanza). T-1 cerrado; T-2 descartado (FP). Orden en el
+  doc de findings de Checklist.
 - **Red multi-app** (dev01 fase 2, WebFleet) sigue **fuera del template**,
   en `NETWORK_OPS_ha-report2_2026-07-22.md` (scratchpad → infra).
