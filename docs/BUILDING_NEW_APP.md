@@ -169,6 +169,41 @@ source). The systemd timer `your-app-capture-primary.timer`
 calls this on schedule. Off by default; enable per environment
 in the systemd profile.
 
+### Outbound HTTP clients (`ameli_app.http_safe`)
+
+Any client that calls an **operator- or data-configurable** host (a fleet
+API, a webhook target, a scraped URL) MUST go through
+[`ameli_app.http_safe.fetch`](../src/ameli_app/http_safe.py) — do NOT
+hand-roll `urllib.request.urlopen`. It closes, in one place, the four
+traps a bespoke client repeatedly gets wrong:
+
+```python
+from ameli_app import http_safe
+
+resp = http_safe.fetch(
+    url,                       # UnsafeURLError if not https (SSRF/file:// guard)
+    timeout=10,                # required — no hanging calls
+    headers={"Authorization": f"Bearer {token}"},
+    max_bytes=2 * 1024 * 1024, # reject a runaway/hostile body
+)
+data = json.loads(resp.body)   # resp.status / resp.url / resp.headers too
+```
+
+- **Scheme allowlist** (https by default) — a `file://`/`ftp://`/`data:`
+  URL is refused before any I/O. A loopback service (e.g. a local ClamAV
+  on http) opts in with `allowed_schemes=("http", "https")`.
+- **Minimal opener** — no file/ftp/data/proxy handlers, so a redirect
+  can't smuggle one in.
+- **Safe redirects** — a redirect that changes origin **drops the
+  `Authorization`/`Cookie` headers**, so a compromised host can't 30x your
+  Bearer token to itself. (This is the exact hole
+  `AMELI Report Starlink`'s client had — T-8.)
+- **Response size cap.**
+
+Pair it with the `CircuitBreaker` and `ThrottleCounter` below for retries
+and quota. The template's own calls (HIBP, the GitHub release check) go to
+fixed URLs and predate this helper — new clients use it.
+
 ### Custom Django models
 
 Add a new Django app (e.g. `your_web/domain/`) for your
