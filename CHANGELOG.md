@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.5.11-django — 2026-08-04 (endurecimiento day-2 + puertos + hallazgos upstream)
+
+Cierra el trabajo posterior a v0.5.10 (que quedo tagueado en `dev` sin
+promover mientras el CI estuvo pausado) y lo promueve a `main` de una:
+B13, el ciclo day-2, la normalizacion de puertos, y los dos primeros
+hallazgos upstream de una app hija. Sin cambios de esquema (0 migraciones
+nuevas). Todo verificado end-to-end en `ha-report2`.
+
+### Seguridad / correccion
+
+- **B13 — `/health` y `/metrics` cerrados en instalacion prod nueva**
+  (`82ed04e`). El template los dejaba abiertos por defecto ("public for
+  probes"); por un proxy eso filtra version, uptime, disco y el scrape de
+  Prometheus a cualquiera que alcance el puerto publico. El instalador
+  siembra ahora `AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1` en prod
+  (solo env file nuevo; fail-open, no reescribe instancias existentes,
+  avisa). Dev queda abierto.
+- **T-3 — `MFA_ENCRYPTION_KEY` valida formato, no solo presencia**
+  (`d4b6601`). Una clave malformada arrancaba y moria en silencio al
+  primer uso de MFA (400 confuso, cifrado muerto). Nuevo helper
+  `require_fernet_key()` reutilizable; falla ruidoso al boot. Hallazgo
+  upstream del fork AMELI Checklist.
+- **T-6 — `DATABASE_URL` vacio fuera de dev falla ruidoso** (`3e31090`).
+  Antes caia a SQLite en silencio con `[OK]`: produccion sobre un archivo
+  sin que nadie se entere. `validate_installation.sh` ahora lo marca FAIL
+  con el comando de remedio. Hallazgo upstream (nos costo ~2h en el fork).
+
+### Ciclo day-2 endurecido (`e745c2a`)
+
+- **`update.sh`** — el backup previo (unica via de recuperacion de una
+  migracion irreversible) ya no se traga con `|| true`: un backup fallido
+  o que no verifica **detiene** el update (opt-out
+  `AMELI_APP_UPDATE_SKIP_BACKUP=1`). Se **verifica** el archivo recien
+  hecho (`restore.sh verify`) antes de tocar la DB.
+- **`uninstall.sh`** — nuevo `--purge --yes`: backup final (fuera del dir
+  que se borra) + elimina dirs/usuario via `purge_instance()`; **no**
+  dropea la DB (el instalador no la crea) — imprime los `dropdb`/`dropuser`.
+
+### Arquitectura / puertos (`57e1bb5`, docs)
+
+- Documentada la convencion de puertos y el flujo real: **monolito
+  Django** (un ASGI sirve dashboard + API; no hay frontend separado),
+  `api_port` es el unico que bindea y el que ve el proxy, prod 80XX / dev
+  18XX. `web_port`/`web.service` aclarado como **seam reservado** (no config
+  muerta) para el futuro split frontend/API.
+- Doc del template acotada a **solo template**: el audit de WebFleet y el
+  estado de red multi-app salieron a sus desarrollos (`4eb5c45`).
+
+### Deploy
+
+Sin migraciones. Una instancia ya instalada **no se re-renderiza sola**
+(por diseno). Al reinstalar, atender los `WARN:` de `install.sh` (cookies,
+puertos, health allowlist). Un primer install prod sin `DATABASE_URL`
+ahora termina en FAIL a proposito: apuntar la DB y reinstalar.
+
 ## v0.5.10-django — 2026-07-22 (el camino de instalacion a produccion, por primera vez real)
 
 **El release mas importante desde v0.5.0.** Hasta hoy el template

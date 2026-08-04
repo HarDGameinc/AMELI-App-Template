@@ -223,7 +223,24 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.10-django, 2026-07-22)
+## State of the project (v0.5.11-django, 2026-08-04)
+
+`v0.5.11` promotes to `main` everything that piled up on `dev` while CI
+was paused: **B13** (`/health`+`/metrics` locked down on a fresh prod
+install), the **day-2 lifecycle hardening** (`update.sh` won't proceed on
+a failed/unverified backup; `uninstall.sh --purge`), the **port
+convention + monolith docs** (`api_port` is the only bound port and what
+the proxy sees; `web_port` is a reserved seam for a future frontend
+split), and the first two **upstream findings from a child fork**: **T-3**
+(`MFA_ENCRYPTION_KEY` now validated for format at boot, not just presence)
+and **T-6** (empty `DATABASE_URL` outside dev now FAILs loudly instead of
+silently falling back to SQLite). Both are the recurring class this
+generation of work kept surfacing: success reported over an absent
+control. CI is active again; `main` advances by PR from `dev` with green
+CI. Remaining child-fork findings (T-1, T-2, T-4, T-5, T-7, T-8) are
+tracked in `AMELI Checklist/docs/UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md`.
+
+### Previous state (v0.5.10-django, 2026-07-22)
 
 > **Read this first if you are touching the install path.** `v0.5.10`
 > (2026-07-22) is the release where the production install path became
@@ -248,9 +265,10 @@ manage.py               # Django management entrypoint (autodiscover config)
 > earlier are reported via `warn_insecure_prod_env` /`warn_port_drift`,
 > not silently rewritten.
 >
-> **`main` is still on `v0.5.9-django`**: CI is paused until 2026-08-01
-> and the project rule is that `main` only advances via PR with green
-> CI, so `v0.5.10-django` was tagged on `dev`. See
+> **Historical note:** at the time, `main` was on `v0.5.9-django` and CI
+> was paused, so `v0.5.10-django` was tagged on `dev` and not promoted.
+> Superseded — `v0.5.11-django` promotes it all to `main` (see the current
+> state above). Detail in
 > `docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md`.
 
 ### Previous state (v0.5.9-django, 2026-07-17)
