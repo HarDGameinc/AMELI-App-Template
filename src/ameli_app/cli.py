@@ -648,7 +648,7 @@ def _write_email_password_file(env_file: str | Path, password: str) -> str:
             os.chown(secrets_dir, 0, gid)
             # 0750 root:<group> — same as ETC_DIR in _common.sh; the service
             # user needs group-execute to traverse into it and read the file.
-            os.chmod(secrets_dir, 0o750)  # noqa: S103 (intentional group-traverse)
+            os.chmod(secrets_dir, 0o750)  # noqa: S103  # nosec B103 - 0750=ETC_DIR; service traverses
     except OSError:
         # Not root, or a filesystem without POSIX ownership (tests/Windows).
         # The file exists with 0600; the operator can widen it if needed.
