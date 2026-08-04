@@ -89,12 +89,17 @@ su - postgres -c "createdb -O ameli_app_prod ameli_app_prod"
 #    TRUSTED_PROXIES con valores conservadores, renderiza app.yaml para
 #    esta instancia, monta systemd, corre migrate, valida el layout y
 #    hace smoke a /health.
+#    Esta primera pasada PROVISIONA todo pero la validacion TERMINA EN
+#    FAIL con `DATABASE_URL_EMPTY`: es esperado -- la base se apunta en el
+#    paso 5. (El fallback a SQLite en prod es un bug, no un estado valido:
+#    el validador lo marca en vez de dejarte produccion sobre un archivo.)
 APP_ENV=prod bash scripts/install.sh
 
-# 5. Apuntar la DATABASE_URL (el install la dejo vacia)
+# 5. Apuntar la DATABASE_URL (el install la dejo vacia a proposito) y
+#    reinstalar: ahora migrate corre sobre Postgres y la validacion pasa.
 sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+psycopg://ameli_app_prod:PASSWORD@127.0.0.1:5432/ameli_app_prod|" \
     /etc/ameli-app-template-prod/app.env
-APP_ENV=prod bash scripts/install.sh   # idempotente: re-corre migrate
+APP_ENV=prod bash scripts/install.sh   # idempotente; RESUMEN FAIL=0
 
 # 6. Afinar lo que no se puede generar: acotar hosts/proxies al dominio
 #    real, SMTP y superadmin. Wizard interactivo:

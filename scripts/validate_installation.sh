@@ -37,6 +37,18 @@ if [[ -x "${VENV_DIR}/bin/python" ]]; then
     fail_check "CONFIG_CHECK"
   fi
 
+  # An empty DATABASE_URL outside dev silently falls back to SQLite: the
+  # db-status command still runs (exit 0, reporting configured:false),
+  # /health returns 200, and production ships on a throwaway file DB with
+  # nobody the wiser. The SQLite fallback is a dev convenience, never a
+  # prod state -- fail loudly. (Cost real ~2h on a child fork: prod on
+  # SQLite unnoticed. Upstream finding T-6, 2026-08-04.)
+  if [[ "${APP_ENV}" != "dev" && -z "${DATABASE_URL:-}" ]]; then
+    fail_check "DATABASE_URL_EMPTY (${APP_ENV} cae a SQLite; setea" \
+               "DATABASE_URL=postgresql+psycopg://USER:PASS@127.0.0.1:5432/DB en" \
+               "${ENV_FILE} y reinstala)"
+  fi
+
   if "${VENV_DIR}/bin/python" -m "${APP_PACKAGE}.cli" --config "${CONFIG_FILE}" db-status >/tmp/ameli_app_db_status.json 2>/tmp/ameli_app_db_status.err; then
     pass "DB_STATUS_COMMAND"
   else
