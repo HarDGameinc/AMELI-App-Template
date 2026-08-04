@@ -268,3 +268,58 @@ def test_configure_bootstrap_success_reports_no_error_key(
     assert body["bootstrap_admin"] == {"username": "admin", "created": True}
     assert "bootstrap_admin_error" not in body
     assert "hint" not in body
+
+
+def test_configure_writes_smtp_password_to_file_not_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """CodeQL py/clear-text-storage (2026-08-04): the wizard must NOT write
+    the SMTP password to app.env in cleartext. It goes to a restricted
+    password_file; the env only carries the PATH.
+    """
+    env = tmp_path / "app.env"
+    env.write_text("APP_ENV=prod\n", encoding="utf-8")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ALLOWED_HOSTS", "app.example.com")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_TRUSTED_PROXIES", "127.0.0.1")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_USER", "admin")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_PASSWORD", "SecurePass!12?")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_EMAIL_HOST", "smtp.example.com")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_EMAIL_PASSWORD", "s3cr3t-smtp-pw")
+    # Don't boot Django for the superadmin (no DB in the test).
+    monkeypatch.setattr(cli, "_bootstrap_django", lambda _a: (_ for _ in ()).throw(RuntimeError("no db")))
+
+    cli._handle_configure(_args(str(env), check=False))
+    capsys.readouterr()
+
+    env_text = env.read_text(encoding="utf-8")
+    # The cleartext password must NOT be in the env file, under any key.
+    assert "s3cr3t-smtp-pw" not in env_text
+    assert "AMELI_APP_EMAIL_PASSWORD=" not in env_text
+    # The env points at the password_file instead.
+    assert "AMELI_APP_EMAIL_PASSWORD_FILE=" in env_text
+    secret_file = tmp_path / "secrets" / "email.password"
+    assert secret_file.is_file()
+    assert secret_file.read_text(encoding="utf-8") == "s3cr3t-smtp-pw"
+
+
+def test_configure_no_smtp_password_writes_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """An SMTP relay without a password (e.g. IP-allowlisted) must not
+    create an empty password_file."""
+    env = tmp_path / "app.env"
+    env.write_text("APP_ENV=prod\n", encoding="utf-8")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ALLOWED_HOSTS", "app.example.com")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_TRUSTED_PROXIES", "127.0.0.1")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_USER", "admin")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_ADMIN_PASSWORD", "SecurePass!12?")
+    monkeypatch.setenv("AMELI_APP_CONFIGURE_EMAIL_HOST", "smtp.example.com")
+    monkeypatch.delenv("AMELI_APP_CONFIGURE_EMAIL_PASSWORD", raising=False)
+    monkeypatch.setattr(cli, "_bootstrap_django", lambda _a: (_ for _ in ()).throw(RuntimeError("no db")))
+
+    cli._handle_configure(_args(str(env), check=False))
+    capsys.readouterr()
+
+    env_text = env.read_text(encoding="utf-8")
+    assert "AMELI_APP_EMAIL_PASSWORD_FILE=" not in env_text
+    assert not (tmp_path / "secrets" / "email.password").exists()

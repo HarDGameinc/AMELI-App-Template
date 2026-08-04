@@ -615,6 +615,47 @@ def _write_env_updates(path: str | Path, updates: dict[str, str]) -> None:
     p.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
+def _write_email_password_file(env_file: str | Path, password: str) -> str:
+    """Write the SMTP password to a restricted file beside the env file and
+    return its path.
+
+    The env file is loaded as a systemd ``EnvironmentFile``, so any secret
+    stored there can leak into ``systemctl show``/journald. The template's
+    own guidance (``config/app.yaml.example``) is to keep the SMTP secret
+    in a ``password_file`` instead; ``config.py`` resolves it via
+    ``AMELI_APP_EMAIL_PASSWORD_FILE``. The env then only carries the PATH,
+    which is not sensitive. Closes CodeQL py/clear-text-storage-sensitive.
+
+    Perms mirror the env file (``0640`` + its group) so the service user —
+    which reads this the same way it reads ``app.env`` — can open it.
+    chown/chmod are best-effort (need root; skipped on Windows/tests).
+    """
+    env_path = Path(env_file).resolve()
+    secrets_dir = env_path.parent / "secrets"
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    path = secrets_dir / "email.password"
+    # O_CREAT with 0600 first so the secret is never briefly world-readable.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, password.encode("utf-8"))
+    finally:
+        os.close(fd)
+    try:
+        os.chmod(path, 0o640)
+        if hasattr(os, "chown"):
+            gid = os.stat(env_path).st_gid
+            os.chown(path, 0, gid)
+            os.chown(secrets_dir, 0, gid)
+            # 0750 root:<group> — same as ETC_DIR in _common.sh; the service
+            # user needs group-execute to traverse into it and read the file.
+            os.chmod(secrets_dir, 0o750)  # noqa: S103 (intentional group-traverse)
+    except OSError:
+        # Not root, or a filesystem without POSIX ownership (tests/Windows).
+        # The file exists with 0600; the operator can widen it if needed.
+        pass
+    return str(path)
+
+
 def _prompt_value(
     label: str,
     default: str,
@@ -749,13 +790,20 @@ def _handle_configure(args: argparse.Namespace) -> int:
                 interactive=interactive,
                 env_key="EMAIL_USERNAME",
             )
-            updates["AMELI_APP_EMAIL_PASSWORD"] = _prompt_value(
+            email_password = _prompt_value(
                 "EMAIL_PASSWORD",
-                current.get("AMELI_APP_EMAIL_PASSWORD", ""),
+                "",
                 interactive=interactive,
                 env_key="EMAIL_PASSWORD",
                 secret=True,
             )
+            if email_password:
+                # Never write the SMTP password to app.env in cleartext:
+                # store it in a restricted password_file and point the env
+                # at the PATH instead (see _write_email_password_file).
+                updates["AMELI_APP_EMAIL_PASSWORD_FILE"] = _write_email_password_file(
+                    env_file, email_password
+                )
             updates["AMELI_APP_EMAIL_USE_TLS"] = _prompt_value(
                 "EMAIL_USE_TLS (true/false)",
                 current.get("AMELI_APP_EMAIL_USE_TLS", "true"),
