@@ -2,7 +2,7 @@
 
 Fecha: `2026-08-04`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (HEAD `7db01c1` al cierre)
+Rama de trabajo: `dev` (5 commits adelante de `main` al cierre: T-8 + T-1 + notas)
 Rama estable: `main` — **promovida a `v0.5.11-django`** esta sesion
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-23_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-23_TEMPLATE_DEV.md)
 
@@ -17,7 +17,8 @@ Sesion previa: [`CLAUDE_HANDOFF_2026-07-23_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026
 ## §2. Revision de los 8 hallazgos upstream
 
 **Los 8 verificados uno por uno contra el codigo real del template** (no se
-aceptaron del reporte). Todos legitimos; las correcciones de alcance del
+aceptaron del reporte). **7 legitimos, 1 (T-2) resulto falso positivo** al
+verificar los call-sites (ver nota abajo). Las correcciones de alcance del
 propio doc resultaron correctas. Estado:
 
 | # | Hallazgo | Estado |
@@ -43,6 +44,19 @@ propio doc resultaron correctas. Estado:
 > **entero** (incluidos los call-sites), no aceptarlo del reporte.
 
 ## §3. Fixes de esta sesion
+
+### T-1 — `_json_body` dentro del `try` (`bd781cd`)
+
+En `admin_views/users.py` los 4 sitios llamaban `_json_body` **fuera** del
+`try` que ya capturaba `ValueError`, asi que un body JSON truncado daba
+**500 en vez de 400**. Movido adentro en los 4. Importa porque ese archivo
+es el exemplar que `BUILDING_NEW_APP.md` propone para el CRUD admin, y era
+el unico de los 17 call-sites que lo hacia mal. 4 tests (POST `{` → 400).
+
+### T-2 — falso positivo (`22a963b`)
+
+No es un fix sino el resultado de la verificacion: ver la nota en §2. Se
+dejo un comentario en `email_queue.py` para que no se re-introduzca.
 
 ### T-3 — `MFA_ENCRYPTION_KEY` valida formato (`d4b6601`)
 
@@ -98,8 +112,9 @@ day-2 + puertos + T-3 + T-6). Bump de los 4 archivos.
 
 ## §5. Estado y pendientes
 
-- `main` = **`v0.5.11-django`**; `dev` 1 commit adelante (T-8, va al
-  proximo corte). **0 alertas de code scanning abiertas.**
+- `main` = **`v0.5.11-django`**; `dev` **5 commits adelante** (T-8 + T-1 +
+  la nota de T-2 + 2 de handoff), van al proximo corte (¿v0.5.12?).
+  **0 alertas de code scanning abiertas.** Suite 1170 passed / 81 skipped.
 - **CI activo de nuevo** — `main` avanza por PR con CI verde. Se elimino la
   memoria "CI pausado".
 - **Hijas**: pueden `git fetch template && merge v0.5.11-django` para
