@@ -378,8 +378,8 @@ root:<run_group>`.
   session, then drop `Anywhere`.
   > **ufw gotcha**: rules **renumber after every delete**. Delete ONE rule,
   > then re-list — deleting a second by its old number hit an unrelated rule
-  > (an OMEGA `8106/tcp` allow), which was restored. Prefer `ufw status
-  > numbered` immediately before each single `ufw delete <n>`.
+  > (belonging to another service on the host), which was restored. Prefer
+  > `ufw status numbered` immediately before each single `ufw delete <n>`.
 
 ### Closed 2026-07-13
 

@@ -39,6 +39,12 @@ case "${APP_ENV}" in
     ;;
 esac
 
+# Port convention: prod = 80XX, dev = 18XX. API_PORT is the one that
+# actually binds and that Caddy proxies -- one Django ASGI process serves
+# the dashboard AND the API (monolith; no separate frontend). WEB_PORT is
+# a reserved seam, bound only under a "web"-including APP_SYSTEMD_PROFILE
+# (see ameli_app/web.py). Both are overridable via AMELI_APP_*_PORT -- use
+# high ports on a host already running other apps to avoid collisions.
 DEFAULT_API_PORT="8080"
 DEFAULT_WEB_PORT="8081"
 if [[ "${APP_ENV}" == "dev" ]]; then
@@ -186,16 +192,156 @@ make_dirs() {
   chmod 750 "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}" || true
 }
 
+# Sets COPY_IF_MISSING_CREATED to 1 when it actually wrote the file, 0 when
+# it preserved an existing one. Callers that need to post-process a freshly
+# seeded file (render_config_file) read that flag instead of a return code,
+# which under ``set -e`` would abort the install on the "preserved" path.
+COPY_IF_MISSING_CREATED=0
 copy_if_missing() {
   local src="$1" dst="$2" mode="${3:-640}"
+  COPY_IF_MISSING_CREATED=0
   if [[ ! -f "${dst}" ]]; then
     cp "${src}" "${dst}"
     chmod "${mode}" "${dst}" || true
     chown root:"${RUN_GROUP}" "${dst}" || true
+    COPY_IF_MISSING_CREATED=1
     log "Creado: ${dst}"
   else
     log "Preservado: ${dst}"
   fi
+}
+
+# ``config/app.yaml.example`` doubles as the local-dev config, so it ships
+# with working *relative* paths and a hardcoded "dev" environment. Copying
+# it verbatim into an install is wrong on both counts:
+#
+#   * ``environment: "dev"`` disables every fail-closed prod guard.
+#   * ``profile_uploads_dir`` / ``paths.*`` stay relative, so they resolve
+#     inside ${APP_DIR} — and settings/i18n_static.py refuses to boot with
+#     MEDIA_ROOT or data_dir inside the checkout (a redeploy would wipe
+#     user uploads). Note MEDIA_ROOT derives from ``profile_uploads_dir``,
+#     not from ``paths.data_dir`` (see ameli_app/config.py).
+#
+# So rewrite those keys to the instance's real values right after seeding.
+# Anchored on the exact indentation each key has in the example file; only
+# ever called on a file we just created, never on an operator-edited one.
+# ``.env.example`` is the local-dev env file, and dev wants things prod
+# must never have. Copying it verbatim into /etc/<instance>/app.env seeds:
+#
+#   * AMELI_APP_DJANGO_DEBUG=true       -> base.py refuses to boot (loud)
+#   * AMELI_APP_SESSION_COOKIE_NAME=... -> cookies.py reads any explicit
+#     name as a deliberate operator override and skips the ASVS V3.4.4
+#     ``__Host-`` prefix policy (silent downgrade)
+#   * AMELI_APP_SESSION_COOKIE_SECURE=false -> session cookie without the
+#     Secure flag behind TLS (silent downgrade)
+#
+# The last two are the dangerous ones: they do not fail, they just make
+# the deploy quietly weaker than the template promises. Outside dev,
+# rewrite them to the safe values. Only ever called on a file we just
+# created -- an operator who deliberately set these keeps them.
+render_env_file() {
+  [[ -f "${ENV_FILE}" ]] || return 0
+
+  # Runtime values first, for EVERY environment. ``.env.example`` ships
+  # the dev host/ports, and ``default_env`` only writes a key that is
+  # MISSING -- so the seeded dev values silently outranked both the
+  # per-environment defaults and an explicit
+  # ``AMELI_APP_API_PORT=... bash scripts/install.sh``. The operator got
+  # no error: systemd units were rendered from the resolved value while
+  # the app read the stale one from this file, so the deploy listened on
+  # a port nobody asked for -- on a host with several apps, potentially
+  # one that belongs to a different instance.
+  #
+  # These are the values _common.sh already resolved (explicit export >
+  # existing app.env via load_env_file > per-env default), so writing
+  # them here keeps the env file and the units in agreement.
+  sed -i \
+    -e "s|^AMELI_APP_HOST=.*|AMELI_APP_HOST=${AMELI_APP_HOST}|" \
+    -e "s|^AMELI_APP_API_PORT=.*|AMELI_APP_API_PORT=${AMELI_APP_API_PORT}|" \
+    -e "s|^AMELI_APP_WEB_PORT=.*|AMELI_APP_WEB_PORT=${AMELI_APP_WEB_PORT}|" \
+    -e "s|^AMELI_APP_NOTIFIER_INTERVAL=.*|AMELI_APP_NOTIFIER_INTERVAL=${AMELI_APP_NOTIFIER_INTERVAL}|" \
+    -e "s|^APP_LOG_LEVEL=.*|APP_LOG_LEVEL=${APP_LOG_LEVEL}|" \
+    -e "s|^APP_SYSTEMD_PROFILE=.*|APP_SYSTEMD_PROFILE=${APP_SYSTEMD_PROFILE}|" \
+    "${ENV_FILE}"
+  log "Env renderizada: host=${AMELI_APP_HOST} api=${AMELI_APP_API_PORT} web=${AMELI_APP_WEB_PORT}"
+
+  [[ "${APP_ENV}" == "dev" ]] && return 0
+  sed -i \
+    -e "s|^AMELI_APP_DJANGO_DEBUG=.*|AMELI_APP_DJANGO_DEBUG=false|" \
+    -e "s|^AMELI_APP_SESSION_COOKIE_SECURE=.*|AMELI_APP_SESSION_COOKIE_SECURE=true|" \
+    -e "/^AMELI_APP_SESSION_COOKIE_NAME=/d" \
+    "${ENV_FILE}"
+  log "Env renderizada para ${APP_ENV}: DEBUG=false, cookie Secure, prefijo __Host- activo"
+}
+
+# The systemd units are rendered from the shell values while the running
+# process reads the env file, so any drift between the two means the
+# deploy listens somewhere nobody declared. Instances provisioned before
+# render_env_file existed carry exactly that drift.
+warn_port_drift() {
+  [[ -f "${ENV_FILE}" ]] || return 0
+  local key resolved current
+  for key in AMELI_APP_API_PORT AMELI_APP_WEB_PORT AMELI_APP_HOST; do
+    resolved="${!key}"
+    current="$(sed -n "s|^${key}=||p" "${ENV_FILE}" | tail -n1)"
+    if [[ -n "${current}" && "${current}" != "${resolved}" ]]; then
+      log "WARN: ${ENV_FILE} tiene ${key}=${current} pero las units se" \
+          "renderizan con ${resolved}. El servicio va a escuchar en" \
+          "${current}: corregi el archivo o reinstala con ${key}=${current}."
+    fi
+  done
+}
+
+# Runs on every install, including upgrades of an instance provisioned by
+# an older version that seeded the dev values above. Never rewrites an
+# existing file -- just refuses to let the downgrade pass unnoticed.
+warn_insecure_prod_env() {
+  [[ "${APP_ENV}" == "dev" ]] && return 0
+  [[ -f "${ENV_FILE}" ]] || return 0
+  if grep -qiE '^AMELI_APP_DJANGO_DEBUG=(true|1|yes|on)' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} tiene AMELI_APP_DJANGO_DEBUG activo en ${APP_ENV}."
+  fi
+  if grep -qiE '^AMELI_APP_SESSION_COOKIE_SECURE=(false|0|no|off)' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} tiene SESSION_COOKIE_SECURE=false en ${APP_ENV};" \
+        "la cookie de sesion viaja sin flag Secure."
+  fi
+  if grep -q '^AMELI_APP_SESSION_COOKIE_NAME=.' "${ENV_FILE}"; then
+    log "WARN: ${ENV_FILE} fija SESSION_COOKIE_NAME; eso desactiva el" \
+        "prefijo __Host- (ASVS V3.4.4). Borra la linea salvo que sea intencional."
+  fi
+  local _hma
+  _hma="$(sed -n 's/^AMELI_APP_HEALTH_METRICS_ALLOWLIST=//p' "${ENV_FILE}" | tail -n1)"
+  if [[ -z "${_hma}" ]]; then
+    log "WARN: ${ENV_FILE} no restringe /health ni /metrics (allowlist vacia)" \
+        "en ${APP_ENV}: filtran version, uptime, disco y metricas a cualquiera" \
+        "que alcance el proxy. Setea AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1" \
+        "(mas las IP de tus monitores externos, si los hay)."
+  fi
+}
+
+render_config_file() {
+  local target="$1"
+  [[ -f "${target}" ]] || return 0
+
+  # settings/email.py refuses to boot outside dev on the console backend:
+  # it keeps mail in memory, so password reset and MFA-by-email fail
+  # silently and the operator only finds out when a user is locked out.
+  # "file" is the safe seed -- it writes .eml to <data_dir>/outbox, so
+  # nothing is lost and the deploy boots. The operator switches to "smtp"
+  # via `ameli-app configure` once there are real credentials.
+  local email_backend="console"
+  [[ "${APP_ENV}" != "dev" ]] && email_backend="file"
+
+  sed -i \
+    -e "s|^  backend: .*|  backend: \"${email_backend}\"|" \
+    -e "s|^  slug: .*|  slug: \"${APP_SLUG}\"|" \
+    -e "s|^  environment: .*|  environment: \"${APP_ENV}\"|" \
+    -e "s|^  profile_uploads_dir: .*|  profile_uploads_dir: \"${DATA_DIR}/uploads\"|" \
+    -e "s|^  data_dir: .*|  data_dir: \"${DATA_DIR}\"|" \
+    -e "s|^  log_dir: .*|  log_dir: \"${LOG_DIR}\"|" \
+    -e "s|^  backup_dir: .*|  backup_dir: \"${BACKUP_DIR}\"|" \
+    "${target}"
+  log "Config renderizada para ${APP_INSTANCE}: ${target}"
 }
 
 set_env() {
@@ -218,6 +364,52 @@ default_env() {
   chmod 640 "${ENV_FILE}" || true
   chown root:"${RUN_GROUP}" "${ENV_FILE}" || true
   grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null || printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
+}
+
+# Generate a value with the given python3 one-liner and append to the env
+# file — but ONLY if the key is missing. Never overwrites; safe to re-run
+# across upgrades. Used to auto-provision the three crypto keys the prod
+# fail-closed guards require (SECRET_KEY, AUDIT_HMAC_KEY,
+# MFA_ENCRYPTION_KEY). See DECISIONS #10.
+gen_env_if_missing() {
+  local key="$1" generator="$2"
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  touch "${ENV_FILE}"
+  chmod 640 "${ENV_FILE}" || true
+  chown root:"${RUN_GROUP}" "${ENV_FILE}" || true
+  if ! grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
+    local value
+    value="$(python3 -c "${generator}")"
+    printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
+    log "  generated ${key}"
+  fi
+}
+
+# Comma-separated ALLOWED_HOSTS for this box: loopback first, then whatever
+# names the host answers to. Deduplicated, order preserved. Falls back to
+# loopback alone when `hostname` is unavailable -- enough for the install to
+# boot and for the smoke check to pass.
+detect_allowed_hosts() {
+  # No "::1" here: ALLOWED_HOSTS is matched against the Host header, where
+  # a literal IPv6 address arrives bracketed ("[::1]"), so a bare "::1"
+  # entry never matches. TRUSTED_PROXIES is a different comparison
+  # (REMOTE_ADDR) and does take the bare form.
+  local candidates=("127.0.0.1" "localhost")
+  local name
+  for name in "$(hostname 2>/dev/null || true)" "$(hostname -f 2>/dev/null || true)"; do
+    [[ -n "${name}" ]] && candidates+=("${name}")
+  done
+
+  local out="" item
+  for item in "${candidates[@]}"; do
+    [[ -n "${item}" ]] || continue
+    [[ "${item}" == "*" ]] && continue
+    case ",${out}," in
+      *",${item},"*) continue ;;
+    esac
+    out="${out:+${out},}${item}"
+  done
+  printf '%s' "${out}"
 }
 
 install_system_packages() {
@@ -256,7 +448,14 @@ copy_project_tree() {
 
 initialize_runtime_env() {
   copy_if_missing "${APP_DIR}/.env.example" "${ENV_FILE}" 640
+  local env_file_created="${COPY_IF_MISSING_CREATED}"
+  if [[ "${env_file_created}" == "1" ]]; then
+    render_env_file
+  fi
   copy_if_missing "${APP_DIR}/config/app.yaml.example" "${CONFIG_FILE}" 640
+  if [[ "${COPY_IF_MISSING_CREATED}" == "1" ]]; then
+    render_config_file "${CONFIG_FILE}"
+  fi
 
   set_env APP_ENV "${APP_ENV}"
   set_env APP_CONFIG "${CONFIG_FILE}"
@@ -269,6 +468,56 @@ initialize_runtime_env() {
   default_env AMELI_APP_REQUIRE_TOKEN "false"
   default_env AMELI_APP_API_TOKEN "change-me"
   default_env DATABASE_URL ""
+
+  # Seed the two fail-closed guards in settings/base.py that have no safe
+  # default outside dev. Without these a fresh prod install cannot boot at
+  # all -- not `migrate`, not `check`, not the configure wizard that is
+  # supposed to set them. Seeding a conservative, correct-by-construction
+  # value breaks that circularity; the operator narrows it later via
+  # `ameli-app configure`.
+  #
+  # ALLOWED_HOSTS: loopback (the post-install smoke check hits
+  # 127.0.0.1:<api_port>/health) plus this host's own names. Never "*" --
+  # base.py rejects wildcards outside dev, and rightly so.
+  default_env AMELI_APP_DJANGO_ALLOWED_HOSTS "$(detect_allowed_hosts)"
+  # TRUSTED_PROXIES: loopback only, which is the correct answer for the
+  # documented topology (Caddy terminating TLS on the same host).
+  default_env AMELI_APP_TRUSTED_PROXIES "127.0.0.1,::1"
+
+  # Auto-provision the three crypto keys the prod fail-closed guards
+  # require (base.py: SECRET_KEY; auth.py: AUDIT_HMAC_KEY,
+  # MFA_ENCRYPTION_KEY). Idempotent — never overwrites an existing value
+  # so an in-place upgrade keeps working session/audit/MFA state.
+  # MFA_ENCRYPTION_KEY uses the same shape ``Fernet.generate_key()``
+  # emits: base64.urlsafe_b64encode(os.urandom(32)).
+  gen_env_if_missing AMELI_APP_DJANGO_SECRET_KEY \
+    'import secrets; print(secrets.token_urlsafe(60))'
+  gen_env_if_missing AMELI_APP_AUDIT_HMAC_KEY \
+    'import secrets; print(secrets.token_urlsafe(48))'
+  gen_env_if_missing AMELI_APP_MFA_ENCRYPTION_KEY \
+    'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+
+  # /health and /metrics are world-readable by default (settings/
+  # integrations.py: "public for probes"). Through a reverse proxy that
+  # means version, uptime, disk and the full Prometheus scrape leak to
+  # anyone who can reach the public port -- version alone hands an
+  # attacker a CVE shortlist. Outside dev, lock them to loopback: the
+  # post-install smoke and validate_installation hit 127.0.0.1:<port>/
+  # health directly (client_ip = 127.0.0.1, allowed), while anything
+  # arriving through the proxy is refused. The operator adds external
+  # monitor IPs explicitly. Dev stays open so local probes work.
+  #
+  # Fail-OPEN (empty = exposed), unlike ALLOWED_HOSTS above, so it is
+  # only seeded on a FRESH env file: an existing prod instance that
+  # deliberately serves /metrics to an external scraper is not silently
+  # locked down on an in-place upgrade -- warn_insecure_prod_env flags it
+  # instead, and the operator decides.
+  if [[ "${APP_ENV}" != "dev" && "${env_file_created}" == "1" ]]; then
+    default_env AMELI_APP_HEALTH_METRICS_ALLOWLIST "127.0.0.1,::1"
+  fi
+
+  warn_port_drift
+  warn_insecure_prod_env
 }
 
 install_python_deps() {
@@ -289,11 +538,47 @@ install_python_deps() {
   "${VENV_DIR}/bin/python" -m pip install -e "${APP_DIR}" --no-deps
 }
 
+# Probe the API's own /health. This is the only trustworthy liveness
+# signal: with Type=simple, systemd marks a unit "active" the moment it
+# execs, before the process has bound its port -- so `systemctl is-active`
+# returns success for a service that is crash-looping on a bind error.
+# That is not a rare race: the same install reported [WARN] ACTIVE on one
+# run and [OK] ACTIVE on the next with nothing changed but the sampling
+# instant. Shared by install.sh and validate_installation.sh so both
+# agree on what "up" means.
+smoke_health() {
+  local url="http://127.0.0.1:${AMELI_APP_API_PORT:-18080}/health"
+  local attempt
+  # Up to ~15s: a first boot right after migrate can be slow on cold caches.
+  for attempt in $(seq 1 15); do
+    if curl -fsS --max-time 2 "${url}" >/dev/null 2>&1; then
+      log "  /health ${url} -> 200 (attempt ${attempt})"
+      return 0
+    fi
+    sleep 1
+  done
+  log "  /health ${url} did not answer in 15s"
+  log "  check: journalctl -u $(service_unit_name api) --since '2 minutes ago'"
+  return 1
+}
+
 repair_permissions() {
   chown -R root:root "${APP_DIR}" || true
-  find "${APP_DIR}" -type d -exec chmod 755 {} \; || true
-  find "${APP_DIR}" -type f -exec chmod 644 {} \; || true
+
+  # Skip .git entirely. The documented install clones straight into
+  # /opt/<instance>, so APP_DIR *is* the git checkout: a blanket chmod
+  # rewrites git's own internals and leaves every file whose recorded
+  # mode differs showing as modified -- which makes the documented
+  # update path (`git pull` + reinstall) abort with "local changes
+  # would be overwritten". The repo mode of scripts/*.sh and of
+  # deploy/git-hooks/* is kept in sync with what this function applies,
+  # so a reinstall leaves the checkout clean.
+  find "${APP_DIR}" -name .git -prune -o -type d -exec chmod 755 {} \; || true
+  find "${APP_DIR}" -name .git -prune -o -type f -exec chmod 644 {} \; || true
   find "${APP_DIR}/scripts" -type f -name "*.sh" -exec chmod 755 {} \; || true
+  if [[ -d "${APP_DIR}/deploy/git-hooks" ]]; then
+    find "${APP_DIR}/deploy/git-hooks" -type f -exec chmod 755 {} \; || true
+  fi
 
   if [[ -d "${VENV_DIR}" ]]; then
     chown -R "${RUN_USER}:${RUN_GROUP}" "${VENV_DIR}" || true
@@ -355,6 +640,42 @@ disable_known_units() {
   done
   systemctl daemon-reload || true
   systemctl reset-failed 2>/dev/null || true
+}
+
+# Remove an instance's entire on-disk footprint: code, config, data,
+# logs, backups, and the dedicated system user/group. IRREVERSIBLE --
+# callers must gate it behind an explicit confirmation.
+#
+# The database is deliberately NOT dropped. The installer never creates
+# it (the operator provisions Postgres by hand, see
+# FIRST_INSTALL_DJANGO.md), so its ownership -- and the risk of it being
+# shared -- is the operator's. Running `dropdb` on a DB we do not own is
+# exactly the kind of destructive guess this template refuses to make;
+# we print the exact commands instead, derived from DATABASE_URL.
+purge_instance() {
+  log "Purgando ${APP_INSTANCE} (IRREVERSIBLE): codigo, config, datos, logs, backups."
+  rm -rf "${APP_DIR}" "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
+
+  if id "${RUN_USER}" >/dev/null 2>&1; then
+    userdel "${RUN_USER}" 2>/dev/null \
+      || log "WARN: no se pudo borrar el usuario ${RUN_USER} (¿procesos vivos, o no root?)."
+  fi
+  if getent group "${RUN_GROUP}" >/dev/null 2>&1; then
+    groupdel "${RUN_GROUP}" 2>/dev/null || true
+  fi
+
+  # Best-effort parse of DATABASE_URL (scheme//user:pass@host:port/db?args).
+  local _db _dbuser
+  _db="$(printf '%s' "${DATABASE_URL:-}" | sed -nE 's@^[^/]+//[^/]+/([^?]+).*@\1@p')"
+  _dbuser="$(printf '%s' "${DATABASE_URL:-}" | sed -nE 's@^[^/]+//([^:@/]+).*@\1@p')"
+  if [[ -n "${_db}" ]]; then
+    log "La base de datos NO se toca (el instalador no la crea). Para eliminarla:"
+    log "  su - postgres -c \"dropdb --if-exists ${_db}\""
+    [[ -n "${_dbuser}" ]] && log "  su - postgres -c \"dropuser --if-exists ${_dbuser}\""
+  elif [[ -n "${AMELI_APP_SQLITE_PATH:-}" ]]; then
+    log "Base SQLite en ${AMELI_APP_SQLITE_PATH} -- borrala a mano si corresponde."
+  fi
+  log "Purga completa: ${APP_INSTANCE}."
 }
 
 resolve_systemd_profile() {

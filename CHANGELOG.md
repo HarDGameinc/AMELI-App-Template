@@ -1,5 +1,186 @@
 # Changelog
 
+## v0.5.11-django — 2026-08-04 (endurecimiento day-2 + puertos + hallazgos upstream)
+
+Cierra el trabajo posterior a v0.5.10 (que quedo tagueado en `dev` sin
+promover mientras el CI estuvo pausado) y lo promueve a `main` de una:
+B13, el ciclo day-2, la normalizacion de puertos, y los dos primeros
+hallazgos upstream de una app hija. Sin cambios de esquema (0 migraciones
+nuevas). Todo verificado end-to-end en `ha-report2`.
+
+### Seguridad / correccion
+
+- **B13 — `/health` y `/metrics` cerrados en instalacion prod nueva**
+  (`82ed04e`). El template los dejaba abiertos por defecto ("public for
+  probes"); por un proxy eso filtra version, uptime, disco y el scrape de
+  Prometheus a cualquiera que alcance el puerto publico. El instalador
+  siembra ahora `AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1` en prod
+  (solo env file nuevo; fail-open, no reescribe instancias existentes,
+  avisa). Dev queda abierto.
+- **T-3 — `MFA_ENCRYPTION_KEY` valida formato, no solo presencia**
+  (`d4b6601`). Una clave malformada arrancaba y moria en silencio al
+  primer uso de MFA (400 confuso, cifrado muerto). Nuevo helper
+  `require_fernet_key()` reutilizable; falla ruidoso al boot. Hallazgo
+  upstream del fork AMELI Checklist.
+- **T-6 — `DATABASE_URL` vacio fuera de dev falla ruidoso** (`3e31090`).
+  Antes caia a SQLite en silencio con `[OK]`: produccion sobre un archivo
+  sin que nadie se entere. `validate_installation.sh` ahora lo marca FAIL
+  con el comando de remedio. Hallazgo upstream (nos costo ~2h en el fork).
+
+### Ciclo day-2 endurecido (`e745c2a`)
+
+- **`update.sh`** — el backup previo (unica via de recuperacion de una
+  migracion irreversible) ya no se traga con `|| true`: un backup fallido
+  o que no verifica **detiene** el update (opt-out
+  `AMELI_APP_UPDATE_SKIP_BACKUP=1`). Se **verifica** el archivo recien
+  hecho (`restore.sh verify`) antes de tocar la DB.
+- **`uninstall.sh`** — nuevo `--purge --yes`: backup final (fuera del dir
+  que se borra) + elimina dirs/usuario via `purge_instance()`; **no**
+  dropea la DB (el instalador no la crea) — imprime los `dropdb`/`dropuser`.
+
+### Arquitectura / puertos (`57e1bb5`, docs)
+
+- Documentada la convencion de puertos y el flujo real: **monolito
+  Django** (un ASGI sirve dashboard + API; no hay frontend separado),
+  `api_port` es el unico que bindea y el que ve el proxy, prod 80XX / dev
+  18XX. `web_port`/`web.service` aclarado como **seam reservado** (no config
+  muerta) para el futuro split frontend/API.
+- Doc del template acotada a **solo template**: el audit de WebFleet y el
+  estado de red multi-app salieron a sus desarrollos (`4eb5c45`).
+
+### Deploy
+
+Sin migraciones. Una instancia ya instalada **no se re-renderiza sola**
+(por diseno). Al reinstalar, atender los `WARN:` de `install.sh` (cookies,
+puertos, health allowlist). Un primer install prod sin `DATABASE_URL`
+ahora termina en FAIL a proposito: apuntar la DB y reinstalar.
+
+## v0.5.10-django — 2026-07-22 (el camino de instalacion a produccion, por primera vez real)
+
+**El release mas importante desde v0.5.0.** Hasta hoy el template
+documentaba un flujo de instalacion de 3 comandos (`install.sh` →
+`configure` → Caddy) que **no llegaba a bootear**. Una prueba desde cero
+en un servidor real (`ha-report2`, Debian 13, con ~8 apps AMELI vivas)
+encontro **12 bloqueantes**. Once estan corregidos y verificados end to
+end; el restante era doc-only y tambien se cerro.
+
+Ninguno era detectable por el CI ni por la suite local: no hay job que
+instale desde cero en un host compartido, con puertos explicitos, y
+despues corra `git pull`.
+
+### Las dos causas raiz
+
+1. **Los archivos `.example` son configuracion de DESARROLLO, y el
+   installer los usaba como configuracion de PRODUCCION.** Los que
+   reventaban ruidosamente eran los faciles de ver. Los peligrosos eran
+   los silenciosos.
+2. **El installer asume un arbol de deploy, pero el Quickstart lo hace
+   correr sobre un checkout de git.**
+
+### Corregido — arranque imposible
+
+- **`ALLOWED_HOSTS` / `TRUSTED_PROXIES` sin sembrar.** Fail-closed en
+  `settings/base.py` fuera de dev, y el wizard que debia setearlos
+  bootea Django: dependencia circular. `initialize_runtime_env` los
+  siembra ahora con valores conservadores (loopback + nombres del host;
+  nunca `*`, que `base.py` rechaza fuera de dev).
+- **`app.yaml` copiado verbatim.** `environment: "dev"` desactivaba en
+  silencio *todos* los guards de prod, y los paths relativos dejaban
+  MEDIA_ROOT dentro del checkout — que `i18n_static.py` rechaza porque un
+  redeploy con `rsync --delete` borraria los uploads. Nuevo
+  `render_config_file()`. Ojo: MEDIA_ROOT deriva de
+  `auth.profile_uploads_dir`, **no** de `paths.data_dir`.
+- **`email.backend: "console"`** — `settings/email.py` se niega a bootear
+  fuera de dev porque el mail queda en memoria y password reset / MFA por
+  email fallan en silencio. Se siembra `"file"` (escribe a
+  `<data_dir>/outbox`); el operador pasa a `smtp` via `configure`.
+- **`AMELI_APP_DJANGO_DEBUG=true`** heredado de `.env.example`.
+
+### Corregido — degradaciones silenciosas (lo grave)
+
+- **La politica `__Host-` de cookies quedaba desactivada.**
+  `.env.example` sembraba `AMELI_APP_SESSION_COOKIE_NAME`, y
+  `cookies.py` lee *cualquier* nombre explicito como override deliberado
+  del operador. Nadie eligio ese override: lo puso el installer. Un
+  deploy prod salia sin el prefijo `__Host-` (ASVS V3.4.4) sin un solo
+  mensaje.
+- **Cookie de sesion sin flag `Secure`** detras de TLS, por la misma via.
+- **El puerto explicito del operador se descartaba en silencio.**
+  `AMELI_APP_API_PORT=18190 bash scripts/install.sh` no tenia efecto:
+  `.env.example` ya traia el puerto de dev y `default_env` solo escribe
+  claves que faltan. Peor, las units systemd se renderizaban desde el
+  valor resuelto mientras el proceso leia el env file — dos fuentes de
+  verdad divergentes. En el servidor el servicio quedo intentando
+  bindear **el puerto de otra app en produccion**; solo no paso a mayores
+  porque estaba ocupado.
+
+`render_env_file()` corrige los tres, solo al crear el archivo. Para
+instancias ya provisionadas, `warn_insecure_prod_env()` y
+`warn_port_drift()` reportan la degradacion en cada install **sin tocar
+el archivo del operador**.
+
+### Corregido — herramental que mentia
+
+- **`validate_installation.sh` daba un veredicto que dependia del
+  timing.** Reportaba `OK=25 WARN=0 FAIL=0` sobre una API que no
+  respondia nada: con `Type=simple`, systemd marca la unit `active`
+  apenas hace exec, antes del bind, asi que un crash-loop samplea como
+  sano ~la mitad de las veces. Ahora `/health` es el chequeo autoritativo
+  (`FAIL`, no `WARN`), el chequeo `ACTIVE` exige `SubState=running`, y se
+  reporta `NRestarts` como `RESTART_LOOP`.
+- **`install.sh` ensuciaba su propio checkout y rompia el `git pull`.**
+  `repair_permissions` aplicaba un esquema de modos que no coincidia con
+  el registrado en git, en las dos direcciones. 7 archivos quedaban
+  permanentemente `modified` y el update documentado abortaba.
+- **`configure` ya no emite traceback crudo** cuando Django no puede
+  bootear: reporta el env escrito, `bootstrap_admin_error` y un `hint`
+  con el comando para terminar.
+
+### Documentacion
+
+- **Quickstart clona un tag promovido**, no `main` pelado — el bug que
+  hizo fallar el primer intento de prueba.
+- **Tres lugares decian "reemplaza `/etc/caddy/Caddyfile`"**, lo que en
+  un host con varias apps las tira todas. Los tres corregidos, con
+  backup y `caddy adapt` antes del reload.
+- **Recuperacion de la cadena de auditoria** cuando la clave se pierde
+  (`OPERATIONS.md`): la receta de rotacion existente necesita la clave
+  vieja, asi que si se fue `/etc` no hay vuelta atras. Prevencion y las
+  dos salidas posibles.
+- **HSTS: el dueño es Django** (`TLS_WITH_CADDY.md`). Duplicarlo en Caddy
+  inutiliza `AMELI_APP_HSTS_SECONDS=0`, la unica perilla para salir de un
+  HSTS mal puesto.
+- **`DECISIONS.md` #11** — dev Windows-native + testing extensivo en
+  servidor (supersede #9). **Regla `no-sudo`** promovida a convencion de
+  primer nivel en `AGENTS.md`: el servidor de referencia no tiene el
+  binario.
+
+### Verificado en servidor real
+
+Instalacion completa a produccion con TLS via Caddy sobre `ha-report2`:
+`/health` → `"OPERATIVO"` sobre HTTPS, `/login/` → 200 con
+`__Host-ameli_csrf` (`Secure; HttpOnly; SameSite=Lax`),
+`validate_installation.sh` → `OK=26 WARN=0 FAIL=0`, checkout limpio antes
+y despues de instalar, y las 4 apps vivas del host intactas.
+
+`tests/test_install_env_seeding.py` (21 tests) corre y pasa en Linux.
+
+### Nota de release
+
+**`main` sigue en `v0.5.9-django`.** El CI esta apagado por decision del
+operador hasta el 2026-08-01, y la regla del proyecto es que `main`
+avanza solo por PR con CI verde. Este tag se corta sobre `dev` para no
+bloquear la entrega sin romper esa regla; la promocion a `main` va cuando
+el CI vuelva.
+
+### Deploy
+
+Sin migraciones nuevas. Una instancia ya instalada **no se re-renderiza
+sola** (por diseno: nunca se pisa un archivo que el operador toco). Al
+reinstalar, revisar los `WARN:` que ahora emite `install.sh` y corregir a
+mano lo que reporte — en particular `SESSION_COOKIE_NAME`,
+`SESSION_COOKIE_SECURE` y cualquier drift de puertos.
+
 ## v0.5.9-django — 2026-07-17 (correccion same-day de la estrategia de dev)
 
 Release de mantenimiento — **sin cambios de runtime de la app** (`src/`,
@@ -81,8 +262,6 @@ las herede juntas.
 
 - **Sin migraciones ni deps nuevas.** No requiere validacion en server ni
   redeploy. La hija cherry-pickea desde el tag para heredar estos docs.
-
-## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 
 ## v0.5.7-django — 2026-07-16 (mantenimiento: path Docker/compose de dev)
 

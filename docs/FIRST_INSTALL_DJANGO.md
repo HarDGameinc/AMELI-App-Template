@@ -54,6 +54,135 @@ camino oficial es `PostgreSQL`.
 - `python3`, `python3-venv`, `python3-pip`
 - `postgresql`
 - `systemd`
+- `caddy` (recomendado como reverse-proxy TLS; opcional para deploys internos)
+
+## Quickstart — Debian con `install.sh` (RECOMENDADO)
+
+Instalación estándar en un servidor Debian orientado a producción. El
+resto de la guía (secciones "Quick start local", "Primera instalación
+Debian" manual, "Fallback con SQLite") queda como referencia y
+troubleshooting; el flujo canónico para un despliegue nuevo es este:
+
+> **Todo esto corre como `root`, sin `sudo`.** El servidor de referencia no
+> tiene el binario instalado: un comando con `sudo` falla con
+> `sudo: orden no encontrada`. Ver `AGENTS.md` → "Operating conventions".
+
+```bash
+# 1. Provisionar el host
+apt update
+apt install -y postgresql caddy git
+
+# 2. Clonar el repo en el ULTIMO TAG PROMOVIDO -- no en `main` pelado.
+#    Una feature recien mergeada a `dev` puede no estar en `main` todavia,
+#    y un clone de `main` te deja con un installer viejo sin aviso.
+git clone https://github.com/HarDGameinc/AMELI-App-Template.git \
+    /opt/ameli-app-template-prod
+cd /opt/ameli-app-template-prod
+git checkout "$(git tag --sort=-v:refname | head -1)"
+git describe --tags   # confirma que instalas lo que crees
+
+# 3. Crear la base
+su - postgres -c "createuser --pwprompt ameli_app_prod"
+su - postgres -c "createdb -O ameli_app_prod ameli_app_prod"
+
+# 4. Instalar. Auto-genera las 3 keys crypto y siembra ALLOWED_HOSTS /
+#    TRUSTED_PROXIES con valores conservadores, renderiza app.yaml para
+#    esta instancia, monta systemd, corre migrate, valida el layout y
+#    hace smoke a /health.
+#    Esta primera pasada PROVISIONA todo pero la validacion TERMINA EN
+#    FAIL con `DATABASE_URL_EMPTY`: es esperado -- la base se apunta en el
+#    paso 5. (El fallback a SQLite en prod es un bug, no un estado valido:
+#    el validador lo marca en vez de dejarte produccion sobre un archivo.)
+APP_ENV=prod bash scripts/install.sh
+
+# 5. Apuntar la DATABASE_URL (el install la dejo vacia a proposito) y
+#    reinstalar: ahora migrate corre sobre Postgres y la validacion pasa.
+sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+psycopg://ameli_app_prod:PASSWORD@127.0.0.1:5432/ameli_app_prod|" \
+    /etc/ameli-app-template-prod/app.env
+APP_ENV=prod bash scripts/install.sh   # idempotente; RESUMEN FAIL=0
+
+# 6. Afinar lo que no se puede generar: acotar hosts/proxies al dominio
+#    real, SMTP y superadmin. Wizard interactivo:
+/opt/ameli-app-template-prod/.venv/bin/ameli-app \
+    --env-file /etc/ameli-app-template-prod/app.env \
+    configure
+
+# 7. TLS: copiar el snippet de Caddy y reemplazar el hostname
+cp /opt/ameli-app-template-prod/deploy/caddy/Caddyfile.example \
+    /etc/caddy/Caddyfile
+$EDITOR /etc/caddy/Caddyfile   # reemplaza __HOSTNAME__ por el real
+systemctl reload caddy
+
+# 8. Cerrar el circuito TLS del lado app (indica a Django que hay proxy TLS)
+echo "AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https" \
+    >> /etc/ameli-app-template-prod/app.env
+systemctl restart ameli-app-template-prod-api.service
+
+# 9. Verificar
+curl -sf https://APP_HOSTNAME/health | jq .
+APP_ENV=prod bash scripts/validate_installation.sh
+```
+
+> **Instalando junto a otras apps AMELI en el mismo host?** Los defaults
+> (`APP_SLUG=ameli-app`, puertos 8080/8081) colisionan. Revisá `ss -tlnp`
+> y forzá `APP_SLUG=` y `AMELI_APP_API_PORT=` / `AMELI_APP_WEB_PORT=`
+> antes de correr `install.sh`.
+
+### Qué hace `install.sh` por vos (no manual)
+
+- Instala paquetes Debian del build (`python3-venv`, `build-essential`,
+  `libpq-dev`, `libjpeg-dev`).
+- Crea el usuario del sistema `ameli-app-template-prod` (uid dedicado).
+- Layouta `/opt`, `/etc`, `/var/lib`, `/var/log` y `/var/backups`.
+- Copia el árbol del proyecto (excluye `.git`, `.venv`, `__pycache__`).
+- Crea `.env` desde `.env.example` **y auto-genera idempotente las tres
+  keys criptográficas** que los guards de prod requieren
+  (`AMELI_APP_DJANGO_SECRET_KEY`, `AMELI_APP_AUDIT_HMAC_KEY`,
+  `AMELI_APP_MFA_ENCRYPTION_KEY`) — nunca sobrescribe si ya están.
+  Ver [`DECISIONS.md`](DECISIONS.md) #10 para la justificación.
+- Crea el venv desde `requirements.lock` con `--require-hashes` (ASVS
+  V14.2.3).
+- Corre `migrate` + `manage.py check`.
+- Renderiza y habilita los units systemd según `APP_SYSTEMD_PROFILE`.
+- **Smoke post-install**: `validate_installation.sh` + `curl /health`;
+  sale distinto de cero si algo falla (no queda instalación silenciosa
+  a medias).
+
+### Qué sigue siendo decisión del operador (`ameli-app configure`)
+
+- **`ALLOWED_HOSTS`** — comma-separated de hostnames que responde este
+  deploy. Con auto-sugerencia basada en `socket.gethostname()`.
+- **`TRUSTED_PROXIES`** — REMOTE_ADDR del reverse-proxy. Default sano:
+  `127.0.0.1` si Caddy corre en el mismo host.
+- **SMTP** (opcional) — host/puerto/user/password/from. Si dejás
+  `EMAIL_HOST` vacío, se mantiene el backend `console` (útil en internal
+  deploys que no mandan mails externos).
+- **Superadmin bootstrap** — usuario + password inicial. `configure`
+  llama internamente al mismo `bootstrap_superadmin` que
+  `bootstrap-admin`.
+
+### Non-interactive (CI / provisioning automatizado)
+
+`ameli-app configure --yes` lee los mismos valores desde
+`AMELI_APP_CONFIGURE_*` env vars (`ALLOWED_HOSTS`, `TRUSTED_PROXIES`,
+`ADMIN_USER`, `ADMIN_PASSWORD`, opcionalmente los `EMAIL_*`). Si falta
+alguno de los requeridos, exit code `2` con la lista exacta de qué
+setear — nunca deja el deploy medio-configurado.
+
+```bash
+AMELI_APP_CONFIGURE_ALLOWED_HOSTS=app.example.com \
+AMELI_APP_CONFIGURE_TRUSTED_PROXIES=127.0.0.1 \
+AMELI_APP_CONFIGURE_ADMIN_USER=admin \
+AMELI_APP_CONFIGURE_ADMIN_PASSWORD='ChangeThisNow!1?' \
+/opt/ameli-app-template-prod/.venv/bin/ameli-app \
+    --env-file /etc/ameli-app-template-prod/app.env configure --yes
+```
+
+Exit codes: `0` todo aplicado; `2` faltan variables requeridas (nada se
+escribe); `1` el env file **sí** se escribió pero Django todavía no puede
+bootear, así que el superadmin quedó pendiente — el JSON de salida trae
+`bootstrap_admin_error` con la causa y `hint` con el comando exacto para
+terminar. Ese caso es casi siempre la base de datos inalcanzable.
 
 ## Variables importantes
 
@@ -159,6 +288,12 @@ Este modo no reemplaza el camino oficial con PostgreSQL; solo acelera el
 arranque local.
 
 ## Primera instalación Debian
+
+> **Nota**: la sección "Quickstart — Debian con `install.sh`" arriba
+> supersede este walkthrough. Los pasos manuales de abajo quedan como
+> **referencia** para troubleshooting o para adaptar el flujo a
+> escenarios especiales (deploy sin `install.sh`, host sin systemd, etc.).
+> Para una instalación nueva estándar, seguí el Quickstart.
 
 Este ejemplo asume:
 

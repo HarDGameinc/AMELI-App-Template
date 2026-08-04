@@ -160,6 +160,13 @@ entry and note it.
 
 ## 9. Dev environment — WSL2 primary, single loop (supersedes #8)
 
+> **Superseded by #11 (2026-07-22).** In practice the WSL2 loop cost more
+> work than it saved (editor↔Linux-fs sync, `wsl.exe` path/quoting, CRLF
+> and `$`-expansion on env files, Postgres without systemd, no cross-fs
+> preview). The operator moved to **Windows-native dev + extensive testing
+> on a real Linux server**. Kept here for the audit trail; the current
+> strategy is in **#11**.
+
 - **Context**: #8 (same day, earlier) framed the environment as tiered —
   Windows daily loop with WSL2 for parity — which forces **double work**:
   two venvs, two locks, two suites, two divergent dep sets kept in sync
@@ -225,3 +232,127 @@ entry and note it.
     release is per-session judgment (a fresh child app onboarding today
     would consume the wrong strategy from `v0.5.8`, which argues for a
     quick tag).
+
+## 10. Keep `APP_ENV`; close the DX gap with a proper installer + configurator
+
+- **Context**: an operator installing the template on a public-internet
+  server hit a chain of boot-time crashes because `APP_ENV=prod`
+  demands six explicit values (`AMELI_APP_DJANGO_SECRET_KEY`, `_DEBUG`,
+  `_ALLOWED_HOSTS`, `_TRUSTED_PROXIES`, `AMELI_APP_AUDIT_HMAC_KEY`,
+  `AMELI_APP_MFA_ENCRYPTION_KEY`) plus post-install steps (SMTP, TLS,
+  superadmin bootstrap) that today are documented as manual. The
+  operator's diagnosis: "let's just remove `APP_ENV` so there's one
+  standard mode." The pain is real; the proposed fix is not.
+- **Decision**: **preserve `APP_ENV`** (with the `dev` / `prod` split as
+  it stands today) and close the pain **at the DX layer** with an
+  actual installer + configurator. The three ingredients:
+  1. **`scripts/install.sh` auto-generates the three crypto keys**
+     (`SECRET_KEY` via `secrets.token_urlsafe(60)`, `AUDIT_HMAC_KEY`
+     via `secrets.token_urlsafe(48)`, `MFA_ENCRYPTION_KEY` via
+     `Fernet.generate_key()`) **idempotently** — write to the env file
+     only if not already present, never overwrite. Removes 3 of the 4
+     boot-crash classes.
+  2. **New CLI subcommand `ameli-app configure`** — an interactive
+     wizard for the values that cannot be generated (`ALLOWED_HOSTS`
+     with hostname auto-detect, `TRUSTED_PROXIES` with default
+     `127.0.0.1` when the proxy is same-host, SMTP with a test-send,
+     superadmin bootstrap). Non-TTY invocation exits with the list of
+     missing vars — no half-configured deploys.
+  3. **`deploy/caddy/Caddyfile.example`** ships a copy-paste TLS-auto
+     reverse-proxy fragment; `install.sh` prints its path with copy
+     instructions.
+  4. **Post-install smoke** — `install.sh` runs
+     `validate_installation.sh` + `curl /health` and reports actionable
+     OK/FAIL, exiting non-zero on failure so a broken install cannot
+     silently proceed.
+- **Consequences**:
+  - **Security posture preserved.** M1 (v0.5.1, HIGH finding of the
+    independent security review — "app silently falls back to dev,
+    disabling every guard") stays closed. ASVS V2.8 (TOTP at rest),
+    V7.3.2 (audit chain integrity), V13.4 (session cookies), V14.4.5
+    (CSRF trusted origins), and PRIVACY.md §4 all remain intact.
+  - **A public-internet deploy STAYS strict.** Some future AMELI app
+    may be LAN-only; that app can carry a lighter posture without
+    forcing the strict apps to weaken.
+  - **The child app operator gets a clean 3-command install path**:
+    `sudo scripts/install.sh` → `ameli-app configure` → apply
+    Caddyfile. `FIRST_INSTALL_DJANGO.md` is rewritten around this.
+  - **The `dev` vs `prod` split remains a load-bearing boundary**,
+    not a naming quirk. The naming stays as-is because renaming
+    (e.g. `local` / `deploy`) would churn the whole flotilla for a
+    cosmetic win.
+  - **Alternatives rejected**:
+    - "Drop `APP_ENV`; ship one strict mode" — makes `wsl` /
+      `python manage.py runserver` on the workstation fail on boot
+      unless the operator sets six env vars locally. Kills the daily
+      loop that #9 just standardized on WSL2.
+    - "Drop `APP_ENV`; ship one permissive mode" — the M1 regression.
+    - "Rename `prod` to `deploy` / `strict`" — pure cosmetic churn
+      across every unit file, doc, and hija.
+
+## 11. Dev environment — Windows-native + extensive server testing (supersedes #9)
+
+- **Context**: #9 (2026-07-17) made WSL2 Ubuntu 24.04 the single dev
+  environment. In practice the operator measured that the WSL2 loop costs
+  more work than it saves: file-sync friction between the Windows editor
+  and the Linux fs, path/quoting pain crossing the `wsl.exe` boundary,
+  CRLF and `$`-expansion issues when moving env files, Postgres without
+  systemd, and no cross-fs preview browser. The child app (AMELI Report
+  Starlink) independently reported the same and measured a materially
+  higher output working Windows-native against a real server. Docker
+  Desktop was already rejected in #8/#9 for the same class of reason
+  (cost of the Windows↔container bridge).
+- **Decision**: **Windows-native is THE dev environment; the real Linux
+  server is THE test environment.** WSL2 and Docker are **out of the
+  development loop**.
+  1. **Daily loop on Windows** — the clone at
+     `C:\Users\hardg\AMELI APPS\AMELI_APP_TEMPLATE` is canonical again
+     (it stops being "archived"). Native venv, `pytest`, `ruff`. Fast
+     edit/run cycle with no filesystem bridge.
+  2. **Extensive testing happens on a real Linux server** via
+     `git clone` / `git pull` + the install and validation scripts. This
+     is *more* faithful than WSL2 for exactly the surfaces that matter
+     (systemd units, `install.sh`, backup/restore, file ownership, TLS
+     behind Caddy) because it is the same OS and init system as
+     production.
+  3. **WSL2 and Docker stay documented but unused.** The repo keeps the
+     Docker artifacts and `test_docker_stack.py` as anti-drift guards for
+     consumers who do want them; neither is part of this operator's loop.
+  4. **Production remains the Linux VM** (`ha-report2`), deployed via
+     `git pull` + systemd restart. Unchanged.
+
+- **Consequences — the trade-off, stated explicitly**:
+  - **~50 tests do not run locally.** The Windows suite is **1137 passed
+    / 77 skipped** (verified 2026-07-22, after the install fixes added
+    21 tests in `test_install_env_seeding.py`); the same tree on Linux
+    ran **1156 / 28** at the 2026-07-16 measurement. The **skip delta**
+    is the stable signal — the extra skips are the **shell / systemd /
+    backup / install** suite (`test_install_env_seeding`,
+    `test_common_sh_slug_autodetect`, `test_systemd_profile`,
+    `test_backup_restore`, `test_install_sh_restart`, …) that `win32`
+    skips. Those are precisely the tests covering `scripts/*.sh`.
+  - **This is not theoretical.** On 2026-07-22 a from-scratch production
+    install on a real server surfaced **12 blockers** in that exact
+    surface — several of them silent security downgrades — none of which
+    the local suite could have caught. See the handoff for that date.
+  - **Compensating controls — treat these as mandatory, not optional:**
+    1. **CI is the authoritative gate.** `ci.yml` runs the full suite on
+       `ubuntu-latest` (plus Postgres, e2e and CodeQL) on every push/PR,
+       so the win32-skipped tests execute on every change.
+       > ⚠️ **CI is paused until 2026-08-01** by operator decision. While
+       > that holds, control 1 does not exist and control 2 is the *only*
+       > gate — running the skipped suite on the server is mandatory, not
+       > a second opinion. See `CONTRIBUTING.md`.
+    2. **Server testing covers the install/systemd path** end to end.
+  - **Hard rule that follows**: a change to `scripts/*.sh`,
+    `deploy/systemd/*`, or anything the win32 suite skips is **never
+    "validated" by a green local Windows run**. It needs green CI *or* a
+    server test before it ships. A local pass is necessary, not
+    sufficient.
+  - Lockfile parity is unaffected: both locks stay hash-pinned and CI
+    installs them on Linux, so the shipped dependency set is still the
+    Linux one regardless of the dev OS.
+- **Revisit if**: the win32 skip set grows to cover logic that CI cannot
+  reach, or a second developer joins with a different OS. This supersedes
+  **#9** (which superseded **#8**); the dev-environment question is
+  considered settled for this operator unless that changes.

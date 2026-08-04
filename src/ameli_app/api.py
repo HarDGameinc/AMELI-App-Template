@@ -1,3 +1,15 @@
+"""Canonical runtime entry point for the template.
+
+The template is a **Django monolith**: this one ASGI process
+(``ameli_web.asgi:application``) serves BOTH the server-rendered HTML
+dashboard and the JSON API — there is no separate frontend tier. It binds
+``api_port`` and is the single upstream Caddy reverse-proxies to. The
+workers (capture / maintenance / notifier) are separate out-of-band
+processes against the same DB, not in the request path.
+
+``ameli_app.web`` is an alias of this launcher on ``web_port`` — a
+reserved seam for a future frontend split; see that module.
+"""
 from __future__ import annotations
 
 import os

@@ -179,6 +179,37 @@ def test_dev_boots_without_mfa_encryption_key(monkeypatch):
     assert getattr(settings, "MFA_ENCRYPTION_KEY", "") == ""
 
 
+def test_present_but_malformed_mfa_key_refuses_to_boot(monkeypatch):
+    """Upstream finding T-3 (2026-08-04): the guard used to check presence
+    only, so a non-empty but non-Fernet key booted and blew up later at
+    first MFA use (a confusing 400) with the crypto control silently dead.
+    A malformed key must now fail LOUDLY at import, in any environment.
+    """
+    with pytest.raises(RuntimeError, match="not a valid Fernet key"):
+        _reload_settings(
+            monkeypatch,
+            env="prod",
+            AMELI_APP_DJANGO_SECRET_KEY="real-secret-explicitly-set-by-operator",
+            AMELI_APP_DJANGO_ALLOWED_HOSTS="metro.lan",
+            AMELI_APP_DJANGO_DEBUG="false",
+            AMELI_APP_TRUSTED_PROXIES="127.0.0.1,::1",
+            AMELI_APP_EMAIL_BACKEND="smtp",
+            AMELI_APP_EMAIL_HOST="smtp.example.com",
+            # Non-empty but not a 32-byte url-safe base64 Fernet key.
+            AMELI_APP_MFA_ENCRYPTION_KEY="not-a-real-fernet-key",
+        )
+
+
+def test_malformed_mfa_key_refuses_even_in_dev(monkeypatch):
+    """A dev that bothers to set a key should get a real one — a typo'd
+    key silently degrading to plaintext is exactly the trap being closed."""
+    with pytest.raises(RuntimeError, match="not a valid Fernet key"):
+        _reload_settings(
+            monkeypatch, env="dev",
+            AMELI_APP_MFA_ENCRYPTION_KEY="obviously-not-fernet",
+        )
+
+
 def test_non_dev_refuses_empty_audit_hmac_key(monkeypatch):
     """ASVS V7.3.2 / V6.3.1 boot guard — outside dev, the audit HMAC
     key must be set so the chain integrity check is enforced. Without

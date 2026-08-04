@@ -47,85 +47,123 @@ the same set across Python 3.11–3.14 plus `pip-audit`, Playwright e2e and
 the `js-unit` job; see [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the
 CI/branch-protection detail.
 
+> ### 🔴 CI is PAUSED until 2026-08-01 — the server is the only gate
+>
+> By operator decision, GitHub Actions does not run. That removes the
+> **only** environment that executes the `win32`-skipped suite: the local
+> Windows loop skips it by design, so a change to `scripts/*.sh`,
+> `deploy/systemd/*` or the install path is currently validated by
+> **nothing** unless you run it on the server yourself.
+>
+> While this is in effect, before considering such a change done:
+>
+> ```bash
+> # on ha-report2 (root shell — no sudo)
+> cd /opt/<test-instance> && git pull
+> python3 -m venv /tmp/tvenv
+> /tmp/tvenv/bin/pip -q install -r requirements.txt -r requirements-dev.txt
+> /tmp/tvenv/bin/pip -q install -e . --no-deps
+> APP_ENV=dev /tmp/tvenv/bin/pytest -q tests/test_install_env_seeding.py \
+>     tests/test_common_sh_slug_autodetect.py tests/test_install_sh_restart.py \
+>     tests/test_backup_restore.py
+> ```
+>
+> …plus a real install. The 2026-07-22 session found **12 blockers** in
+> the production install path this way, several of them silent, none of
+> which CI would have caught even if it were running — no job installs
+> from scratch on a host with other apps, with explicit ports, and then
+> runs `git pull`. See
+> [`docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md`](docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md).
+>
+> **Delete this block once CI is back on.**
+
 Coverage floor is 85% (`pyproject.toml`); mypy and ruff floors are zero.
 
-## Local dev environment — WSL2 primary
+## Local dev environment — Windows-native, tested on a real server
 
-Per [`DECISIONS.md`](docs/DECISIONS.md) #9, the dev environment is **WSL2
-Ubuntu 24.04** — one clone, one venv, one loop. Same hash-pinned lock the
-prod deploy ships, so there is no Windows/Linux drift.
+Per [`DECISIONS.md`](docs/DECISIONS.md) **#11**, the daily loop is
+**Windows-native** and extensive testing happens on a **real Linux server**.
+WSL2 and Docker are out of the loop (see the note at the end of this
+section).
 
 **Setup (once per machine):**
 ```powershell
-# host: PowerShell as admin
-wsl --install -d Ubuntu-24.04
-```
-```bash
-# inside WSL2 (Ubuntu-24.04):
-sudo apt-get install -y python3-venv python3-dev build-essential \
-    libffi-dev libjpeg-dev libpq-dev zlib1g-dev git
-cd ~ && git clone https://github.com/HarDGameinc/AMELI-App-Template.git ameli-app-template
-cd ameli-app-template
-python3 -m venv .venv && .venv/bin/pip install --upgrade pip
-# BOTH locks — they are complementary, not superset/subset.
-# django overlaps only because pytest-django pulls it. Installing only the
-# dev lock leaves you without uvloop/uvicorn.
-.venv/bin/pip install --require-hashes -r requirements.lock       # runtime
-.venv/bin/pip install --require-hashes -r requirements-dev.lock   # tooling
-.venv/bin/pip install -e . --no-deps
+py -3.12 -m venv .venv
+.\.venv\Scripts\pip install --upgrade pip
+# From the RANGES, not requirements.lock: the lock pins uvloop (POSIX-only)
+# unconditionally, so it cannot install on Windows.
+.\.venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+.\.venv\Scripts\pip install -e . --no-deps
 ```
 
-**Daily loop (inside WSL2):**
-```bash
-wsl                                     # (Ubuntu-24.04 is the default distro)
-cd ~/ameli-app-template
-APP_ENV=dev .venv/bin/pytest -q         # 1156 passed / 28 skipped
-.venv/bin/ruff check .
-.venv/bin/mypy src
+**Daily loop:**
+```powershell
+$env:APP_ENV="dev"; .\.venv\Scripts\pytest -q      # 1137 passed / 77 skipped
+.\.venv\Scripts\ruff check .
+.\.venv\Scripts\mypy src
 ```
 
-**Editing from Windows-side tools** reaches the WSL clone via
-`\\wsl.localhost\Ubuntu-24.04\home\hardg\ameli-app-template\` (VS Code
-with the Remote-WSL extension is transparent). Terminals run inside WSL.
-The Windows path `C:\Users\...\AMELI_APP_TEMPLATE` is treated as archived —
-see [`DECISIONS.md`](docs/DECISIONS.md) #9.
+> ### ⚠️ A green Windows run is necessary, not sufficient
+>
+> **~50 tests are skipped on `win32`** — the shell / systemd / backup /
+> install suite (`test_install_env_seeding` alone is 21 of them, plus
+> `test_common_sh_slug_autodetect`, `test_systemd_profile`,
+> `test_backup_restore`, `test_install_sh_restart`, …), which is exactly
+> what covers `scripts/*.sh` and `deploy/systemd/*`.
+>
+> **Any change to those surfaces needs green CI *or* a server test before
+> it ships.** CI (`ubuntu-latest`, full suite + Postgres + e2e + CodeQL on
+> every push/PR) is the authoritative gate; the local Windows run is the
+> fast pre-filter. Never treat "green locally" as validation for shell,
+> systemd, install or backup changes.
 
-**Local deployment** (pre-promotion smoke, inside WSL2). WSL2 emulates the
-production server directly — no Docker in the loop. Set up Postgres once
-(`sudo apt install postgresql && sudo -u postgres createuser --pwprompt
-ameli && sudo -u postgres createdb -O ameli ameli_dev`), then run the app
-the same way `ameli-app-template-dev-api.service` does on `ha-report2`:
-```bash
-DATABASE_URL="postgresql+psycopg://ameli:PASSWORD@localhost/ameli_dev" \
-    APP_ENV=dev .venv/bin/python -m ameli_app.api
-```
-This is the closest local pre-promotion smoke — same code path, same
-uvicorn launcher, same Postgres backend as the server. If you don't need
-Postgres parity (fast suite runs), the SQLite fallback still works via
-`AMELI_APP_SQLITE_PATH` (see Windows fallback below for the env vars).
-
-### Windows-native fallback (deprecated, keep only for edge cases)
-
-Kept during the transition for the mypy-DLL edge case and quick emergency
-edits when WSL is unreachable. Not the daily loop.
-
-- **Create the venv from the ranges** (`requirements.txt` / `requirements-
-  dev.txt`), NOT `requirements.lock` — the lock pins `uvloop` (POSIX-only)
-  unconditionally. The ranges pull Django 6 / Pillow 12 locally; suite is
-  green but drifts from what ships.
+**Windows gotchas:**
+- The **ranges** pull Django 6 / Pillow 12 locally, which drifts from the
+  hash-pinned set that actually ships. That drift is covered by CI, which
+  installs the locks on Linux — but remember the local venv is *not* what
+  production runs.
 - **mypy** — Windows "App Control" can block the compiled mypyc DLL
   (`ImportError: DLL load failed`). Reinstall pure-Python per venv:
   `pip install --no-binary mypy --force-reinstall --no-deps "mypy==2.1.0"`.
   One Windows-only false positive remains (`socket.AF_UNIX` in
   `accounts/av.py`).
-- **Shell/POSIX tests** are `skipif(sys.platform == "win32")` — they exercise
-  `bash`/`tar`/`geteuid` and run on the Linux CI (and in the WSL loop).
 - **Run env vars** for a local SQLite run:
   `AMELI_APP_DJANGO_SECRET_KEY`, `DATABASE_URL=""`, `AMELI_APP_SQLITE_PATH`,
   `APP_CONFIG`, `DJANGO_SETTINGS_MODULE=ameli_web.settings`. The pytest
   suite sets sane defaults via `tests/conftest.py`.
-- Suite on Windows-native: **1126 passed / 58 skipped** (30 fewer than
-  WSL because of the win32 skips).
+
+### Extensive testing — on the server
+
+The real Linux box is the test environment for everything the Windows
+suite cannot reach: `install.sh`, systemd units, file ownership,
+backup/restore and TLS behind Caddy. It is *more* faithful than any local
+emulation because it is the same OS and init system as production.
+
+> **The server shell is root and has no `sudo` binary** — write every
+> snippet without it (a `sudo`-prefixed command fails with `command not
+> found`). Same rule as "Deploying to the dev server" below; see
+> `AGENTS.md` → "Operating conventions".
+
+```bash
+# on the server (root shell — no sudo)
+git clone https://github.com/HarDGameinc/AMELI-App-Template.git <dir> && cd <dir>
+APP_ENV=<env> bash scripts/install.sh          # auto-generates the crypto keys
+<install_dir>/.venv/bin/ameli-app --env-file <etc>/app.env configure
+APP_ENV=<env> bash scripts/validate_installation.sh
+```
+Do **not** hardcode paths, unit names or ports from memory — derive them on
+the box with `validate_installation.sh` (see `OPERATIONS.md` → "Live
+deployment ground truth"). The box hosts **several live AMELI apps**, so
+check `ss -tlnp` before picking a port and force a unique `APP_SLUG` when
+installing a test instance.
+
+### WSL2 / Docker — documented, not used
+
+Both remain in the repo (`docker-compose.yml`, `Dockerfile`,
+`test_docker_stack.py` as the anti-drift guard) for consumers who want
+them, and the WSL2 recipe lives in [`DECISIONS.md`](docs/DECISIONS.md) #9
+for the audit trail. **Neither is part of this operator's loop** — #9 was
+superseded by #11 because the WSL2 bridge cost more work than it saved.
 
 ## Releases
 

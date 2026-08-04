@@ -34,8 +34,23 @@ apt install caddy
 
 ## Caddyfile minimo
 
-Reemplaza el contenido de `/etc/caddy/Caddyfile` con esto (un sitio por
-deploy):
+> ### ⚠️ Si el host ya sirve otras apps, NO reemplaces el archivo
+>
+> Un `/etc/caddy/Caddyfile` monolitico con varios site blocks es lo
+> normal en un host compartido, y sobrescribirlo **tira todas las apps
+> que viven ahi**. Agregá tu bloque al final (o un fragment aparte si el
+> archivo tiene `import`), y validá **antes** de recargar:
+>
+> ```bash
+> cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak.$(date +%Y%m%d-%H%M%S)
+> # ...agregar el bloque...
+> caddy adapt --config /etc/caddy/Caddyfile >/dev/null && systemctl reload caddy
+> ```
+>
+> `caddy adapt` parsea sin aplicar: si falla, no recargues.
+
+En un host dedicado, el contenido de `/etc/caddy/Caddyfile` es
+directamente esto (un sitio por deploy):
 
 ```caddy
 # AMELI App Template dev
@@ -58,6 +73,225 @@ metro-dev.lan {
 #     reverse_proxy 127.0.0.1:18081
 # }
 ```
+
+## Quien es el dueño del header HSTS: Django
+
+**No pongas `Strict-Transport-Security` en el site block de Caddy.** El
+template ya lo emite desde Django (`settings/security_headers.py`), con
+un default de **un año fuera de dev** y control fino por env var:
+
+| Variable | Efecto |
+|---|---|
+| `AMELI_APP_HSTS_SECONDS` | `max-age`. `0` desactiva — util mientras estas cableando TLS |
+| `AMELI_APP_HSTS_INCLUDE_SUBDOMAINS` | agrega `includeSubDomains` (opt-in) |
+
+Si ademas lo declaras en Caddy, la respuesta sale con **el header dos
+veces**. No es explotable —los navegadores toman el primero— pero:
+
+- las dos fuentes divergen apenas alguien cambia una sola, y la que gana
+  no es la que el operador cree;
+- `AMELI_APP_HSTS_SECONDS=0` deja de tener efecto, porque el header de
+  Caddy sigue ahi. Justo la perilla que existe para poder salir de un
+  HSTS mal puesto queda inutilizada.
+
+Verificalo con:
+
+```bash
+curl -sSI https://TU_HOSTNAME/ | grep -ci "^strict-transport-security"
+```
+
+Tiene que devolver **1**. Si devuelve 2, sacá la linea del `Caddyfile`.
+
+> Django solo emite HSTS cuando ve la request como segura, o sea con
+> `AMELI_APP_SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto=https` seteado y
+> `AMELI_APP_TRUSTED_PROXIES` incluyendo al proxy. Si sacaste el header
+> de Caddy y ahora no aparece ninguno, eso es lo que falta — revisá la
+> seccion de `SECURE_PROXY_SSL_HEADER` mas abajo antes de volver a
+> ponerlo en Caddy.
+
+## Varias apps en un host: un subdominio por app, un solo puerto
+
+El patron que se adopta solo suele ser **un puerto por app** (`app1` en
+8443, `app2` en 18450, …), y termina con una regla de firewall por app.
+No hace falta: Caddy multiplexa por SNI/`Host` en **un unico listener**.
+Un subdominio por app sobre el 443 estandar deja el firewall con **una
+sola regla**, y las URLs sin puertos que recordar.
+
+### Por que NO consolidar en un solo subdominio
+
+La tentacion opuesta —un solo nombre para todo, separando por path o por
+puerto— rompe el aislamiento entre apps:
+
+- **El puerto no separa cookies.** `apps.example.com:8443` y
+  `apps.example.com:18450` comparten el mismo tarro (RFC 6265: el puerto
+  no es parte de la identidad de la cookie). Consolidar el nombre y dejar
+  los puertos distintos **no aisla nada**.
+- **`__Host-` exige `Path=/`.** El template emite
+  `__Host-ameli_app_session`, el mismo nombre en cada instancia. Con un
+  hostname compartido, la app B pisa la sesion de A **y recibe la cookie
+  de sesion de A en cada request**.
+- **El template no corre bajo un subpath.** `LOGIN_URL`, `STATIC_URL` y
+  `MEDIA_URL` estan fijos en la raiz y no hay `FORCE_SCRIPT_NAME`, asi que
+  `handle_path /app1/*` se rompe en el primer redirect.
+
+Se puede forzar dandole a cada app un `AMELI_APP_SESSION_COOKIE_NAME`
+distinto, pero eso **desactiva la politica `__Host-`** y deja el
+aislamiento apoyado en que los nombres no colisionen, no en el navegador.
+Solo para apps que ya confian entre si. **Un subdominio por app es la
+respuesta correcta.**
+
+### Como probar que nadie consume el backend directo
+
+Muestrear con `ss` cada pocos segundos **no sirve**: solo ve conexiones
+abiertas en ese instante, y un poll REST dura milisegundos. Un log vacio
+asi no prueba ausencia de clientes, solo ausencia de conexiones largas.
+
+Capturar **los SYN**, que detecta cada conexion nueva dure lo que dure:
+
+```bash
+nohup timeout 900 tcpdump -ni any \
+  'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack = 0 and dst port <PUERTO> and not src host 127.0.0.1' \
+  > /tmp/syn.log 2>/dev/null &
+```
+
+Tampoco alcanza con leer los logs de la app: si registra el
+`X-Forwarded-For`, un acceso directo y uno proxeado **se ven identicos**.
+
+Aun asi, 15 minutos no descartan un poller horario. Cuando exista un
+consumidor de API con token, la evidencia definitiva es **su** config, no
+la captura: `grep -rn "<PUERTO>"` en el cliente.
+
+### Requisito previo: los backends van en loopback
+
+Antes de tocar el firewall, verifica que ninguna app servida por Caddy
+bindee `0.0.0.0`:
+
+```bash
+ss -tlnp | grep -v 127.0.0.1 | grep -vE "caddy|:22\s"
+```
+
+Un backend en `0.0.0.0` con su puerto abierto en el firewall es
+**alcanzable sin pasar por Caddy**. Lo que eso rompe, en concreto:
+
+- **Todo control que viva en el proxy se saltea**: `basicauth`, matchers
+  de IP, rate limiting, headers de seguridad, cualquier restriccion del
+  site block. Si tu autenticacion esta en Caddy, el backend queda
+  **abierto**.
+- **Trafico en claro.** No hay `SECURE_SSL_REDIRECT` en el template, asi
+  que la app responde por HTTP sin redirigir. Las cookies marcadas
+  `Secure` no viajan (el navegador las retiene), pero **un POST de login
+  a `http://` manda las credenciales en texto plano**.
+- **HSTS no cubre este camino**: la politica es por hostname, y aca se
+  entra por `IP:puerto`.
+
+**Lo que NO pasa**, para no sobreestimar el riesgo: no se puede
+falsificar la IP de origen. `client_ip()`
+(`accounts/services/session.py`) solo mira `X-Forwarded-For` cuando
+`REMOTE_ADDR` esta en `TRUSTED_PROXIES`; en un acceso directo
+`REMOTE_ADDR` es la IP real del atacante, que no esta en la lista, asi
+que el header se ignora. `ALLOWED_HOSTS` tampoco se saltea — pero se
+satisface mandando el `Host` correcto, asi que no es una defensa.
+
+En el template esto ya viene bien (`AMELI_APP_HOST=127.0.0.1` por
+defecto); revisa el `--host` de las apps que no lo usen.
+
+### El Caddyfile, con snippet reutilizable
+
+```caddy
+(ameli_app) {
+    header Strict-Transport-Security "max-age=31536000"
+    encode gzip zstd
+    tls /etc/ssl/example/wildcard-fullchain.crt /etc/ssl/example/wildcard.key
+    reverse_proxy 127.0.0.1:{args[0]} {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+    }
+}
+
+app1.example.com { import ameli_app 18080 }
+app2.example.com { import ameli_app 18090 }
+app3.example.com { import ameli_app 18105 }
+```
+
+Un cert wildcard cubre todos los subdominios sin ACME por sitio. Los
+bloques con logica propia (matchers de iframe, rutas especiales) no
+entran en el snippet: se escriben completos.
+
+### Migracion en dos etapas, sin ventana de caida
+
+**El orden importa**: cerrar el firewall antes de mover Caddy te deja sin
+acceso. Hacelo con la sesion SSH abierta y backup del `Caddyfile`.
+
+1. **Levantar los subdominios en 443 dejando los puertos viejos vivos.**
+   Ambos caminos responden. Verificar cada app por el nombre nuevo:
+   ```bash
+   caddy adapt --config /etc/caddy/Caddyfile >/dev/null && systemctl reload caddy
+   for h in app1 app2 app3; do
+     curl -sSI "https://${h}.example.com/" -o /dev/null -w "${h}: %{http_code}\n"
+   done
+   ```
+2. **Actualizar `CSRF_TRUSTED_ORIGINS` con AMBOS origenes** (viejo y
+   nuevo) y reiniciar. Ver el aviso de abajo: este paso va **antes** de
+   tocar nada destructivo.
+3. **Recien entonces** eliminar los bloques de puerto alto y cerrar las
+   reglas de firewall, dejando 443 (+80 si queres redirect HTTP→HTTPS).
+
+> ### ⚠️ El `GET` te miente
+>
+> Si sacas el puerto viejo sin haber actualizado `CSRF_TRUSTED_ORIGINS`,
+> la app sigue respondiendo **200 a todo `GET`** — las paginas cargan, el
+> health check pasa, Caddy no loguea nada raro. Lo unico que se rompe es
+> el `POST`: **403 CSRF, o sea nadie puede loguearse**. Es un modo de
+> falla silencioso para toda la verificacion habitual.
+>
+> Regla: **ningun paso destructivo va antes de la evidencia de que el
+> preparatorio se aplico.** Verificalo explicitamente:
+>
+> ```bash
+> grep -H "^AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS" /etc/<instancia>/app.env
+> ```
+
+### Probar el camino publico SIN tocar el DNS
+
+Antes de mover ningun registro, forza la resolucion solo para el test:
+
+```bash
+curl -sS --resolve app1.example.com:443:<IP_PUBLICA> \
+     https://app1.example.com/ -o /dev/null -w "%{http_code}\n"
+```
+
+Si da 200, el NAT y la policy del perimetro estan bien y lo unico que
+falta es DNS. Si da timeout, el problema esta aguas arriba y no moviste
+nada. **Un VIP sin su policy asociada es el olvido mas comun** — el
+mapeo queda perfecto y no pasa trafico.
+
+### Bajar el TTL antes de mover el DNS
+
+Mientras convivan los dos caminos, el rollback es "usar el puerto viejo".
+**Eso deja de valer en cuanto el DNS apunta a la IP nueva**: si la IP
+vieja no publica el puerto alto, la URL vieja queda inalcanzable por
+nombre. El rollback pasa a ser revertir el registro, y tarda lo que diga
+el TTL.
+
+```bash
+dig +noall +answer app1.example.com
+```
+
+Con TTL de 4 horas, un rollback tarda 4 horas. Bajalo a **300** y espera
+a que expire el viejo **antes** de cambiar la IP.
+
+### El detalle que muerde: cambia el origen
+
+Al desaparecer el `:8443` de la URL publica **cambia el origen**. En cada
+app hay que revisar:
+
+- `AMELI_APP_DJANGO_CSRF_TRUSTED_ORIGINS` — si tiene el puerto viejo
+  hardcodeado, **todos los POST empiezan a fallar por CSRF**.
+- `AMELI_APP_URL_BASE` — los links de reset de password y de
+  verificacion por email seguirian apuntando al puerto viejo.
+
+`AMELI_APP_DJANGO_ALLOWED_HOSTS` no cambia: se compara contra el
+hostname, sin puerto.
 
 ## Compresion + cache de estaticos y media (optimizacion)
 

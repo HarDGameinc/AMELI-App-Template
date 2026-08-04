@@ -10,6 +10,41 @@
 6. **`docs/BUILDING_NEW_APP.md`** — onboarding for forks: what you inherit, what to rename, what NOT to touch.
 7. **`CLAUDE.md`** — per-project instruction overrides for LLM agents.
 
+## Operating conventions — read before emitting ANY server command
+
+> ### 🔴 The server shell is **root** and has **no `sudo` binary**
+>
+> Every command handed to the operator for `ha-report2` (or any AMELI box)
+> must be written **without `sudo`**. A `sudo`-prefixed command does not
+> just look wrong — it **fails with `sudo: command not found`**, so the
+> operator has to hand-edit every snippet you give them.
+>
+> This applies to install/deploy/systemd/postgres snippets alike:
+> ```bash
+> systemctl restart <unit>            # ✅
+> sudo systemctl restart <unit>       # ❌ command not found
+> su - postgres -c "createdb foo"     # ✅  (or: psql -U postgres)
+> sudo -u postgres createdb foo       # ❌
+> ```
+>
+> Public-facing install docs (`FIRST_INSTALL_DJANGO.md`,
+> `SERVER_HARDENING.md`) may keep `sudo` for third-party readers who run as
+> a non-root user — but **anything you hand THIS operator omits it**.
+
+> ### 🔴 A green local (Windows) run is necessary, not sufficient
+>
+> ~30 tests are `win32`-skipped (shell / systemd / backup — exactly what
+> covers `scripts/*.sh` and `deploy/systemd/*`). Changes to those surfaces
+> are validated by **CI on `ubuntu-latest`** or a **server test**, never by
+> a local pass alone. See `DECISIONS.md` #11.
+
+> ### 🔴 Never guess server paths, unit names or ports
+>
+> Derive them on the box with `scripts/validate_installation.sh` — see
+> `OPERATIONS.md` → "Live deployment ground truth". `ha-report2` hosts
+> **multiple live AMELI apps**; assuming a port or slug risks colliding
+> with production. Check `ss -tlnp` before choosing a port.
+
 ## Purpose
 
 Official **Django-first template** for AMELI applications exposed to real users (internet or internal operational networks). Provides auth, MFA, profile, admin panel, audit log, and deployment tooling out of the box.
@@ -188,7 +223,55 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.9-django, 2026-07-17)
+## State of the project (v0.5.11-django, 2026-08-04)
+
+`v0.5.11` promotes to `main` everything that piled up on `dev` while CI
+was paused: **B13** (`/health`+`/metrics` locked down on a fresh prod
+install), the **day-2 lifecycle hardening** (`update.sh` won't proceed on
+a failed/unverified backup; `uninstall.sh --purge`), the **port
+convention + monolith docs** (`api_port` is the only bound port and what
+the proxy sees; `web_port` is a reserved seam for a future frontend
+split), and the first two **upstream findings from a child fork**: **T-3**
+(`MFA_ENCRYPTION_KEY` now validated for format at boot, not just presence)
+and **T-6** (empty `DATABASE_URL` outside dev now FAILs loudly instead of
+silently falling back to SQLite). Both are the recurring class this
+generation of work kept surfacing: success reported over an absent
+control. CI is active again; `main` advances by PR from `dev` with green
+CI. Remaining child-fork findings (T-1, T-2, T-4, T-5, T-7, T-8) are
+tracked in `AMELI Checklist/docs/UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md`.
+
+### Previous state (v0.5.10-django, 2026-07-22)
+
+> **Read this first if you are touching the install path.** `v0.5.10`
+> (2026-07-22) is the release where the production install path became
+> real. A from-scratch install on a live server found **12 blockers**;
+> until then the documented 3-command flow (`install.sh` → `configure` →
+> Caddy) **could not boot at all**. Two root causes, both worth
+> remembering because they generalise:
+>
+> 1. **The `.example` files are DEVELOPMENT config, and the installer
+>    used them as PRODUCTION config.** The loud failures were the easy
+>    ones. The dangerous ones were silent: the `__Host-` cookie policy
+>    was disabled, the session cookie shipped without `Secure`, and an
+>    explicit `AMELI_APP_API_PORT=` was discarded — pointing the service
+>    at another production app's port.
+> 2. **The installer assumes a deploy tree, but the Quickstart runs it
+>    over a git checkout**, so `repair_permissions` dirtied the checkout
+>    and broke the documented `git pull` update path.
+>
+> Rule that came out of it: the installer **renders** the example files,
+> it never copies them verbatim — and it renders **only on creation**,
+> never over a file the operator has touched. Instances provisioned
+> earlier are reported via `warn_insecure_prod_env` /`warn_port_drift`,
+> not silently rewritten.
+>
+> **Historical note:** at the time, `main` was on `v0.5.9-django` and CI
+> was paused, so `v0.5.10-django` was tagged on `dev` and not promoted.
+> Superseded — `v0.5.11-django` promotes it all to `main` (see the current
+> state above). Detail in
+> `docs/CLAUDE_HANDOFF_2026-07-22_TEMPLATE_DEV.md`.
+
+### Previous state (v0.5.9-django, 2026-07-17)
 
 Since v0.4.4: D-5 avatar transform pipeline (`services/images.py`: resize
 + WebP + strip EXIF/GPS), an interactive client-side avatar cropper
@@ -290,8 +373,20 @@ single dev environment (one clone, one venv, same hash-pinned lock that
 ships to prod), local deployment runs directly under WSL2 (`python -m
 ameli_app.api` against a local Postgres — no Docker), production stays on
 the Linux VM `ha-report2`, and Windows-native is fallback only. `CONTRIBUTING.
-md` inverted accordingly. All validated on the dev server / CI; see the
-latest `docs/CLAUDE_HANDOFF_*`.
+md` inverted accordingly.
+
+> **⚠️ Dev-environment status: #9 was superseded by `DECISIONS.md` #11
+> (2026-07-22).** In practice the WSL2 bridge cost more work than it saved,
+> so the loop moved to **Windows-native dev + extensive testing on a real
+> Linux server**; WSL2 and Docker are documented but out of the loop. A
+> reader following this narrative should NOT adopt the WSL2 strategy. The
+> trade-off #11 accepts explicitly: **~30 win32-skipped tests (shell /
+> systemd / backup) never run locally**, so CI on `ubuntu-latest` — or a
+> server test — is the authoritative gate for any change to `scripts/*.sh`,
+> `deploy/systemd/*` or backup/restore. A green Windows run is necessary,
+> not sufficient.
+
+All validated on the dev server / CI; see the latest `docs/CLAUDE_HANDOFF_*`.
 
 ### Known architectural debt (prioritized)
 1. **`accounts/services/` (PC-1 CLOSED, 2026-07-01)** — 14 domain modules; `__init__.py` is a pure re-export surface (~200 lines)

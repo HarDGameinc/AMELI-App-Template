@@ -82,15 +82,48 @@ if not _IS_DEV_ENV and not AUDIT_HMAC_KEY:
 # Outside ``dev`` the boot guard below refuses to start without a key.
 # Encryption is a different secret from SECRET_KEY and AUDIT_HMAC_KEY
 # on purpose — losing one should not compromise the others.
+def require_fernet_key(name: str, value: str) -> None:
+    """Fail at boot if ``value`` is set but is not a usable Fernet key.
+
+    A guard that only checks *presence* (``if not value``) lets a malformed
+    key boot: ``Fernet(key)`` is not constructed until first use
+    (``accounts/mfa.py``), so the deploy reports success, validation passes,
+    and the crypto control is **silently dead** — surfacing much later as a
+    confusing ``400 validation error`` in a view rather than "this deploy
+    cannot encrypt MFA secrets". Validate the format here instead.
+
+    Reusable on purpose: a child app with its own Fernet-wrapped secret
+    (``AMELI_APP_<X>_ENCRYPTION_KEY``) should call this from its settings
+    rather than re-checking presence only.
+    """
+    from cryptography.fernet import Fernet
+
+    try:
+        Fernet(value.encode("ascii"))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            f"{name} is set but is not a valid Fernet key ({exc}). It must be a "
+            "32-byte url-safe base64 token. Generate one with `python -c "
+            "'from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())'` and set it in the env file."
+        ) from exc
+
+
 MFA_ENCRYPTION_KEY = os.environ.get("AMELI_APP_MFA_ENCRYPTION_KEY", "").strip()
 
-if not _IS_DEV_ENV and not MFA_ENCRYPTION_KEY:
-    raise RuntimeError(
-        "AMELI_APP_MFA_ENCRYPTION_KEY is empty outside the dev environment. "
-        "Without it, TOTP secrets land in the DB as plaintext (ASVS V2.8 gap). "
-        "Generate one with `python -c 'from cryptography.fernet import Fernet; "
-        "print(Fernet.generate_key().decode())'` and set it in the env file."
-    )
+if not MFA_ENCRYPTION_KEY:
+    if not _IS_DEV_ENV:
+        raise RuntimeError(
+            "AMELI_APP_MFA_ENCRYPTION_KEY is empty outside the dev environment. "
+            "Without it, TOTP secrets land in the DB as plaintext (ASVS V2.8 gap). "
+            "Generate one with `python -c 'from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())'` and set it in the env file."
+        )
+else:
+    # Present but possibly malformed — validate the format so a bad key
+    # fails LOUDLY at boot, not silently at first MFA use. Runs in dev too:
+    # a dev that bothers to set a key should get a real one.
+    require_fernet_key("AMELI_APP_MFA_ENCRYPTION_KEY", MFA_ENCRYPTION_KEY)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"

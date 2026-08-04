@@ -45,6 +45,60 @@ Deploy + restart commands live in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Deploying to the dev server". The
 bump ritual is in [`RELEASE.md`](RELEASE.md).
 
+## Architecture and ports
+
+The template is a **Django monolith**. One ASGI process
+(`ameli_web.asgi:application`) serves **both** the server-rendered HTML
+dashboard **and** the JSON API — there is no separate frontend tier.
+
+```
+internet ──► Caddy :443 ──► Django ASGI (uvicorn, api_port, 127.0.0.1)
+                             ├── dashboard HTML (server-rendered templates)
+                             └── JSON API           (same app)
+                                       │
+                                       ▼
+                                  PostgreSQL
+                                       ▲
+        workers (capture / maintenance / notifier) ──┘
+        separate processes, same DB, OUT of the request path
+```
+
+### Which port faces the proxy
+
+**`api_port`** — the only one bound under the default profile
+(`api-worker-maintenance`). Caddy reverse-proxies to
+`127.0.0.1:<api_port>`; that single process answers everything. Internet
+only ever sees Caddy's 443.
+
+### Port convention
+
+| Env | `api_port` default | `web_port` default |
+|---|---|---|
+| **prod** | `8080` | `8081` |
+| **dev** | `18080` | `18081` |
+
+Both are overridable via `AMELI_APP_API_PORT` / `AMELI_APP_WEB_PORT`. On a
+host that already runs other apps, override to free high ports to avoid
+collisions — the port number is just where it listens; **`APP_ENV`, not
+the port, decides prod behavior** (guards, Secure cookies, HSTS,
+health allowlist). A prod deploy on a `18XXX` port is fine and common on
+shared hosts.
+
+### `web_port` / `ameli-app-web.service` — a reserved seam, not dead config
+
+`web.service` runs `ameli_app.web`, **today an alias of the same ASGI
+app** on `web_port`. It is bound **only** when `APP_SYSTEMD_PROFILE`
+includes `web` (`api-web`, `web-worker`, …); under the default api-only
+profile it is rendered but never enabled, so nothing listens on
+`web_port`. That is intentional: it is the plug point a child app — or a
+**planned evolution that splits a dedicated frontend tier from the API** —
+swaps its implementation behind without renaming the unit or changing the
+port contract. See [`src/ameli_app/web.py`](../src/ameli_app/web.py).
+
+> **Roadmap note.** The frontend/API split is a future tech evolution;
+> until then the monolith is the intended shape and `web_port` stays a
+> reserved slot. Do not treat it as removable dead config.
+
 ## Local validation
 
 ```bash
@@ -460,6 +514,19 @@ curl --silent --fail http://127.0.0.1:18080/health/deep > /dev/null
 Both honor `HEALTH_METRICS_ALLOWLIST` so they can be locked to
 loopback / known prober IPs.
 
+> **Default is world-readable — but a prod install locks it down.** With
+> the list empty the views answer any client, so behind a reverse proxy
+> `/health` leaks version, uptime and disk, and `/metrics` exposes the
+> full scrape to anyone who reaches the public port (a known version is a
+> CVE shortlist). `scripts/install.sh` therefore seeds
+> `AMELI_APP_HEALTH_METRICS_ALLOWLIST=127.0.0.1,::1` on a **fresh prod**
+> install (dev stays open for local probes). The post-install smoke and
+> `validate_installation.sh` hit `127.0.0.1:<port>/health` directly, so
+> the lockdown does not break them. Add your external monitor's IP to the
+> list explicitly. An instance provisioned before this seeding is **not**
+> rewritten on upgrade — `install.sh` warns instead, so an external
+> scraper that relies on the open default is not silently cut off.
+
 ## First install reference
 
 Use the full first-install walkthrough in:
@@ -497,6 +564,39 @@ Tunables (env vars):
 dir, validates every `sha256sum` from the manifest, then exits 0.
 Schedule it weekly so a silently-corrupt backup gets caught before
 you need to restore in anger.
+
+### Update — the pre-update backup is mandatory
+
+`scripts/update.sh` takes a backup, **verifies it** (`restore.sh verify`),
+and only then runs `migrate`. A migration can be irreversible, so the
+verified backup is the sole recovery path — a failed or unverifiable
+backup **halts the update**. Operators who back up out of band opt out
+explicitly:
+
+```bash
+AMELI_APP_UPDATE_SKIP_BACKUP=1 APP_ENV=prod bash scripts/update.sh
+```
+
+(A GPG-encrypted archive whose private key is not on this host can't be
+verified here; that is a warning, not a halt — the archive still exists.)
+
+### Uninstall — safe by default, `--purge` behind a guard
+
+```bash
+# SAFE: stop + remove units, PRESERVE config/data/logs/backups
+APP_ENV=prod bash scripts/uninstall.sh
+
+# DESTRUCTIVE: also delete every dir + the system user/group.
+# Takes a FINAL backup into /var/backups first (survives the purge).
+APP_ENV=prod bash scripts/uninstall.sh --purge --yes
+```
+
+`--purge` refuses without `--yes`. The **database is never dropped** —
+the installer does not create it, so its ownership is yours; `--purge`
+prints the exact `dropdb`/`dropuser` commands (parsed from
+`DATABASE_URL`) instead of guessing. Opt out of the final backup with
+`AMELI_APP_UNINSTALL_SKIP_BACKUP=1` (and its destination with
+`AMELI_APP_UNINSTALL_BACKUP_DIR`).
 
 ### Automated nightly backup via systemd (roadmap #18)
 
@@ -1574,3 +1674,47 @@ AuditEvent.objects.update(hmac='', prev_hmac='')
 "
 # then update AMELI_APP_AUDIT_HMAC_KEY and restart
 ```
+
+### Disaster recovery: the key is GONE (`/etc` lost, database kept)
+
+The rotation recipe above needs `OLD_KEY` to re-stamp the rows. When the
+env file is gone, that key is gone with it, and **no procedure can make
+the existing rows verifiable again** — that is the whole point of an HMAC
+chain. Plan for it before it happens.
+
+**How you get here.** Restoring a database backup onto a rebuilt host,
+re-running `install.sh` after wiping `/etc/<instance>/`, or migrating an
+instance without carrying the env file. `install.sh` generates a *new*
+`AMELI_APP_AUDIT_HMAC_KEY` whenever the key is missing (it is idempotent
+only while the file survives), so the deploy comes back up looking
+healthy while `/health` reports:
+
+```json
+"audit_chain": { "ok": false, "detail": { "tail_id": 1, "match": false } }
+```
+
+and the overall status is `DEGRADADO`. Nothing is corrupt — the rows are
+simply signed with a key nobody has.
+
+**Prevention (do this now, not after).** The audit key belongs in your
+backup set alongside the database. `scripts/backup.sh` dumps the DB, *not*
+`/etc/<instance>/app.env`. Keep an offline copy of the three generated
+keys — `AMELI_APP_DJANGO_SECRET_KEY`, `AMELI_APP_AUDIT_HMAC_KEY`,
+`AMELI_APP_MFA_ENCRYPTION_KEY` — in your secret manager. Losing the MFA
+key has the same shape: every enrolled TOTP secret becomes undecryptable.
+
+**If it already happened**, decide explicitly and record the decision:
+
+1. **The historical rows stay unverifiable, and you say so.** Keep them
+   as-is. `verify-audit` will keep failing from row 1, so the timer alert
+   is useless until you cut the chain. Note the incident, the date and
+   the id range in your compliance log — silently clearing the flag is
+   the one thing you must not do.
+2. **Cut the chain at the recovery point.** Clear the hmac columns with
+   the wipe recipe above so verification starts fresh from the next
+   event. You lose tamper-evidence for everything before the cut; the
+   rows themselves are untouched and still readable in `/admin/audit`.
+
+Either way, `verify-audit` after the decision must return `ok: true`, or
+the hourly timer's alert becomes background noise that trains operators
+to ignore a real tampering signal.
