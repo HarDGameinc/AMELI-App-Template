@@ -196,6 +196,13 @@ def send_with_retry(
             },
         )
         return {"ok": True, "status": "queued", "queue_id": row.pk, "error": last_error}
+    # NOTE (upstream T-2, verified false positive 2026-08-04): do NOT audit
+    # the inline-success here. ``audit_action`` is for the DEFERRED path
+    # only — the queue worker writes it when it eventually delivers. Every
+    # caller already audits the inline-success case itself by inspecting
+    # ``result["status"] == "sent"`` (mfa_disabled_notify_sent,
+    # auth_failures_alert_sent, password_reset_requested), so auditing here
+    # too would double-record. The finding read this function in isolation.
     email_queue_logger.info(
         "email.sent_inline audit_action=%s target=%s",
         audit_action or "-", target_username or "-",
