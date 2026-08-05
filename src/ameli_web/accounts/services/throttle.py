@@ -104,6 +104,19 @@ def _read_throttle_counter_sliding(*, scope: str, key: str, window_seconds: int)
     classic "sliding window counter" approximation used by rate
     limiters that want stronger guarantees than a fixed bucket
     without paying the cost of a per-event log.
+
+    .. warning::
+       The weighting rounds **up** (``math.ceil``), so a previous window
+       with even ONE attempt contributes ``+1`` for the whole current
+       window. That bias is a deliberate defensive over-count and is
+       negligible against the caps this template uses (12 / 8 / 5). But it
+       is a fraction of the budget: at ``cap == 2`` it is 50%, and at
+       ``cap == 1`` it is **100%** — a "1 per window" gate would never
+       clear once a single attempt lands. **Do not use this for a cap
+       below 3.** For a strict low-cap gate use
+       :func:`_read_throttle_counter` (fixed bucket, no cross-window bias).
+       Upstream finding T-5 (a fork picked ``cap == 1`` and locked users
+       out permanently).
     """
     from datetime import datetime
 
