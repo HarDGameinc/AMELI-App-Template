@@ -2,8 +2,8 @@
 
 Fecha: `2026-08-04`
 Agente: `claude-opus-4-8`
-Rama de trabajo: `dev` (varios commits adelante de `main`: T-8, T-1, T-4, T-5, T-7 + notas)
-Rama estable: `main` — **promovida a `v0.5.11-django`** esta sesion
+Rama de trabajo: `dev` (== `main` en contenido; al dia)
+Rama estable: `main` — **dos promociones esta sesion: `v0.5.11-django` y luego `v0.5.12-django`** (cierre)
 Sesion previa: [`CLAUDE_HANDOFF_2026-07-23_TEMPLATE_DEV.md`](CLAUDE_HANDOFF_2026-07-23_TEMPLATE_DEV.md)
 
 ## §1. Objetivo
@@ -133,20 +133,36 @@ day-2 + puertos + T-3 + T-6). Bump de los 4 archivos.
 
 ## §5. Estado y pendientes
 
-- `main` = **`v0.5.11-django`**; `dev` **10 commits adelante** (T-8, T-1,
-  T-4, T-5, T-7 + la nota de T-2 + handoff), van al proximo corte
-  (candidato **v0.5.12**). **0 alertas de code scanning abiertas.** Suite
-  **1177 passed / 81 skipped**.
-- **CI activo de nuevo** — `main` avanza por PR con CI verde. Se elimino la
-  memoria "CI pausado".
-- **Hijas**: pueden `git fetch template && merge v0.5.11-django` para
-  heredar B13 + day-2 + T-3 + T-6 + cryptography. T-8 (`http_safe`) esta en
-  `dev`, entra en el proximo release.
-- **Upstream: los 8 cerrados.** 7 resueltos (T-1, T-3, T-4, T-5, T-6, T-7,
-  T-8) + 1 descartado como FP (T-2). El doc
-  `UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md` de Checklist queda saldado.
-  **Todo lo posterior a v0.5.11 (T-8 + T-1 + T-4/T-5/T-7) va al proximo
-  corte** — candidato **v0.5.12** (con estos, cortar cuando el operador lo
-  pida; el ritual de RELEASE.md + PR con CI verde).
+- **`main` = `v0.5.12-django`** (merge `1ab4305`, tag + GitHub release
+  publicados). `dev` == `main` en contenido, arbol limpio. **0 alertas de
+  code scanning.** Suite **1177 passed / 81 skipped**, CI verde.
+- **Dos releases esta sesion**: v0.5.11 (B13 + day-2 + puertos + T-3 + T-6 +
+  fix cryptography) y v0.5.12 (T-8 + T-1 + T-4/T-5/T-7). El PR #15 paso
+  limpio (sin sorpresas de CI, a diferencia del #14).
+- **CI activo** — `main` avanza por PR con CI verde. La memoria "CI pausado"
+  quedo eliminada.
+- **Hijas**: `git fetch template && merge v0.5.12-django` hereda TODO
+  (B13, day-2, puertos, cryptography, y los 7 findings resueltos). `http_safe`
+  (T-8) es opt-in para clientes nuevos; las llamadas propias del template no
+  cambian.
+- **Upstream: los 8 saldados.** 7 resueltos + T-2 descartado (FP). El doc
+  `UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md` de Checklist queda cerrado.
 - **Red multi-app** (dev01 fase 2, WebFleet) sigue **fuera del template**,
   en `NETWORK_OPS_ha-report2_2026-07-22.md` (scratchpad → infra).
+
+## §6. Cierre de sesion
+
+Dos tandas de trabajo, ambas cerradas con release:
+
+1. **Promocion del backlog** (v0.5.11): todo lo que se acumulo en `dev`
+   durante el pause del CI. El CI de vuelta actuo como gate real — destapo
+   una CVE de cryptography, la password SMTP en claro (→ password_file) y un
+   B103 de Bandit; ninguna se forzo.
+2. **Los 8 findings de la hija** (v0.5.12): verificados uno por uno contra
+   el codigo real. 7 reales (arreglados), **1 falso positivo** (T-2, que no
+   sobrevivio la verificacion de los call-sites). El patron de los tres
+   ultimos (T-4/T-5/T-7) fue "documentar el contrato + candado de test".
+
+El ciclo template→hija quedo probado en ambos sentidos: la hija reporta
+hallazgos upstream, el template los verifica/arregla/documenta, corta
+release, y la hija los hereda por `git merge template`.
