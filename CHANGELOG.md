@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.5.12-django — 2026-08-04 (hallazgos upstream de una app hija)
+
+Cierra los 8 hallazgos que la app hija **AMELI Checklist** levanto contra
+el template (`UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md`): 7 resueltos, 1
+descartado como falso positivo tras verificarlo entero. Sin migraciones.
+
+### Seguridad / correccion
+
+- **T-8 — `ameli_app.http_safe`** (`7db01c1`): modulo compartido `fetch()`
+  para clientes HTTP salientes de las hijas. Allowlist de scheme (https por
+  defecto), opener sin file/ftp/data/proxy handlers, redirects que
+  **descartan `Authorization`/`Cookie` al cambiar de origen** (cierra el
+  reenvio de Bearer por redirect que tenia el cliente de Starlink en prod),
+  y tope de tamaño. Stdlib only.
+- **T-1 — `_json_body` dentro del `try`** (`bd781cd`): en
+  `admin_views/users.py` los 4 sitios llamaban `_json_body` fuera del `try`
+  que ya capturaba `ValueError`, asi que un body JSON truncado daba **500 en
+  vez de 400**. Es el exemplar que `BUILDING_NEW_APP.md` propone para el CRUD
+  admin — el unico de 17 call-sites que lo hacia mal.
+
+### Contratos documentados + candados de test (trampas latentes)
+
+- **T-4 — particionado del capture worker** (`00f2a77`): los timers
+  instanciados `@primary`/`@secondary` se diferencian por
+  `AMELI_APP_CAPTURE_MODE`, que `run_once` nunca leia → una hija que
+  habilita ambos procesa la flota dos veces. `run_once` ahora lo lee (para
+  que un fork herede la lectura) + contrato en docstring y
+  `BUILDING_NEW_APP.md`.
+- **T-5 — sliding-window throttle** (`8bca91c`): el sesgo `+1` del borde es
+  100% del presupuesto con `cap==1`; warning en el docstring de no usarlo
+  bajo `cap<3` (usar `_read_throttle_counter`).
+- **T-7 — contrato no-lanza de `decrypt_secret`** (`98f904d`): invariante en
+  `BUILDING_NEW_APP.md` §4 — un wrapper de cifrado derivado no debe agregar
+  un `json.loads` (ni nada que lance) despues del fallback de `InvalidToken`.
+
+### Falso positivo (no shippeo)
+
+- **T-2** (`22a963b`): el finding decia que una entrega de email limpia no
+  auditaba. Verificado contra los tres llamadores: **todos auditan el exito
+  inline ellos mismos** (inspeccionando `result["status"]`); el
+  `audit_action` a `send_with_retry` es solo para la entrega diferida. Se
+  dejo un comentario en el codigo para que nadie re-introduzca el
+  doble-audit.
+
+### Deploy
+
+Sin migraciones. Las hijas heredan por `git fetch template && merge
+v0.5.12-django`. `http_safe` es opt-in (para clientes nuevos); las llamadas
+propias del template (HIBP, github-check) no cambian.
+
 ## v0.5.11-django — 2026-08-04 (endurecimiento day-2 + puertos + hallazgos upstream)
 
 Cierra el trabajo posterior a v0.5.10 (que quedo tagueado en `dev` sin
