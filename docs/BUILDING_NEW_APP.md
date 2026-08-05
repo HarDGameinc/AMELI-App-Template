@@ -304,6 +304,18 @@ them means breaking the security model.
 | Audit chain integrity | `tests/test_security_hardening_block*.py` |
 | Session absolute ceiling | `tests/test_session_absolute_ceiling.py` |
 | Boot guards refuse missing secrets outside dev | `tests/test_settings_boot_guards.py` |
+| `decrypt_secret` never raises (wrong key → plaintext fallback) | `tests/test_crypto_contracts.py` |
+
+> **Derived crypto wrappers must preserve the "never raises" property.**
+> `accounts/mfa.py:decrypt_secret` returns the stored value unchanged on
+> `InvalidToken` — a wrong-key rotation or a pre-encryption legacy row
+> surfaces as *users failing to authenticate* (recoverable by fixing the
+> key), NOT as an unhandled exception mid-request. It is a deliberate
+> contract, not an accident. If you copy the pattern for your own
+> Fernet-wrapped secret, **keep it total**: do NOT add a `json.loads` (or
+> any other raising call) AFTER the fallback path — that turns the graceful
+> degradation into a 500 on every read once the key is wrong. (Upstream
+> finding T-7: a fork did exactly this and got orphaned rows + a 500.)
 
 If you have a strong reason to relax one of these, the answer is:
 **document the residual risk** in your own `SECURITY.md` rather
