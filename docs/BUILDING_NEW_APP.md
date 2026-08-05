@@ -169,6 +169,14 @@ source). The systemd timer `your-app-capture-primary.timer`
 calls this on schedule. Off by default; enable per environment
 in the systemd profile.
 
+> **If you enable BOTH `@primary` and `@secondary` timers, your
+> `run_once` MUST read `AMELI_APP_CAPTURE_MODE` and process only its
+> partition** (`"primary"` / `"secondary"`). The template only ships the
+> env-var half of the split; a `run_once` that ignores it runs the whole
+> fleet TWICE (systemd can't dedup — the two instanced units are
+> distinct). If you don't partition, enable only ONE timer. The
+> placeholder already reads the mode so a copy inherits the read.
+
 ### Outbound HTTP clients (`ameli_app.http_safe`)
 
 Any client that calls an **operator- or data-configurable** host (a fleet
