@@ -169,6 +169,49 @@ source). The systemd timer `your-app-capture-primary.timer`
 calls this on schedule. Off by default; enable per environment
 in the systemd profile.
 
+> **If you enable BOTH `@primary` and `@secondary` timers, your
+> `run_once` MUST read `AMELI_APP_CAPTURE_MODE` and process only its
+> partition** (`"primary"` / `"secondary"`). The template only ships the
+> env-var half of the split; a `run_once` that ignores it runs the whole
+> fleet TWICE (systemd can't dedup — the two instanced units are
+> distinct). If you don't partition, enable only ONE timer. The
+> placeholder already reads the mode so a copy inherits the read.
+
+### Outbound HTTP clients (`ameli_app.http_safe`)
+
+Any client that calls an **operator- or data-configurable** host (a fleet
+API, a webhook target, a scraped URL) MUST go through
+[`ameli_app.http_safe.fetch`](../src/ameli_app/http_safe.py) — do NOT
+hand-roll `urllib.request.urlopen`. It closes, in one place, the four
+traps a bespoke client repeatedly gets wrong:
+
+```python
+from ameli_app import http_safe
+
+resp = http_safe.fetch(
+    url,                       # UnsafeURLError if not https (SSRF/file:// guard)
+    timeout=10,                # required — no hanging calls
+    headers={"Authorization": f"Bearer {token}"},
+    max_bytes=2 * 1024 * 1024, # reject a runaway/hostile body
+)
+data = json.loads(resp.body)   # resp.status / resp.url / resp.headers too
+```
+
+- **Scheme allowlist** (https by default) — a `file://`/`ftp://`/`data:`
+  URL is refused before any I/O. A loopback service (e.g. a local ClamAV
+  on http) opts in with `allowed_schemes=("http", "https")`.
+- **Minimal opener** — no file/ftp/data/proxy handlers, so a redirect
+  can't smuggle one in.
+- **Safe redirects** — a redirect that changes origin **drops the
+  `Authorization`/`Cookie` headers**, so a compromised host can't 30x your
+  Bearer token to itself. (This is the exact hole
+  `AMELI Report Starlink`'s client had — T-8.)
+- **Response size cap.**
+
+Pair it with the `CircuitBreaker` and `ThrottleCounter` below for retries
+and quota. The template's own calls (HIBP, the GitHub release check) go to
+fixed URLs and predate this helper — new clients use it.
+
 ### Custom Django models
 
 Add a new Django app (e.g. `your_web/domain/`) for your
@@ -261,6 +304,18 @@ them means breaking the security model.
 | Audit chain integrity | `tests/test_security_hardening_block*.py` |
 | Session absolute ceiling | `tests/test_session_absolute_ceiling.py` |
 | Boot guards refuse missing secrets outside dev | `tests/test_settings_boot_guards.py` |
+| `decrypt_secret` never raises (wrong key → plaintext fallback) | `tests/test_crypto_contracts.py` |
+
+> **Derived crypto wrappers must preserve the "never raises" property.**
+> `accounts/mfa.py:decrypt_secret` returns the stored value unchanged on
+> `InvalidToken` — a wrong-key rotation or a pre-encryption legacy row
+> surfaces as *users failing to authenticate* (recoverable by fixing the
+> key), NOT as an unhandled exception mid-request. It is a deliberate
+> contract, not an accident. If you copy the pattern for your own
+> Fernet-wrapped secret, **keep it total**: do NOT add a `json.loads` (or
+> any other raising call) AFTER the fallback path — that turns the graceful
+> degradation into a 500 on every read once the key is wrong. (Upstream
+> finding T-7: a fork did exactly this and got orphaned rows + a 500.)
 
 If you have a strong reason to relax one of these, the answer is:
 **document the residual risk** in your own `SECURITY.md` rather

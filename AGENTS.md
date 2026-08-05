@@ -223,7 +223,23 @@ manage.py               # Django management entrypoint (autodiscover config)
 - CLI, health, metrics, telemetry
 - Installation scripts, backups, Docker stack, systemd units
 
-## State of the project (v0.5.11-django, 2026-08-04)
+## State of the project (v0.5.12-django, 2026-08-04)
+
+`v0.5.12` closes the **8 upstream findings** the child app *AMELI Checklist*
+raised against the template (`UPSTREAM_TEMPLATE_FINDINGS_2026-08-04.md`):
+**7 fixed, 1 dismissed as a false positive** after full verification.
+Highlights: **T-8** `ameli_app.http_safe` — a shared hardened outbound-HTTP
+helper (https-only, no file/ftp/data handlers, drops `Authorization`/`Cookie`
+on cross-origin redirect, size cap) that closes the Bearer-forwarding hole
+Starlink's client had in prod; **T-1** admin `_json_body` now returns 400 not
+500 on bad JSON; and three documented-contract latches (**T-4** capture-mode
+partitioning, **T-5** sliding-window unsafe below cap 3, **T-7** the
+never-raises `decrypt_secret` invariant). **T-2** was verified a false
+positive — the callers already audit the inline-send case. No migrations. All
+eight verified one by one against the real template code, not accepted from
+the report. Children inherit via `git fetch template && merge v0.5.12-django`.
+
+### Previous state (v0.5.11-django, 2026-08-04)
 
 `v0.5.11` promotes to `main` everything that piled up on `dev` while CI
 was paused: **B13** (`/health`+`/metrics` locked down on a fresh prod

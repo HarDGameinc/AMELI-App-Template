@@ -45,8 +45,8 @@ def admin_users(request: HttpRequest) -> JsonResponse:
             {"ok": False, "error": "sudo required", "need_sudo": True, "sudo_url": "/admin/sudo/"},
             status=401,
         )
-    payload = _json_body(request)
     try:
+        payload = _json_body(request)
         result = create_user_account(
             actor_username=request.user.username,
             username=str(payload.get("username") or "").strip(),
@@ -69,8 +69,8 @@ def admin_update_user(request: HttpRequest, username: str) -> JsonResponse:
         except ValueError as exc:
             return _json_error(str(exc))
         return JsonResponse(result)
-    payload = _json_body(request)
     try:
+        payload = _json_body(request)
         result = update_user_account(
             actor_username=request.user.username,
             username=username,
@@ -100,8 +100,8 @@ def admin_disable_user_mfa(request: HttpRequest, username: str) -> JsonResponse:
 @superadmin_required
 @sudo_required
 def admin_reset_user_password(request: HttpRequest, username: str) -> JsonResponse:
-    payload = _json_body(request)
     try:
+        payload = _json_body(request)
         result = reset_user_password(
             actor_username=request.user.username,
             username=username,
@@ -116,8 +116,8 @@ def admin_reset_user_password(request: HttpRequest, username: str) -> JsonRespon
 @require_POST
 @superadmin_required
 def admin_change_password(request: HttpRequest) -> JsonResponse:
-    payload = _json_body(request)
     try:
+        payload = _json_body(request)
         result = change_password_for_user(
             request.user.username,
             str(payload.get("current_password") or "").strip(),
