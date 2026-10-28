@@ -40,8 +40,10 @@ La instancia `ameli-app-template-dev` se desinstala con
 `/var/backups/ameli-app-template-dev-*.tar.gz` y luego elimina units,
 directorios y el usuario del sistema. La base de datos y el bloque de
 Caddy no los toca el script; se eliminan a mano (comandos en el chat de
-la sesion). El resultado se registra aqui abajo una vez ejecutado.
+la sesion).
 
-### Resultado
-
-(pendiente: el operador ejecuta en el servidor)
+La limpieza se ejecuta **despues** de archivar el repo (un repo archivado
+no acepta pushes), asi que su resultado no queda registrado aqui: este
+documento es el ultimo commit del proyecto. El backup final de la
+instancia queda en `/var/backups/` del servidor por si hubiera que
+recuperar datos.
