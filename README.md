@@ -1,5 +1,13 @@
 # AMELI App Template
 
+> **RETIRADO Y ARCHIVADO (2026-10-27).** Este proyecto ya no recibe
+> mantenimiento, releases ni fixes de seguridad. El último release es
+> **`v0.5.12-django`**. El repositorio queda en solo lectura como
+> referencia: puede clonarse y consultarse, pero las apps hijas que lo
+> usan como remote `template` (DECISIONS #7) deben asumir su propio
+> mantenimiento desde ahora. Ver
+> [`docs/CLAUDE_HANDOFF_2026-10-27_RETIREMENT.md`](docs/CLAUDE_HANDOFF_2026-10-27_RETIREMENT.md).
+
 Plantilla base Django-first para crear aplicaciones AMELI con usuarios reales,
 sesiones web, perfil, administración, auditoría, documentación OpenAPI y
 operación estándar con scripts y systemd.

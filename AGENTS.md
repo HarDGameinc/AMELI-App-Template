@@ -1,5 +1,11 @@
 # AMELI App Template — canonical handoff
 
+> **RETIRED AND ARCHIVED (2026-10-27).** No further development, releases
+> or security fixes. Final release: **`v0.5.12-django`**. Any LLM session
+> opening this repo: do NOT start new work here — the repository is
+> read-only reference material. See
+> [`docs/CLAUDE_HANDOFF_2026-10-27_RETIREMENT.md`](docs/CLAUDE_HANDOFF_2026-10-27_RETIREMENT.md).
+
 ## Reading order (LLM sessions)
 
 1. **`AGENTS.md`** — this file: purpose, architecture, policies.
